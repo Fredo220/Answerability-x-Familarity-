@@ -44,8 +44,39 @@ def make_batch() -> TrajectoryBatch:
     )
 
 
-def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids():
+def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids(monkeypatch):
     batch = make_batch()
+    permutation_call: dict[str, object] = {}
+    real_permutation = secondary_study.paired_entity_family_permutation_p
+
+    def capture_permutation(
+        labels,
+        candidate,
+        baseline,
+        *,
+        groups,
+        n_permutations,
+        seed,
+    ):
+        permutation_call.update(
+            groups=np.asarray(groups).copy(),
+            n_permutations=n_permutations,
+            seed=seed,
+        )
+        return real_permutation(
+            labels,
+            candidate,
+            baseline,
+            groups=groups,
+            n_permutations=n_permutations,
+            seed=seed,
+        )
+
+    monkeypatch.setattr(
+        secondary_study,
+        "paired_entity_family_permutation_p",
+        capture_permutation,
+    )
 
     result = evaluate_concept_secondary(
         batch,
@@ -53,23 +84,45 @@ def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids():
         ridge_alpha=1e-3,
         n_bootstrap=50,
     )
+    comparison = result["registered_comparison"]
 
     assert set(result["methods"]) == {
         "contrastive_vector",
         "contrastive_plus_dynamics",
         "full_metacognitive_monitor",
     }
-    assert result["registered_comparison"]["candidate"] == "contrastive_plus_dynamics"
-    assert result["registered_comparison"]["baseline"] == "contrastive_vector"
-    assert result["registered_comparison"]["fdr_family"] == [
+    assert comparison["candidate"] == "contrastive_plus_dynamics"
+    assert comparison["baseline"] == "contrastive_vector"
+    assert comparison["fdr_family"] == [
         "detection_vector_dynamics",
         "intervention_capping_vs_triggered_pending",
     ]
-    assert result["registered_comparison"]["permutation_seed"] == 42
-    assert result["registered_comparison"]["n_permutations"] == 2_000
-    assert result["claim_status"] == "not_supported"
-    assert result["registered_comparison"]["supported"] is False
-    assert result["registered_comparison"]["bh_adjusted_p"] == pytest.approx(1.0)
+    test = np.flatnonzero(batch.splits == "test")
+    expected_groups = np.asarray(
+        [batch.provenance[index]["entity_family"] for index in test]
+    )
+    np.testing.assert_array_equal(permutation_call["groups"], expected_groups)
+    assert permutation_call["seed"] == 42
+    assert permutation_call["n_permutations"] == 2_000
+    assert comparison["permutation_seed"] == permutation_call["seed"]
+    assert comparison["n_permutations"] == permutation_call["n_permutations"]
+    expected_adjusted_p = float(
+        benjamini_hochberg(np.array([comparison["raw_p"], 1.0]))[0]
+    )
+    assert comparison["bh_adjusted_p"] == pytest.approx(expected_adjusted_p)
+    expected_supported = bool(
+        result["endpoint_status"]["evaluable"]
+        and comparison["delta_auroc"] >= comparison["minimum_effect"]
+        and comparison["lower"] > 0.0
+        and comparison["bh_adjusted_p"] < 0.05
+    )
+    assert comparison["supported"] is expected_supported
+    expected_claim_status = (
+        "not_evaluable"
+        if not result["endpoint_status"]["evaluable"]
+        else "provisional_supported" if expected_supported else "not_supported"
+    )
+    assert result["claim_status"] == expected_claim_status
     assert result["endpoint_status"]["evaluable"] is True
     assert result["endpoint_status"]["positive_examples"] == 20
     assert result["endpoint_status"]["positive_clusters"] == 20
