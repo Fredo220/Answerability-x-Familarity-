@@ -65,11 +65,11 @@ def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids():
         "detection_vector_dynamics",
         "intervention_capping_vs_triggered_pending",
     ]
-    assert result["claim_status"] in {
-        "not_evaluable",
-        "not_supported",
-        "provisional_supported",
-    }
+    assert result["registered_comparison"]["permutation_seed"] == 42
+    assert result["registered_comparison"]["n_permutations"] == 2_000
+    assert result["claim_status"] == "not_supported"
+    assert result["registered_comparison"]["supported"] is False
+    assert result["registered_comparison"]["bh_adjusted_p"] == pytest.approx(1.0)
     assert result["endpoint_status"]["evaluable"] is True
     assert result["endpoint_status"]["positive_examples"] == 20
     assert result["endpoint_status"]["positive_clusters"] == 20

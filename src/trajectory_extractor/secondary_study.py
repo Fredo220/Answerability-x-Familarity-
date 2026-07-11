@@ -22,6 +22,8 @@ from trajectory_extractor.vector_dynamics import StandardizedVectorDynamics
 REGISTERED_BASELINE = "contrastive_vector"
 REGISTERED_CANDIDATE = "contrastive_plus_dynamics"
 MIN_AUROC_GAIN = 0.03
+CONFIRMATORY_PERMUTATION_SEED = 42
+CONFIRMATORY_N_PERMUTATIONS = 2_000
 
 
 def causal_output_uncertainty(batch: TrajectoryBatch) -> tuple[np.ndarray, np.ndarray]:
@@ -181,6 +183,8 @@ def evaluate_concept_secondary(
         selected_test_probabilities[REGISTERED_CANDIDATE],
         selected_test_probabilities[REGISTERED_BASELINE],
         groups=cluster_groups,
+        n_permutations=CONFIRMATORY_N_PERMUTATIONS,
+        seed=CONFIRMATORY_PERMUTATION_SEED,
     )
     adjusted_p = float(benjamini_hochberg(np.array([raw_p, 1.0]))[0])
     endpoint = secondary_endpoint_status(batch, test)
@@ -209,6 +213,8 @@ def evaluate_concept_secondary(
             "upper": bootstrap.upper,
             "raw_p": raw_p,
             "p_value_method": "paired_entity_family_permutation",
+            "permutation_seed": CONFIRMATORY_PERMUTATION_SEED,
+            "n_permutations": CONFIRMATORY_N_PERMUTATIONS,
             "bh_adjusted_p": adjusted_p,
             "fdr_family": [
                 "detection_vector_dynamics",
