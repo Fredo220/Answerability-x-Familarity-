@@ -107,3 +107,24 @@ def test_transform_rejects_non_finite_valid_activation():
 
     with pytest.raises(ValueError, match="finite valid-token activations"):
         model.transform(batch)
+
+
+def test_masked_non_finite_train_padding_does_not_affect_fit():
+    batch = make_batch()
+    batch.hidden_states[0, 1, 0, :] = np.nan
+    batch.hidden_states[0, 2, 1, :] = np.inf
+
+    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+
+    np.testing.assert_allclose(model.centers[:, 0], 1.0)
+
+
+def test_masked_non_finite_transform_padding_produces_zero_scores():
+    batch = make_batch()
+    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+    batch.hidden_states[0, 1, 0, :] = np.nan
+    batch.hidden_states[4, 2, 1, :] = np.inf
+
+    scores = model.transform(batch)
+
+    assert np.all(scores[~batch.token_mask] == 0.0)

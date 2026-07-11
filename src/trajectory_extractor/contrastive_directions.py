@@ -49,11 +49,13 @@ class LayerwiseContrastiveDirection:
         expected = batch.hidden_states.shape[2:]
         if self.directions.shape != expected or self.centers.shape != expected:
             raise ValueError("batch layer and hidden dimensions do not match fitted direction")
-        if not np.isfinite(batch.hidden_states[batch.token_mask]).all():
-            raise ValueError("finite valid-token activations are required for transform")
         scores = np.zeros(batch.hidden_states.shape[:3], dtype=np.float32)
+        valid = batch.token_mask[..., None]
         for layer in range(batch.hidden_states.shape[2]):
             current = batch.hidden_states[:, :, layer, :].astype(np.float32)
+            if not np.isfinite(current[batch.token_mask]).all():
+                raise ValueError("finite valid-token activations are required for transform")
+            current = np.where(valid, current, 0.0)
             current -= self.centers[layer][None, None, :]
             scores[:, :, layer] = np.einsum(
                 "ntd,d->nt",
@@ -61,7 +63,7 @@ class LayerwiseContrastiveDirection:
                 self.directions[layer],
                 optimize=True,
             )
-        scores[~batch.token_mask] = 0.0
+        scores = np.where(batch.token_mask[..., None], scores, 0.0)
         if not np.isfinite(scores).all():
             raise ValueError("transform produced non-finite scores")
         return scores
@@ -71,18 +73,20 @@ def _pool_valid_tokens_per_example(
     batch: TrajectoryBatch,
     indices: np.ndarray,
 ) -> np.ndarray:
-    hidden_states = batch.hidden_states[indices]
     token_mask = batch.token_mask[indices]
-    if not np.isfinite(hidden_states[token_mask]).all():
-        raise ValueError("finite valid-token activations are required for fitting")
     counts = token_mask.sum(axis=1)
     if np.any(counts == 0):
         raise ValueError("every selected example needs at least one valid token")
-    n_examples, _, n_layers, hidden_dim = hidden_states.shape
+    n_examples = indices.size
+    n_layers = batch.hidden_states.shape[2]
+    hidden_dim = batch.hidden_states.shape[3]
     pooled = np.empty((n_examples, n_layers, hidden_dim), dtype=np.float32)
+    valid = token_mask[..., None]
     for layer in range(n_layers):
-        current = hidden_states[:, :, layer, :].astype(np.float32)
-        current *= token_mask[:, :, None]
+        current = batch.hidden_states[indices, :, layer, :].astype(np.float32)
+        if not np.isfinite(current[token_mask]).all():
+            raise ValueError("finite valid-token activations are required for fitting")
+        current = np.where(valid, current, 0.0)
         pooled[:, layer, :] = current.sum(axis=1) / counts[:, None]
     return pooled
 
