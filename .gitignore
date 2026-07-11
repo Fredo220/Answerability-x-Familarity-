@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+runs/
+runs_rehearsal/
+.cache/
+data/external/
+.ipynb_checkpoints/
+.DS_Store
+*.tmp
+.superpowers/

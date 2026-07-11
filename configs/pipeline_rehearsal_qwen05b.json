@@ -1,0 +1,12 @@
+{
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "main",
+  "device": "cpu",
+  "dtype": "bfloat16",
+  "seed": 42,
+  "max_new_tokens": 12,
+  "pca_dims": 16,
+  "ridge_alpha": 0.001,
+  "temperature": 0.0,
+  "output_dir": "runs_rehearsal"
+}

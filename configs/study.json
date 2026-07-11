@@ -1,0 +1,13 @@
+{
+  "concept_examples": 1200,
+  "concept_split": {"train": 720, "val": 240, "test": 240},
+  "real_transfer_limit": 200,
+  "jailbreak_harmful": 100,
+  "jailbreak_benign": 100,
+  "pca_ablation_dims": [16, 32, 64],
+  "bootstrap_samples": 2000,
+  "manual_guard_audit_fraction": 0.2,
+  "detection_min_auc_gain": 0.03,
+  "intervention_min_relative_reduction": 0.2,
+  "intervention_max_control_loss_points": 0.05
+}

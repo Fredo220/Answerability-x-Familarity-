@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trajectory-extractor"
+version = "0.1.0"
+description = "CPU-first feature-dynamics study for LLM concept mixing and jailbreaks."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "torch>=2.2",
+    "transformers>=4.43",
+    "accelerate>=0.33",
+    "certifi",
+    "numpy>=1.26",
+    "matplotlib",
+    "pandas",
+    "scikit-learn",
+    "ipykernel",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+feature-dynamics = "trajectory_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
