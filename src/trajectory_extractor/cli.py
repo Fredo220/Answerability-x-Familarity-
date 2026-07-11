@@ -366,8 +366,7 @@ def main(argv: list[str] | None = None) -> int:
             result,
         )
         _write_secondary_figures(
-            secondary,
-            args.run_id,
+            metrics_path.parent / "figures",
             result,
             arrays,
             endpoint=args.endpoint,
@@ -642,8 +641,7 @@ def _write_detection_figures(
 
 
 def _write_secondary_figures(
-    store: SecondaryArtifactStore,
-    run_id: str,
+    directory: Path,
     result: dict,
     arrays: dict[str, np.ndarray],
     *,
@@ -651,7 +649,6 @@ def _write_secondary_figures(
 ) -> None:
     from trajectory_extractor.plotting import plot_class_risk_gap, plot_method_comparison
 
-    directory = store._path(run_id, "comparisons", "figures", "").parent / "figures"
     plot_method_comparison(
         {name: values["test_auroc"] for name, values in result["methods"].items()},
         directory / f"method_comparison_{endpoint}.png",

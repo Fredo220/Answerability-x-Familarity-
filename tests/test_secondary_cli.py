@@ -80,6 +80,14 @@ def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypa
     assert (root / "contrastive_vectors" / "exact_error.npz").exists()
     assert (root / "vector_dynamics" / "exact_error.npz").exists()
     assert not (tmp_path / "runs" / "concept-main" / "metrics" / "detection.json").exists()
+    assert not (
+        tmp_path / "runs" / "concept-main" / "metrics" / "detection_exact_error.json"
+    ).exists()
+
+    metrics = json.loads((root / "comparisons" / "detection_exact_error.json").read_text())
+    assert metrics["claim_status"] == "provisional_supported"
+    assert set(metrics["runtime"]) == {"seconds", "max_resident_set_size"}
+    assert "artifacts" not in metrics
 
     with np.load(root / "comparisons" / "predictions_exact_error.npz") as predictions:
         assert set(predictions.files) == {
@@ -110,9 +118,10 @@ def test_secondary_figures_stay_within_sanitized_artifact_namespace(tmp_path):
         "validation_metacognitive_risk_surface": np.array([[[0.1]], [[0.9]]]),
     }
 
-    cli._write_secondary_figures(store, "../escaped", result, arrays, endpoint="exact_error")
+    directory = metrics_path.parent / "figures"
+    cli._write_secondary_figures(directory, result, arrays, endpoint="exact_error")
 
-    assert (metrics_path.parent / "figures" / "method_comparison_exact_error.png").exists()
+    assert (directory / "method_comparison_exact_error.png").exists()
     assert (
-        metrics_path.parent / "figures" / "validation_metacognitive_risk_gap_exact_error.png"
+        directory / "validation_metacognitive_risk_gap_exact_error.png"
     ).exists()
