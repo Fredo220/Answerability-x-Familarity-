@@ -40,9 +40,19 @@ def test_standardized_dynamics_have_expected_values_and_masking():
     assert result.layer_delta.shape == (4, 3, 3)
     assert result.token_delta.shape == (4, 3, 3)
     assert result.as_feature_tensor().shape == (4, 3, 3, 3)
-    assert np.all(result.static[~batch.token_mask] == 0.0)
+    np.testing.assert_allclose(model.means, np.array([2.0, 3.0, 5.0], dtype=np.float32))
+    np.testing.assert_allclose(
+        model.scales,
+        np.full(3, np.sqrt(2.0), dtype=np.float32),
+    )
+    invalid_tokens = ~batch.token_mask
+    assert np.all(result.static[invalid_tokens] == 0.0)
+    assert np.all(result.layer_delta[invalid_tokens] == 0.0)
+    assert np.all(result.token_delta[invalid_tokens] == 0.0)
     assert np.all(result.token_delta[:, 0] == 0.0)
     assert np.all(result.layer_delta[:, :, 0] == 0.0)
+    invalid_pairs = ~(batch.token_mask[:, 1:] & batch.token_mask[:, :-1])
+    assert np.all(result.token_delta[:, 1:][invalid_pairs] == 0.0)
     assert model.fit_example_ids == ("a", "b")
 
 
@@ -66,3 +76,23 @@ def test_fit_rejects_non_training_examples():
 
     with pytest.raises(ValueError, match="training split only"):
         StandardizedVectorDynamics().fit(batch, scores, np.array([0, 2]))
+
+
+def test_fit_rejects_selected_training_examples_with_no_valid_tokens():
+    batch = make_batch()
+    batch.token_mask[1] = False
+    scores = np.ones((4, 3, 3), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="no valid tokens"):
+        StandardizedVectorDynamics().fit(batch, scores, np.array([0, 1]))
+
+
+def test_transform_rejects_float32_unrepresentable_standardized_deltas():
+    batch = make_batch()
+    fit_scores = np.zeros((4, 3, 3), dtype=np.float32)
+    model = StandardizedVectorDynamics().fit(batch, fit_scores, np.array([0, 1]))
+    scores = fit_scores.copy()
+    scores[0, 0] = np.array([np.finfo(np.float32).max, -np.finfo(np.float32).max, 0.0])
+
+    with pytest.raises(ValueError, match="representable as float32"):
+        model.transform(batch, scores)
