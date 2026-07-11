@@ -59,6 +59,7 @@ Append exactly these lines to `.gitignore`:
 ```gitignore
 .DS_Store
 *.tmp
+.superpowers/
 ```
 
 - [ ] **Step 2: Write the dated secondary registration**
