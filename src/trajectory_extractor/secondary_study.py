@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import numpy as np
+from sklearn.metrics import roc_auc_score
 
 from trajectory_extractor.contrastive_directions import LayerwiseContrastiveDirection
 from trajectory_extractor.evaluation import (
     binary_metrics,
-    evaluate_and_predict_prefix_surfaces,
+    evaluate_prefix_surface,
     paired_bootstrap_auc_delta,
+    predict_at_prefix,
+    predict_prefix_probability_surface,
     select_threshold,
     threshold_metrics,
 )
@@ -46,6 +49,7 @@ def evaluate_concept_secondary(
     for name, indices in (("train", train), ("validation", validation), ("test", test)):
         if np.unique(batch.labels[indices]).size < 2:
             raise ValueError(f"{name} split requires both classes")
+    cluster_groups = _test_entity_families(batch, test)
 
     direction = LayerwiseContrastiveDirection().fit(batch, train)
     projection_scores = direction.transform(batch)
@@ -77,32 +81,58 @@ def evaluate_concept_secondary(
 
     method_results: dict[str, dict] = {}
     selected_test_probabilities: dict[str, np.ndarray] = {}
-    test_probability_surfaces: dict[str, np.ndarray] = {}
+    validation_probability_surfaces: dict[str, np.ndarray] = {}
     for name, features in methods.items():
-        surface, validation_probabilities, test_probabilities = (
-            evaluate_and_predict_prefix_surfaces(
-                features,
-                batch.labels,
-                token_mask=batch.token_mask,
-                train_indices=train,
-                validation_indices=validation,
-                test_indices=test,
-            )
+        surface = evaluate_prefix_surface(
+            features,
+            batch.labels,
+            token_mask=batch.token_mask,
+            train_indices=train,
+            test_indices=validation,
         )
         selected = np.unravel_index(int(np.nanargmax(surface.auroc)), surface.auroc.shape)
-        validation_scores = validation_probabilities[:, selected[0], selected[1]]
-        test_scores = test_probabilities[:, selected[0], selected[1]]
+        validation_scores = predict_at_prefix(
+            features,
+            batch.labels,
+            token_mask=batch.token_mask,
+            train_indices=train,
+            predict_indices=validation,
+            token_end=int(selected[0]),
+            layer_end=int(selected[1]),
+        )
         threshold = select_threshold(batch.labels[validation], validation_scores)
+        test_scores = predict_at_prefix(
+            features,
+            batch.labels,
+            token_mask=batch.token_mask,
+            train_indices=train,
+            predict_indices=test,
+            token_end=int(selected[0]),
+            layer_end=int(selected[1]),
+        )
         metrics = binary_metrics(batch.labels[test], test_scores, threshold=threshold)
-        causal_scores = test_probabilities.copy()
-        valid_scores = np.broadcast_to(batch.token_mask[test, :, None], causal_scores.shape)
-        causal_scores[~valid_scores] = -np.inf
-        crossings = threshold_metrics(causal_scores, batch.labels[test], threshold=threshold)
-        positive_crossings = crossings.earliest_crossing[batch.labels[test] == 1]
+        validation_surface = predict_prefix_probability_surface(
+            features,
+            batch.labels,
+            token_mask=batch.token_mask,
+            train_indices=train,
+            predict_indices=validation,
+        )
+        causal_validation_scores = validation_surface.copy()
+        valid_validation_scores = np.broadcast_to(
+            batch.token_mask[validation, :, None], causal_validation_scores.shape
+        )
+        causal_validation_scores[~valid_validation_scores] = -np.inf
+        crossings = threshold_metrics(
+            causal_validation_scores,
+            batch.labels[validation],
+            threshold=threshold,
+        )
+        positive_crossings = crossings.earliest_crossing[batch.labels[validation] == 1]
         observed_crossings = positive_crossings[positive_crossings >= 0]
-        positive_tokens = crossings.earliest_token[batch.labels[test] == 1]
+        positive_tokens = crossings.earliest_token[batch.labels[validation] == 1]
         observed_tokens = positive_tokens[positive_tokens >= 0]
-        positive_layers = crossings.earliest_layer[batch.labels[test] == 1]
+        positive_layers = crossings.earliest_layer[batch.labels[validation] == 1]
         observed_layers = positive_layers[positive_layers >= 0]
         method_results[name] = {
             "selected_token": int(selected[0]),
@@ -113,25 +143,32 @@ def evaluate_concept_secondary(
             "test_auroc": metrics["auroc"],
             "test_auprc": metrics["auprc"],
             "test_calibration_error": metrics["calibration_error"],
-            "test_false_positive_rate": crossings.false_positive_rate,
-            "median_positive_crossing": (
-                float(np.median(observed_crossings)) if observed_crossings.size else None
-            ),
-            "median_positive_crossing_token": (
-                float(np.median(observed_tokens)) if observed_tokens.size else None
-            ),
-            "median_positive_crossing_layer": (
-                float(np.median(observed_layers)) if observed_layers.size else None
-            ),
+            "test_false_positive_rate": metrics["false_positive_rate"],
             "validation_surface": {
                 "auroc": surface.auroc.tolist(),
                 "auprc": surface.auprc.tolist(),
             },
+            "validation_diagnostics": {
+                "false_positive_rate": crossings.false_positive_rate,
+                "median_positive_crossing": (
+                    float(np.median(observed_crossings)) if observed_crossings.size else None
+                ),
+                "median_positive_crossing_token": (
+                    float(np.median(observed_tokens)) if observed_tokens.size else None
+                ),
+                "median_positive_crossing_layer": (
+                    float(np.median(observed_layers)) if observed_layers.size else None
+                ),
+            },
+            "metadata": {
+                "analysis_role": (
+                    "exploratory" if name == "full_metacognitive_monitor" else "confirmatory"
+                )
+            },
         }
         selected_test_probabilities[name] = test_scores.astype(np.float32)
-        test_probability_surfaces[name] = test_probabilities.astype(np.float32)
+        validation_probability_surfaces[name] = validation_surface.astype(np.float32)
 
-    cluster_groups = _bootstrap_groups(batch, test)
     bootstrap = paired_bootstrap_auc_delta(
         batch.labels[test],
         selected_test_probabilities[REGISTERED_CANDIDATE],
@@ -139,7 +176,12 @@ def evaluate_concept_secondary(
         n_bootstrap=n_bootstrap,
         groups=cluster_groups,
     )
-    raw_p = _two_sided_bootstrap_p(bootstrap.samples)
+    raw_p = paired_entity_family_permutation_p(
+        batch.labels[test],
+        selected_test_probabilities[REGISTERED_CANDIDATE],
+        selected_test_probabilities[REGISTERED_BASELINE],
+        groups=cluster_groups,
+    )
     adjusted_p = float(benjamini_hochberg(np.array([raw_p, 1.0]))[0])
     endpoint = secondary_endpoint_status(batch, test)
     supported = bool(
@@ -166,6 +208,7 @@ def evaluate_concept_secondary(
             "lower": bootstrap.lower,
             "upper": bootstrap.upper,
             "raw_p": raw_p,
+            "p_value_method": "paired_entity_family_permutation",
             "bh_adjusted_p": adjusted_p,
             "fdr_family": [
                 "detection_vector_dynamics",
@@ -186,11 +229,15 @@ def evaluate_concept_secondary(
             "centers": direction.centers,
             "vector_means": dynamics_model.means,
             "vector_scales": dynamics_model.scales,
+            "validation_indices": validation.astype(np.int64),
+            "validation_labels": batch.labels[validation].astype(np.int64),
             "test_indices": test.astype(np.int64),
             "test_labels": batch.labels[test].astype(np.int64),
             "contrastive_vector_probability": selected_test_probabilities[REGISTERED_BASELINE],
             "metacognitive_risk_probability": selected_test_probabilities[REGISTERED_CANDIDATE],
-            "metacognitive_risk_surface": test_probability_surfaces[REGISTERED_CANDIDATE],
+            "validation_metacognitive_risk_surface": validation_probability_surfaces[
+                REGISTERED_CANDIDATE
+            ],
             "full_monitor_probability": selected_test_probabilities["full_metacognitive_monitor"],
             "bootstrap_delta_samples": bootstrap.samples,
         },
@@ -246,18 +293,68 @@ def benjamini_hochberg(p_values: np.ndarray) -> np.ndarray:
     return adjusted
 
 
-def _two_sided_bootstrap_p(samples: np.ndarray) -> float:
-    values = np.asarray(samples, dtype=float)
-    lower = (np.count_nonzero(values <= 0.0) + 1) / (values.size + 1)
-    upper = (np.count_nonzero(values >= 0.0) + 1) / (values.size + 1)
-    return float(min(1.0, 2.0 * min(lower, upper)))
+def paired_entity_family_permutation_p(
+    labels: np.ndarray,
+    candidate: np.ndarray,
+    baseline: np.ndarray,
+    *,
+    groups: np.ndarray,
+    n_permutations: int = 2000,
+    seed: int = 42,
+) -> float:
+    """Two-sided paired cluster permutation p-value under method exchangeability."""
+    label_values = np.asarray(labels, dtype=int)
+    candidate_values = np.asarray(candidate, dtype=float)
+    baseline_values = np.asarray(baseline, dtype=float)
+    group_values = np.asarray(groups)
+    if (
+        label_values.ndim != 1
+        or candidate_values.shape != label_values.shape
+        or baseline_values.shape != label_values.shape
+        or group_values.shape != label_values.shape
+        or label_values.size == 0
+    ):
+        raise ValueError("labels, predictions, and groups must be aligned non-empty vectors")
+    if np.unique(label_values).size < 2:
+        raise ValueError("paired permutation requires both classes")
+    if not np.isfinite(candidate_values).all() or not np.isfinite(baseline_values).all():
+        raise ValueError("paired permutation predictions must be finite")
+    if n_permutations < 1:
+        raise ValueError("n_permutations must be positive")
+
+    unique_groups = np.unique(group_values)
+    observed = roc_auc_score(label_values, candidate_values) - roc_auc_score(
+        label_values, baseline_values
+    )
+    rng = np.random.default_rng(seed)
+    at_least_as_extreme = 0
+    for _ in range(n_permutations):
+        permuted_candidate = candidate_values.copy()
+        permuted_baseline = baseline_values.copy()
+        swaps = rng.integers(0, 2, size=unique_groups.size).astype(bool)
+        for should_swap, group in zip(swaps, unique_groups, strict=True):
+            if should_swap:
+                selected = group_values == group
+                permuted_candidate[selected], permuted_baseline[selected] = (
+                    baseline_values[selected],
+                    candidate_values[selected],
+                )
+        statistic = roc_auc_score(label_values, permuted_candidate) - roc_auc_score(
+            label_values, permuted_baseline
+        )
+        at_least_as_extreme += abs(statistic) >= abs(observed)
+    return float((at_least_as_extreme + 1) / (n_permutations + 1))
 
 
-def _bootstrap_groups(batch: TrajectoryBatch, indices: np.ndarray) -> np.ndarray:
-    groups = []
+def _test_entity_families(batch: TrajectoryBatch, indices: np.ndarray) -> np.ndarray:
+    if not batch.provenance:
+        raise ValueError("every test example requires a non-empty entity_family")
+    groups: list[str] = []
     for index in indices:
-        family = batch.provenance[index].get("entity_family") if batch.provenance else None
-        groups.append(str(family) if family else batch.example_ids[index])
+        family = batch.provenance[index].get("entity_family")
+        if not family:
+            raise ValueError("every test example requires a non-empty entity_family")
+        groups.append(str(family))
     return np.asarray(groups)
 
 

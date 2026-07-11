@@ -1,9 +1,12 @@
 import numpy as np
+import pytest
 
+import trajectory_extractor.secondary_study as secondary_study
 from trajectory_extractor.secondary_study import (
     benjamini_hochberg,
     causal_output_uncertainty,
     evaluate_concept_secondary,
+    paired_entity_family_permutation_p,
     secondary_endpoint_status,
 )
 from trajectory_extractor.types import TrajectoryBatch
@@ -58,17 +61,72 @@ def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids():
     }
     assert result["registered_comparison"]["candidate"] == "contrastive_plus_dynamics"
     assert result["registered_comparison"]["baseline"] == "contrastive_vector"
+    assert result["registered_comparison"]["fdr_family"] == [
+        "detection_vector_dynamics",
+        "intervention_capping_vs_triggered_pending",
+    ]
+    assert result["claim_status"] in {
+        "not_evaluable",
+        "not_supported",
+        "provisional_supported",
+    }
     assert result["endpoint_status"]["evaluable"] is True
     assert result["endpoint_status"]["positive_examples"] == 20
     assert result["endpoint_status"]["positive_clusters"] == 20
-    assert all(identifier.startswith("e0") for identifier in result["fit_example_ids"]["direction"])
-    assert all(
-        batch.labels[batch.example_ids.index(identifier)] == 0
-        for identifier in result["fit_example_ids"]["operator"]
-    )
+    train = np.flatnonzero(batch.splits == "train")
+    stable_train = train[batch.labels[train] == 0]
+    assert result["fit_example_ids"]["direction"] == [batch.example_ids[index] for index in train]
+    assert result["fit_example_ids"]["vector_standardization"] == [
+        batch.example_ids[index] for index in train
+    ]
+    assert result["fit_example_ids"]["operator"] == [
+        batch.example_ids[index] for index in stable_train
+    ]
     assert result["artifacts"]["metacognitive_risk_probability"].shape == (40,)
-    assert result["artifacts"]["metacognitive_risk_surface"].shape == (40, 2, 4)
+    assert "metacognitive_risk_surface" not in result["artifacts"]
+    np.testing.assert_array_equal(result["artifacts"]["validation_indices"], np.arange(40, 60))
+    np.testing.assert_array_equal(result["artifacts"]["validation_labels"], batch.labels[40:60])
+    assert result["artifacts"]["validation_metacognitive_risk_surface"].shape == (20, 2, 4)
     assert result["artifacts"]["directions"].shape == (4, 6)
+    assert result["methods"]["full_metacognitive_monitor"]["metadata"]["analysis_role"] == "exploratory"
+    assert result["methods"]["contrastive_plus_dynamics"]["metadata"]["analysis_role"] == "confirmatory"
+    assert (
+        result["methods"]["contrastive_plus_dynamics"]["test_false_positive_rate"]
+        == result["methods"]["contrastive_plus_dynamics"]["test"]["false_positive_rate"]
+    )
+    assert "validation_diagnostics" in result["methods"]["contrastive_plus_dynamics"]
+    assert "median_positive_crossing" not in result["methods"]["contrastive_plus_dynamics"]
+    for value in result["artifacts"].values():
+        if np.issubdtype(np.asarray(value).dtype, np.floating):
+            assert np.isfinite(value).all()
+
+
+def test_secondary_evaluation_only_materializes_validation_surface(monkeypatch):
+    batch = make_batch()
+    validation = np.flatnonzero(batch.splits == "val")
+    surface_calls: list[np.ndarray] = []
+    original_evaluate = secondary_study.evaluate_prefix_surface
+    original_predict_surface = secondary_study.predict_prefix_probability_surface
+
+    def evaluate_validation_surface(*args, **kwargs):
+        surface_calls.append(kwargs["test_indices"])
+        return original_evaluate(*args, **kwargs)
+
+    def predict_validation_surface(*args, **kwargs):
+        surface_calls.append(kwargs["predict_indices"])
+        return original_predict_surface(*args, **kwargs)
+
+    monkeypatch.setattr(secondary_study, "evaluate_prefix_surface", evaluate_validation_surface)
+    monkeypatch.setattr(
+        secondary_study,
+        "predict_prefix_probability_surface",
+        predict_validation_surface,
+    )
+
+    evaluate_concept_secondary(batch, pca_dims=3, n_bootstrap=10)
+
+    assert surface_calls
+    assert all(np.array_equal(indices, validation) for indices in surface_calls)
 
 
 def test_endpoint_is_not_evaluable_when_positive_cluster_count_is_too_small():
@@ -98,6 +156,42 @@ def test_benjamini_hochberg_preserves_order_and_monotonicity():
     adjusted = benjamini_hochberg(np.array([0.01, 0.04, 0.20]))
 
     np.testing.assert_allclose(adjusted, np.array([0.03, 0.06, 0.20]))
+
+
+def test_cluster_permutation_p_value_swaps_entity_families_together():
+    labels = np.array([0, 1, 0, 1])
+    candidate = np.array([0.1, 0.9, 0.2, 0.8])
+    baseline = np.array([0.8, 0.2, 0.7, 0.3])
+    groups = np.array(["family-a", "family-a", "family-b", "family-b"])
+
+    p_value = paired_entity_family_permutation_p(
+        labels,
+        candidate,
+        baseline,
+        groups=groups,
+        n_permutations=8,
+    )
+
+    assert p_value == pytest.approx(5 / 9)
+
+
+def test_secondary_evaluation_rejects_test_example_without_entity_family():
+    batch = make_batch()
+    provenance = list(batch.provenance)
+    provenance[-1] = {"entity_family": ""}
+    missing_family = TrajectoryBatch(
+        example_ids=batch.example_ids,
+        labels=batch.labels,
+        splits=batch.splits,
+        hidden_states=batch.hidden_states,
+        token_mask=batch.token_mask,
+        token_logprobs=batch.token_logprobs,
+        token_entropies=batch.token_entropies,
+        provenance=tuple(provenance),
+    )
+
+    with pytest.raises(ValueError, match="test example.*entity_family"):
+        evaluate_concept_secondary(missing_family, pca_dims=3, n_bootstrap=10)
 
 
 def test_output_uncertainty_is_shifted_to_prior_tokens():
