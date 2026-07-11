@@ -57,6 +57,50 @@ rejected. The term "Remizov-inspired" is retained only if the operator-residual
 method satisfies the frozen improvement criterion. No transformer semigroup
 theorem is claimed.
 
+## Metacognitive Reliability Framing
+
+The user-facing intuition is that the system gives the model an artificial
+"intuition" that something about its current internal computation may be wrong.
+The scientific term is a **metacognitive internal reliability signal**. It does
+not imply consciousness, subjective intuition, or access to an infallible truth
+state.
+
+Object-level computation produces the answer-token representation. A separate
+meta-level monitor estimates failure risk from causal internal evidence:
+
+\[
+m_{\ell,t}
+= P\left(
+Y_{\mathrm{failure}}=1
+\mid
+s_{\leq\ell,\leq t},
+\Delta s_{\leq\ell,\leq t},
+r_{\leq\ell,\leq t},
+u_{<t}
+\right),
+\]
+
+where \(s\) is a contrastive feature score, \(\Delta s\) its layerwise or
+tokenwise change, \(r\) an operator residual, and \(u\) an output-uncertainty
+baseline available before the current token. The score is useful only if it is
+held-out calibrated and adds information beyond output confidence and static
+activation directions.
+
+The experimental controller couples the score to a constrained response:
+
+- low risk: leave the forward pass unchanged;
+- elevated risk: apply validation-selected projection capping or corrective
+  steering;
+- persistent late risk: record an escalation signal suitable for abstention,
+  regeneration, retrieval, or external judging in a later deployment system.
+
+The confirmatory study tests monitoring and activation control only. It does not
+add retrieval or a textual self-reflection loop, because those would introduce
+new information and confound whether the internal signal itself is useful. The
+central test is therefore whether an intuition-like score detects a problem
+before commitment and whether acting on that score improves behavior with
+limited side effects.
+
 ## Constraints
 
 - Local target: `meta-llama/Llama-3.2-1B-Instruct`.
