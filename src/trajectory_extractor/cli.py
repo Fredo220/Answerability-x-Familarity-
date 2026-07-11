@@ -40,6 +40,8 @@ from trajectory_extractor.intervention_study import (
 from trajectory_extractor.model_loader import load_hf_model, unload_model
 from trajectory_extractor.labels import is_refusal, safety_rates
 from trajectory_extractor.report_builder import write_study_report
+from trajectory_extractor.secondary_artifacts import SecondaryArtifactStore
+from trajectory_extractor.secondary_study import evaluate_concept_secondary
 from trajectory_extractor.steering import SteeringHook
 from trajectory_extractor.study import (
     evaluate_detection_ablations,
@@ -95,6 +97,14 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--run-id", default="concept-main")
     evaluate.add_argument("--bootstrap", type=int, default=2000)
     evaluate.add_argument("--endpoint", choices=("exact_error", "binding_error"), default="exact_error")
+
+    evaluate_secondary = subparsers.add_parser("evaluate-secondary-concept")
+    evaluate_secondary.add_argument("--config", default="configs/llama32_1b.json")
+    evaluate_secondary.add_argument("--run-id", default="concept-main")
+    evaluate_secondary.add_argument("--bootstrap", type=int, default=2000)
+    evaluate_secondary.add_argument(
+        "--endpoint", choices=("exact_error", "binding_error"), default="exact_error"
+    )
 
     ablate = subparsers.add_parser("ablate-concept")
     ablate.add_argument("--config", default="configs/llama32_1b.json")
@@ -302,6 +312,76 @@ def main(argv: list[str] | None = None) -> int:
             store.write_json(args.run_id, "metrics", "detection", result)
         _write_detection_figures(store, args.run_id, result, suffix=args.endpoint)
         print(json.dumps({"metrics": str(path), "decision": result["decision"]}))
+        return 0
+    if args.command == "evaluate-secondary-concept":
+        config = ExperimentConfig.from_json(args.config)
+        batch = RunStore(config.output_dir).load_batch(args.run_id, label_key=args.endpoint)
+        started = time.perf_counter()
+        result = evaluate_concept_secondary(
+            batch,
+            pca_dims=config.pca_dims,
+            ridge_alpha=config.ridge_alpha,
+            n_bootstrap=args.bootstrap,
+        )
+        result["runtime"] = {
+            "seconds": time.perf_counter() - started,
+            "max_resident_set_size": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
+        }
+        arrays = result.pop("artifacts")
+        secondary = SecondaryArtifactStore(config.output_dir)
+        secondary.write_npz(
+            args.run_id,
+            "contrastive_vectors",
+            args.endpoint,
+            directions=arrays["directions"],
+            centers=arrays["centers"],
+        )
+        secondary.write_npz(
+            args.run_id,
+            "vector_dynamics",
+            args.endpoint,
+            means=arrays["vector_means"],
+            scales=arrays["vector_scales"],
+        )
+        secondary.write_npz(
+            args.run_id,
+            "comparisons",
+            f"predictions_{args.endpoint}",
+            validation_indices=arrays["validation_indices"],
+            validation_labels=arrays["validation_labels"],
+            test_indices=arrays["test_indices"],
+            test_labels=arrays["test_labels"],
+            contrastive_vector_probability=arrays["contrastive_vector_probability"],
+            metacognitive_risk_probability=arrays["metacognitive_risk_probability"],
+            validation_metacognitive_risk_surface=arrays[
+                "validation_metacognitive_risk_surface"
+            ],
+            full_monitor_probability=arrays["full_monitor_probability"],
+            bootstrap_delta_samples=arrays["bootstrap_delta_samples"],
+        )
+        metrics_path = secondary.write_json(
+            args.run_id,
+            "comparisons",
+            f"detection_{args.endpoint}",
+            result,
+        )
+        _write_secondary_figures(
+            secondary,
+            args.run_id,
+            result,
+            arrays,
+            endpoint=args.endpoint,
+        )
+        print(
+            json.dumps(
+                {
+                    "metrics": str(metrics_path),
+                    "supported": result["registered_comparison"]["supported"],
+                    "evaluable": result["endpoint_status"]["evaluable"],
+                    "claim_status": result["claim_status"],
+                }
+            )
+        )
         return 0
     if args.command == "ablate-concept":
         config = ExperimentConfig.from_json(args.config)
@@ -559,6 +639,29 @@ def _write_detection_figures(
             directory / f"{name}_validation_auroc_{suffix}.png",
             title=f"{name}: validation AUROC",
         )
+
+
+def _write_secondary_figures(
+    store: SecondaryArtifactStore,
+    run_id: str,
+    result: dict,
+    arrays: dict[str, np.ndarray],
+    *,
+    endpoint: str,
+) -> None:
+    from trajectory_extractor.plotting import plot_class_risk_gap, plot_method_comparison
+
+    directory = store._path(run_id, "comparisons", "figures", "").parent / "figures"
+    plot_method_comparison(
+        {name: values["test_auroc"] for name, values in result["methods"].items()},
+        directory / f"method_comparison_{endpoint}.png",
+    )
+    plot_class_risk_gap(
+        arrays["validation_metacognitive_risk_surface"],
+        arrays["validation_labels"],
+        directory / f"validation_metacognitive_risk_gap_{endpoint}.png",
+        title="Validation metacognitive risk gap",
+    )
 
 
 def _persist_detection_predictions(
