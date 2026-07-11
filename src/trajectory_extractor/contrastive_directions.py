@@ -22,26 +22,35 @@ class LayerwiseContrastiveDirection:
         if set(np.unique(labels)) != {0, 1}:
             raise ValueError("contrastive direction requires both classes")
 
-        pooled = _pool_valid_tokens_per_example(batch)
-        selected = pooled[indices]
+        pooled = _pool_valid_tokens_per_example(batch, indices)
+        selected = pooled
         risk_mean = selected[labels == 1].mean(axis=0)
         control_mean = selected[labels == 0].mean(axis=0)
         raw = risk_mean - control_mean
+        centers = selected.mean(axis=0)
+        if not np.isfinite(raw).all() or not np.isfinite(centers).all():
+            raise ValueError("fitted contrastive state must be finite")
         norms = np.linalg.norm(raw, axis=1, keepdims=True)
         if np.any(norms <= self.epsilon):
             raise ValueError("contrastive direction has a near-zero layer")
 
         self.directions = (raw / norms).astype(np.float32)
-        self.centers = selected.mean(axis=0).astype(np.float32)
+        self.centers = centers.astype(np.float32)
+        if not np.isfinite(self.directions).all() or not np.isfinite(self.centers).all():
+            raise ValueError("fitted contrastive state must be finite")
         self.fit_example_ids = tuple(batch.example_ids[index] for index in indices)
         return self
 
     def transform(self, batch: TrajectoryBatch) -> np.ndarray:
         if not self.fit_example_ids:
             raise RuntimeError("contrastive direction must be fitted before transform")
+        if not np.isfinite(self.directions).all() or not np.isfinite(self.centers).all():
+            raise ValueError("fitted contrastive state must be finite")
         expected = batch.hidden_states.shape[2:]
         if self.directions.shape != expected or self.centers.shape != expected:
             raise ValueError("batch layer and hidden dimensions do not match fitted direction")
+        if not np.isfinite(batch.hidden_states[batch.token_mask]).all():
+            raise ValueError("finite valid-token activations are required for transform")
         scores = np.zeros(batch.hidden_states.shape[:3], dtype=np.float32)
         for layer in range(batch.hidden_states.shape[2]):
             current = batch.hidden_states[:, :, layer, :].astype(np.float32)
@@ -53,18 +62,27 @@ class LayerwiseContrastiveDirection:
                 optimize=True,
             )
         scores[~batch.token_mask] = 0.0
+        if not np.isfinite(scores).all():
+            raise ValueError("transform produced non-finite scores")
         return scores
 
 
-def _pool_valid_tokens_per_example(batch: TrajectoryBatch) -> np.ndarray:
-    counts = batch.token_mask.sum(axis=1)
+def _pool_valid_tokens_per_example(
+    batch: TrajectoryBatch,
+    indices: np.ndarray,
+) -> np.ndarray:
+    hidden_states = batch.hidden_states[indices]
+    token_mask = batch.token_mask[indices]
+    if not np.isfinite(hidden_states[token_mask]).all():
+        raise ValueError("finite valid-token activations are required for fitting")
+    counts = token_mask.sum(axis=1)
     if np.any(counts == 0):
-        raise ValueError("every example needs at least one valid token")
-    n_examples, _, n_layers, hidden_dim = batch.hidden_states.shape
+        raise ValueError("every selected example needs at least one valid token")
+    n_examples, _, n_layers, hidden_dim = hidden_states.shape
     pooled = np.empty((n_examples, n_layers, hidden_dim), dtype=np.float32)
     for layer in range(n_layers):
-        current = batch.hidden_states[:, :, layer, :].astype(np.float32)
-        current *= batch.token_mask[:, :, None]
+        current = hidden_states[:, :, layer, :].astype(np.float32)
+        current *= token_mask[:, :, None]
         pooled[:, layer, :] = current.sum(axis=1) / counts[:, None]
     return pooled
 

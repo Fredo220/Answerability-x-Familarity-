@@ -46,10 +46,31 @@ def test_direction_is_unit_length_and_risk_projection_is_larger():
 
 
 def test_each_example_is_pooled_before_class_means_are_computed():
-    batch = make_batch()
-    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+    hidden = np.zeros((4, 3, 1, 1), dtype=np.float32)
+    hidden[0, :, 0, 0] = 0.0
+    hidden[1, :, 0, 0] = 4.0
+    hidden[2, :, 0, 0] = 10.0
+    hidden[3, :, 0, 0] = 12.0
+    batch = TrajectoryBatch(
+        example_ids=("c0", "c1", "r0", "r1"),
+        labels=np.array([0, 0, 1, 1]),
+        splits=np.array(["train", "train", "train", "train"]),
+        hidden_states=hidden,
+        token_mask=np.array(
+            [
+                [1, 0, 0],
+                [1, 1, 1],
+                [1, 0, 0],
+                [1, 1, 1],
+            ],
+            dtype=bool,
+        ),
+        token_logprobs=np.zeros((4, 3), dtype=np.float32),
+        token_entropies=np.zeros((4, 3), dtype=np.float32),
+    )
+    model = LayerwiseContrastiveDirection().fit(batch, np.arange(4))
 
-    np.testing.assert_allclose(model.centers[:, 0], 1.0)
+    np.testing.assert_allclose(model.centers[:, 0], 6.5)
 
 
 def test_fit_rejects_test_examples_and_missing_classes():
@@ -59,3 +80,30 @@ def test_fit_rejects_test_examples_and_missing_classes():
         LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 5]))
     with pytest.raises(ValueError, match="both classes"):
         LayerwiseContrastiveDirection().fit(batch, np.array([0, 1]))
+
+
+def test_malformed_held_out_examples_do_not_affect_train_only_fit():
+    batch = make_batch()
+    batch.token_mask[4] = False
+    batch.hidden_states[5, 0, 0, 0] = np.nan
+
+    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+
+    np.testing.assert_allclose(model.centers[:, 0], 1.0)
+
+
+def test_fit_rejects_non_finite_valid_train_activation():
+    batch = make_batch()
+    batch.hidden_states[0, 0, 0, 0] = np.nan
+
+    with pytest.raises(ValueError, match="finite valid-token activations"):
+        LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+
+
+def test_transform_rejects_non_finite_valid_activation():
+    batch = make_batch()
+    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+    batch.hidden_states[0, 0, 0, 0] = np.inf
+
+    with pytest.raises(ValueError, match="finite valid-token activations"):
+        model.transform(batch)
