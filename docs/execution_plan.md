@@ -100,6 +100,34 @@ damaging matched controls.
 7. Apply the frozen acceptance rule: dynamics gain at least 0.03 AUROC over the
    best simple baseline and paired 95 percent CI excludes zero.
 
+### Stage 3b: Prospective metacognitive feature-flow monitor
+
+1. Keep `docs/preregistration.md` and `evaluate-concept` unchanged.
+2. Fit centered risk-minus-control activation directions on training examples only.
+3. Standardize direction projections per layer with training-only statistics.
+4. Derive causal cross-layer and prior-token differences.
+5. Select the prefix and threshold on validation only. Validation receives full
+   prefix probability surfaces and crossing diagnostics; test receives only the
+   frozen selected-prefix probability.
+6. Compare `contrastive_plus_dynamics` against `contrastive_vector` once on test.
+   The confirmatory p-value is a paired entity-family permutation test with seed
+   42 and 2,000 permutations. Cluster bootstrap is used for confidence intervals
+   only.
+7. Persist results under `runs/concept-main/secondary/`; never overwrite primary
+   metrics. Write the validation figure as
+   `validation_metacognitive_risk_gap_<endpoint>.png`, not as a test risk surface.
+8. Mark the result `not_evaluable` unless test has 20 positive examples across 10
+   independent entity families. Even when supported, mark the positive result
+   provisional until the frozen falsification controls and external transfer are
+   completed.
+
+This stage validates a non-anthropomorphic monitoring signal only. The scientific
+term is a metacognitive internal reliability signal: a model-derived risk score,
+not consciousness, introspection, ground-truth access, or a proof of failure. The
+user-facing phrase "artificial intuition" is metaphorical. External-fact transfer,
+activation control, JailbreakBench transfer, and multi-model replication require
+separate plans before any broad reliability or safety claim.
+
 ## Stage 4: Concept ablations and transfer - pending
 
 - Full trajectory versus last token.

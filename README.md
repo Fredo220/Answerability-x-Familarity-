@@ -64,10 +64,31 @@ The concept track is executed in four explicit stages:
 feature-dynamics extract-concept --run-id concept-main --pilot-per-split 10
 feature-dynamics extract-concept --run-id concept-main
 feature-dynamics evaluate-concept --run-id concept-main
+feature-dynamics evaluate-secondary-concept \
+  --config configs/llama32_1b.json \
+  --run-id concept-main \
+  --bootstrap 2000 \
+  --endpoint exact_error
 feature-dynamics ablate-concept --run-id concept-main
 feature-dynamics intervene-concept --baseline-run-id concept-main
 feature-dynamics prepare-circuit-followup --run-id concept-main
 ```
+
+The secondary command evaluates a **metacognitive internal reliability signal**:
+a causal risk score derived from a contrastive error direction and its evolution
+across answer-token and layer prefixes. "Artificial intuition" is a user-facing
+metaphor only. The score does not imply consciousness or ground-truth access, and
+it is not a failure proof. The registered question is whether dynamics add held-out
+predictive value beyond the same contrastive direction used statically.
+
+The secondary analysis uses a strict holdout: validation receives full prefix
+probability surfaces and crossing diagnostics for selection, while test receives
+only the frozen selected-prefix probability. Its confirmatory p-value is a paired
+entity-family permutation test with seed 42 and 2,000 permutations; the cluster
+bootstrap supplies confidence intervals only. The validation figure is named
+`validation_metacognitive_risk_gap_<endpoint>.png`. A positive result is
+provisional until the frozen falsification controls and external transfer are
+completed.
 
 The pilot and full command share a run ID. Completed artifacts are verified and
 skipped, so the full command resumes rather than repeats the pilot. Extraction
