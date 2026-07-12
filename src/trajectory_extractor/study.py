@@ -18,7 +18,6 @@ from trajectory_extractor.evaluation import (
     evaluate_and_predict_prefix_surfaces,
     paired_bootstrap_auc_delta,
     select_threshold,
-    threshold_metrics,
 )
 from trajectory_extractor.extraction import generate_and_extract
 from trajectory_extractor.features import compute_raw_dynamics
@@ -357,15 +356,6 @@ def evaluate_detection_methods(
         probabilities = test_surface[:, best_index[0], best_index[1]]
         threshold = select_threshold(batch.labels[val], val_selected)
         metrics = binary_metrics(batch.labels[test], probabilities, threshold=threshold)
-        causal_scores = test_surface.copy()
-        causal_scores[~batch.token_mask[test, :, None].repeat(causal_scores.shape[2], axis=2)] = -np.inf
-        crossing = threshold_metrics(causal_scores, batch.labels[test], threshold=threshold)
-        positive_crossings = crossing.earliest_crossing[batch.labels[test] == 1]
-        observed_crossings = positive_crossings[positive_crossings >= 0]
-        positive_tokens = crossing.earliest_token[batch.labels[test] == 1]
-        observed_tokens = positive_tokens[positive_tokens >= 0]
-        positive_layers = crossing.earliest_layer[batch.labels[test] == 1]
-        observed_layers = positive_layers[positive_layers >= 0]
         test_predictions[name] = probabilities
         method_results[name] = {
             "selected_token": int(best_index[0]),
@@ -376,16 +366,13 @@ def evaluate_detection_methods(
             "test_auroc": metrics["auroc"],
             "test_auprc": metrics["auprc"],
             "test_calibration_error": metrics["calibration_error"],
-            "test_false_positive_rate": crossing.false_positive_rate,
-            "median_positive_crossing": (
-                float(np.median(observed_crossings)) if observed_crossings.size else None
-            ),
-            "median_positive_crossing_token": (
-                float(np.median(observed_tokens)) if observed_tokens.size else None
-            ),
-            "median_positive_crossing_layer": (
-                float(np.median(observed_layers)) if observed_layers.size else None
-            ),
+            "test_false_positive_rate": metrics["false_positive_rate"],
+            "validation_diagnostics": {
+                "status": "not_interpretable",
+                "reason": (
+                    "independently_fitted_prefix_classifiers_do_not_share_a_transferable_threshold"
+                ),
+            },
             "validation_surface": {
                 "auroc": validation.auroc.tolist(),
                 "auprc": validation.auprc.tolist(),

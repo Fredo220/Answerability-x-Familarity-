@@ -37,9 +37,10 @@ does not demonstrate early warning or artificial intuition.
 
 The validation probability surface contains independently fitted prefix
 classifiers. A threshold selected for one classifier is not transferable to a
-different prefix cell. Consequently, the crossing diagnostic is
-`not_interpretable`; its previous numeric crossing output is invalid evidence and
-is not used to make a timing claim.
+different prefix cell. Consequently, the primary and secondary crossing
+diagnostics are `not_interpretable`. Numeric crossing diagnostics in both legacy
+primary and secondary artifacts are invalid evidence and are ignored; they are
+not used to make a timing claim.
 
 The exploratory full monitor AUROC of 0.9535655058043118 is descriptive and
 non-confirmatory. It does not alter the registered negative finding.

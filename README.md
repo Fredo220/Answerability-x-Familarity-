@@ -64,22 +64,27 @@ The preparation step verifies all official indices and semantic pair keys,
 uses `Goal` rather than the short `Behavior` label as the benign prompt, and
 writes a checksum manifest next to the frozen study file.
 
-## End-to-end runs
+## Fresh Or Replication Runs
+
+Do not use the following commands for the frozen `concept-main` run. It must not
+be rerun; its tracked frozen result is [docs/results.md](docs/results.md). Use a
+new run ID for a fresh or replication study, represented below by
+`<NEW_CONCEPT_RUN_ID>`.
 
 The concept track is executed in four explicit stages:
 
 ```bash
-feature-dynamics extract-concept --run-id concept-main --pilot-per-split 10
-feature-dynamics extract-concept --run-id concept-main
-feature-dynamics evaluate-concept --run-id concept-main
+feature-dynamics extract-concept --run-id <NEW_CONCEPT_RUN_ID> --pilot-per-split 10
+feature-dynamics extract-concept --run-id <NEW_CONCEPT_RUN_ID>
+feature-dynamics evaluate-concept --run-id <NEW_CONCEPT_RUN_ID>
 feature-dynamics evaluate-secondary-concept \
   --config configs/llama32_1b.json \
-  --run-id concept-main \
+  --run-id <NEW_CONCEPT_RUN_ID> \
   --bootstrap 2000 \
   --endpoint exact_error
-feature-dynamics ablate-concept --run-id concept-main
-feature-dynamics intervene-concept --baseline-run-id concept-main
-feature-dynamics prepare-circuit-followup --run-id concept-main
+feature-dynamics ablate-concept --run-id <NEW_CONCEPT_RUN_ID>
+feature-dynamics intervene-concept --baseline-run-id <NEW_CONCEPT_RUN_ID>
+feature-dynamics prepare-circuit-followup --run-id <NEW_CONCEPT_RUN_ID>
 ```
 
 The secondary command evaluates a **metacognitive internal reliability signal**:
@@ -111,7 +116,7 @@ The source-documented transfer file must contain 200 JSONL rows with `id`,
 ```bash
 feature-dynamics prepare-real-transfer
 feature-dynamics extract-transfer data/external/real_transfer.jsonl
-feature-dynamics evaluate-transfer --reference-run-id concept-main --run-id real-transfer
+feature-dynamics evaluate-transfer --reference-run-id <NEW_CONCEPT_RUN_ID> --run-id real-transfer
 ```
 
 Transfer evaluation fits every learned component and selects its prefix on the

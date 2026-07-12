@@ -46,6 +46,34 @@ def test_detection_pipeline_runs_end_to_end_on_local_tiny_batch():
         assert 0.0 <= method["test_auprc"] <= 1.0
 
 
+def test_primary_evaluation_marks_cross_cell_threshold_diagnostics_not_interpretable():
+    rng = np.random.default_rng(27)
+    labels = np.array([0, 1] * 18)
+    batch = TrajectoryBatch(
+        example_ids=tuple(f"example-{index}" for index in range(len(labels))),
+        labels=labels,
+        splits=np.array(["train"] * 20 + ["val"] * 8 + ["test"] * 8),
+        hidden_states=rng.normal(size=(len(labels), 2, 4, 8)).astype(np.float16),
+        token_mask=np.ones((len(labels), 2), dtype=bool),
+        token_logprobs=rng.normal(size=(len(labels), 2)).astype(np.float32),
+        token_entropies=np.abs(rng.normal(size=(len(labels), 2))).astype(np.float32),
+    )
+
+    result = evaluate_detection_methods(batch, pca_dims=3, n_bootstrap=20)
+
+    for method in result["methods"].values():
+        assert method["validation_diagnostics"] == {
+            "status": "not_interpretable",
+            "reason": (
+                "independently_fitted_prefix_classifiers_do_not_share_a_transferable_threshold"
+            ),
+        }
+        assert method["test_false_positive_rate"] == method["test"]["false_positive_rate"]
+        assert "median_positive_crossing" not in method
+        assert "median_positive_crossing_token" not in method
+        assert "median_positive_crossing_layer" not in method
+
+
 def test_real_transfer_batch_uses_only_concept_train_and_validation_for_fitting():
     rng = np.random.default_rng(2)
 
