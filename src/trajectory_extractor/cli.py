@@ -40,7 +40,10 @@ from trajectory_extractor.intervention_study import (
 from trajectory_extractor.model_loader import load_hf_model, unload_model
 from trajectory_extractor.labels import is_refusal, safety_rates
 from trajectory_extractor.report_builder import write_study_report
-from trajectory_extractor.secondary_artifacts import SecondaryArtifactStore
+from trajectory_extractor.secondary_artifacts import (
+    SecondaryArtifactStore,
+    build_analysis_provenance,
+)
 from trajectory_extractor.secondary_study import evaluate_concept_secondary
 from trajectory_extractor.steering import SteeringHook
 from trajectory_extractor.study import (
@@ -315,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "evaluate-secondary-concept":
         config = ExperimentConfig.from_json(args.config)
+        secondary = SecondaryArtifactStore(config.output_dir)
+        secondary.assert_incomplete(args.run_id, args.endpoint)
         batch = RunStore(config.output_dir).load_batch(args.run_id, label_key=args.endpoint)
         started = time.perf_counter()
         result = evaluate_concept_secondary(
@@ -327,8 +332,17 @@ def main(argv: list[str] | None = None) -> int:
             "seconds": time.perf_counter() - started,
             "max_resident_set_size": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
         }
+        provenance = _secondary_analysis_provenance(
+            config=config,
+            config_path=args.config,
+            run_id=args.run_id,
+            endpoint=args.endpoint,
+            bootstrap_count=args.bootstrap,
+            result=result,
+        )
+        result["analysis_provenance"] = provenance
+        result["analysis_id"] = provenance["analysis_id"]
         arrays = result.pop("artifacts")
-        secondary = SecondaryArtifactStore(config.output_dir)
         secondary.write_npz(
             args.run_id,
             "contrastive_vectors",
@@ -370,6 +384,12 @@ def main(argv: list[str] | None = None) -> int:
             result,
             arrays,
             endpoint=args.endpoint,
+        )
+        secondary.write_completion(
+            args.run_id,
+            args.endpoint,
+            analysis_id=provenance["analysis_id"],
+            metrics_path=metrics_path,
         )
         print(
             json.dumps(
@@ -658,6 +678,41 @@ def _write_secondary_figures(
         arrays["validation_labels"],
         directory / f"validation_metacognitive_risk_gap_{endpoint}.png",
         title="Validation metacognitive risk gap",
+    )
+
+
+def _secondary_analysis_provenance(
+    *,
+    config: ExperimentConfig,
+    config_path: str | Path,
+    run_id: str,
+    endpoint: str,
+    bootstrap_count: int,
+    result: dict,
+) -> dict:
+    comparison = result.get("registered_comparison")
+    if not isinstance(comparison, dict):
+        raise ValueError("secondary result is missing registered comparison provenance")
+    required = ("p_value_method", "permutation_seed", "n_permutations", "fdr_family")
+    if any(key not in comparison for key in required):
+        raise ValueError("secondary result has incomplete permutation provenance")
+    fdr_family = comparison["fdr_family"]
+    if not isinstance(fdr_family, list):
+        raise ValueError("secondary FDR family must be an ordered list")
+    repo_root = Path(__file__).resolve().parents[2]
+    return build_analysis_provenance(
+        repo_root=repo_root,
+        preregistration_path=repo_root / "docs" / "preregistration.md",
+        config_path=Path(config_path).resolve(),
+        run_root=(Path(config.output_dir) / run_id).resolve(),
+        endpoint=endpoint,
+        pca_dims=config.pca_dims,
+        ridge_alpha=config.ridge_alpha,
+        bootstrap_count=bootstrap_count,
+        permutation_method=comparison["p_value_method"],
+        permutation_seed=comparison["permutation_seed"],
+        permutation_count=comparison["n_permutations"],
+        fdr_family=fdr_family,
     )
 
 

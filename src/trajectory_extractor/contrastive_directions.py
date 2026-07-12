@@ -24,20 +24,28 @@ class LayerwiseContrastiveDirection:
 
         pooled = _pool_valid_tokens_per_example(batch, indices)
         selected = pooled
-        risk_mean = selected[labels == 1].mean(axis=0)
-        control_mean = selected[labels == 0].mean(axis=0)
+        risk_mean = selected[labels == 1].mean(axis=0, dtype=np.float64)
+        control_mean = selected[labels == 0].mean(axis=0, dtype=np.float64)
         raw = risk_mean - control_mean
-        centers = selected.mean(axis=0)
+        centers = selected.mean(axis=0, dtype=np.float64)
         if not np.isfinite(raw).all() or not np.isfinite(centers).all():
             raise ValueError("fitted contrastive state must be finite")
-        norms = np.linalg.norm(raw, axis=1, keepdims=True)
-        if np.any(norms <= self.epsilon):
-            raise ValueError("contrastive direction has a near-zero layer")
+        with np.errstate(over="ignore", invalid="ignore"):
+            norms = np.linalg.norm(raw, axis=1, keepdims=True)
+        if not np.isfinite(norms).all() or np.any(norms <= self.epsilon):
+            raise ValueError("contrastive direction requires a finite positive norm per layer")
 
         self.directions = (raw / norms).astype(np.float32)
         self.centers = centers.astype(np.float32)
         if not np.isfinite(self.directions).all() or not np.isfinite(self.centers).all():
             raise ValueError("fitted contrastive state must be finite")
+        cast_norms = np.linalg.norm(self.directions.astype(np.float64), axis=1)
+        if (
+            not np.isfinite(cast_norms).all()
+            or np.any(cast_norms <= 0.0)
+            or not np.allclose(cast_norms, 1.0, rtol=1e-6, atol=1e-6)
+        ):
+            raise ValueError("normalized float32 directions must remain finite and unit length")
         self.fit_example_ids = tuple(batch.example_ids[index] for index in indices)
         return self
 

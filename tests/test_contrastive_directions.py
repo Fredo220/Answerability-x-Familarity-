@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import trajectory_extractor.contrastive_directions as contrastive_directions
 from trajectory_extractor.contrastive_directions import LayerwiseContrastiveDirection
 from trajectory_extractor.types import TrajectoryBatch
 
@@ -128,3 +129,39 @@ def test_masked_non_finite_transform_padding_produces_zero_scores():
     scores = model.transform(batch)
 
     assert np.all(scores[~batch.token_mask] == 0.0)
+
+
+def test_fit_uses_float64_means_and_norms_before_cast(monkeypatch):
+    batch = make_batch()
+    pooled = np.zeros((4, 2, 4), dtype=np.float32)
+    pooled[2:, :, :] = np.float32(1e20)
+    monkeypatch.setattr(
+        contrastive_directions,
+        "_pool_valid_tokens_per_example",
+        lambda batch, indices: pooled,
+    )
+
+    model = LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
+
+    assert model.directions.dtype == np.float32
+    assert np.isfinite(model.directions).all()
+    np.testing.assert_allclose(
+        np.linalg.norm(model.directions.astype(np.float64), axis=1),
+        1.0,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+
+def test_fit_rejects_non_finite_float64_norm(monkeypatch):
+    batch = make_batch()
+    pooled = np.zeros((4, 2, 4), dtype=np.float64)
+    pooled[2:, :, :] = 8e307
+    monkeypatch.setattr(
+        contrastive_directions,
+        "_pool_valid_tokens_per_example",
+        lambda batch, indices: pooled,
+    )
+
+    with pytest.raises(ValueError, match="finite positive norm"):
+        LayerwiseContrastiveDirection().fit(batch, np.array([0, 1, 2, 3]))
