@@ -128,6 +128,7 @@ def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypa
     assert (root / "contrastive_vectors" / "exact_error.npz").exists()
     assert (root / "vector_dynamics" / "exact_error.npz").exists()
     assert (root / "comparisons" / "completion_exact_error.json").exists()
+    assert not (root / "comparisons" / "claim_exact_error.json").exists()
     assert not (output_dir / "concept-main" / "metrics" / "detection.json").exists()
     assert not (
         output_dir / "concept-main" / "metrics" / "detection_exact_error.json"
@@ -203,6 +204,77 @@ def test_existing_legacy_metrics_refuse_rerun_before_batch_load(tmp_path, monkey
                 "exact_error",
             ]
         )
+    assert not (
+        output_dir
+        / "concept-main"
+        / "secondary"
+        / "comparisons"
+        / "claim_exact_error.json"
+    ).exists()
+
+
+def test_concurrent_claim_refuses_before_batch_load(tmp_path, monkeypatch):
+    config_path, output_dir = _write_config_and_run_provenance(tmp_path)
+    store = SecondaryArtifactStore(output_dir)
+    claim = store.acquire_claim("concept-main", "exact_error")
+
+    def fail_if_loaded(*args, **kwargs):
+        raise AssertionError("contended endpoint must not load its batch")
+
+    monkeypatch.setattr(cli.RunStore, "load_batch", fail_if_loaded)
+
+    with pytest.raises(FileExistsError, match="claim_exact_error.json"):
+        cli.main(
+            [
+                "evaluate-secondary-concept",
+                "--config",
+                str(config_path),
+                "--run-id",
+                "concept-main",
+                "--endpoint",
+                "exact_error",
+            ]
+        )
+
+    assert claim.path.exists()
+
+
+def test_failed_evaluation_leaves_claim_as_permanent_block(tmp_path, monkeypatch):
+    config_path, output_dir = _write_config_and_run_provenance(tmp_path)
+    monkeypatch.setattr(cli.RunStore, "load_batch", lambda *args, **kwargs: object())
+
+    def fail_evaluation(*args, **kwargs):
+        raise RuntimeError("injected evaluation failure")
+
+    monkeypatch.setattr(cli, "evaluate_concept_secondary", fail_evaluation)
+    command = [
+        "evaluate-secondary-concept",
+        "--config",
+        str(config_path),
+        "--run-id",
+        "concept-main",
+        "--endpoint",
+        "exact_error",
+    ]
+
+    with pytest.raises(RuntimeError, match="injected evaluation failure"):
+        cli.main(command)
+
+    claim = (
+        output_dir
+        / "concept-main"
+        / "secondary"
+        / "comparisons"
+        / "claim_exact_error.json"
+    )
+    assert claim.exists()
+
+    def fail_if_loaded(*args, **kwargs):
+        raise AssertionError("failed claimed endpoint must not reload its batch")
+
+    monkeypatch.setattr(cli.RunStore, "load_batch", fail_if_loaded)
+    with pytest.raises(FileExistsError, match="claim_exact_error.json"):
+        cli.main(command)
 
 
 def test_completion_marker_is_not_written_when_figure_generation_fails(tmp_path, monkeypatch):
@@ -235,6 +307,7 @@ def test_completion_marker_is_not_written_when_figure_generation_fails(tmp_path,
     comparisons = output_dir / "concept-main" / "secondary" / "comparisons"
     assert (comparisons / "detection_exact_error.json").exists()
     assert not (comparisons / "completion_exact_error.json").exists()
+    assert (comparisons / "claim_exact_error.json").exists()
 
 
 def test_secondary_figures_stay_within_artifact_namespace(tmp_path):

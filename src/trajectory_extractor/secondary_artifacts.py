@@ -4,8 +4,12 @@ import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import tempfile
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +23,14 @@ _SECTIONS = {
 }
 _SAFE_ID = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+@dataclass(frozen=True)
+class EndpointClaim:
+    path: Path
+    run_id: str
+    endpoint: str
+    claim_id: str
 
 
 class SecondaryArtifactStore:
@@ -72,6 +84,48 @@ class SecondaryArtifactStore:
                     f"secondary endpoint is immutable after metrics or completion: {path}"
                 )
 
+    def acquire_claim(self, run_id: str, endpoint: str) -> EndpointClaim:
+        self.assert_incomplete(run_id, endpoint)
+        path = self._path(run_id, "comparisons", f"claim_{endpoint}", ".json")
+        claim = EndpointClaim(
+            path=path,
+            run_id=run_id,
+            endpoint=endpoint,
+            claim_id=uuid.uuid4().hex,
+        )
+        payload = json.dumps(
+            {
+                "claim_id": claim.claim_id,
+                "run_id": run_id,
+                "endpoint": endpoint,
+                "acquired_at": datetime.now(timezone.utc).isoformat(),
+                "hostname": socket.gethostname(),
+                "pid": os.getpid(),
+                "status": "in_progress",
+            },
+            indent=2,
+            sort_keys=True,
+        ).encode("utf-8")
+        _exclusive_write_bytes(path, payload)
+        self.assert_incomplete(run_id, endpoint)
+        return claim
+
+    def release_claim(self, claim: EndpointClaim) -> None:
+        expected = self._path(
+            claim.run_id, "comparisons", f"claim_{claim.endpoint}", ".json"
+        )
+        if claim.path != expected:
+            raise ValueError("claim path does not match its endpoint")
+        completion = self._path(
+            claim.run_id, "comparisons", f"completion_{claim.endpoint}", ".json"
+        )
+        if not completion.is_file():
+            raise RuntimeError("completion marker must exist before releasing a claim")
+        payload = _read_json_object(claim.path, "endpoint claim")
+        if payload.get("claim_id") != claim.claim_id:
+            raise ValueError("endpoint claim ownership does not match")
+        claim.path.unlink()
+
     def write_completion(
         self,
         run_id: str,
@@ -88,15 +142,31 @@ class SecondaryArtifactStore:
         metrics = Path(metrics_path).resolve()
         if metrics != expected or not metrics.is_file():
             raise ValueError("metrics_path must be the endpoint's existing metrics file")
-        return self.write_json(
-            run_id,
-            "comparisons",
-            f"completion_{endpoint}",
+        metrics_payload = _read_json_object(metrics, "secondary metrics")
+        provenance = metrics_payload.get("analysis_provenance")
+        if not isinstance(provenance, dict):
+            raise ValueError("secondary metrics must contain analysis_provenance")
+        metrics_id = metrics_payload.get("analysis_id")
+        provenance_id = provenance.get("analysis_id")
+        if metrics_id != analysis_id or provenance_id != analysis_id:
+            raise ValueError(
+                "metrics, provenance, and completion analysis IDs must match"
+            )
+        if analysis_fingerprint(provenance) != analysis_id:
+            raise ValueError("analysis ID does not match the canonical provenance fingerprint")
+        destination = self._path(
+            run_id, "comparisons", f"completion_{endpoint}", ".json"
+        )
+        payload = json.dumps(
             {
                 "analysis_id": analysis_id,
                 "metrics_sha256": _sha256(metrics),
             },
-        )
+            indent=2,
+            sort_keys=True,
+        ).encode("utf-8")
+        _exclusive_write_bytes(destination, payload)
+        return destination
 
     def _path(self, run_id: str, section: str, name: str, suffix: str) -> Path:
         if section not in _SECTIONS:
@@ -128,6 +198,19 @@ def _atomic_write_bytes(destination: Path, payload: bytes) -> None:
     finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()
+
+
+def _exclusive_write_bytes(destination: Path, payload: bytes) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(
+        destination,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o644,
+    )
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def build_analysis_provenance(
@@ -197,8 +280,27 @@ def build_analysis_provenance(
             "fdr_family": list(fdr_family),
         },
     }
-    provenance["analysis_id"] = hashlib.sha256(_canonical_json(provenance)).hexdigest()
+    provenance["analysis_id"] = analysis_fingerprint(provenance)
     return provenance
+
+
+def analysis_fingerprint(provenance: dict) -> str:
+    if not isinstance(provenance, dict):
+        raise ValueError("analysis provenance must be a JSON object")
+    semantic = _semantic_provenance(provenance)
+    return hashlib.sha256(_canonical_json(semantic)).hexdigest()
+
+
+def _semantic_provenance(value):
+    if isinstance(value, dict):
+        return {
+            key: _semantic_provenance(item)
+            for key, item in value.items()
+            if key not in {"analysis_id", "path", "manifest_path"}
+        }
+    if isinstance(value, list):
+        return [_semantic_provenance(item) for item in value]
+    return value
 
 
 def _repository_provenance(repo_root: Path) -> dict:

@@ -319,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "evaluate-secondary-concept":
         config = ExperimentConfig.from_json(args.config)
         secondary = SecondaryArtifactStore(config.output_dir)
-        secondary.assert_incomplete(args.run_id, args.endpoint)
+        claim = secondary.acquire_claim(args.run_id, args.endpoint)
         batch = RunStore(config.output_dir).load_batch(args.run_id, label_key=args.endpoint)
         started = time.perf_counter()
         result = evaluate_concept_secondary(
@@ -391,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
             analysis_id=provenance["analysis_id"],
             metrics_path=metrics_path,
         )
+        secondary.release_claim(claim)
         print(
             json.dumps(
                 {

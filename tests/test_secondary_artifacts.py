@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,58 @@ import pytest
 
 import trajectory_extractor.secondary_artifacts as secondary_artifacts
 from trajectory_extractor.secondary_artifacts import SecondaryArtifactStore
+
+
+def _metrics_with_provenance(*, path_prefix: str = "/local/one"):
+    provenance = {
+        "schema_version": 1,
+        "implementation": {
+            "git_commit": "commit",
+            "tracked_dirty": False,
+            "source_sha256": "a" * 64,
+        },
+        "inputs": {
+            "preregistration": {
+                "path": f"{path_prefix}/docs/preregistration.md",
+                "sha256": "b" * 64,
+            },
+            "config": {
+                "path": f"{path_prefix}/configs/model.json",
+                "sha256": "c" * 64,
+            },
+            "dataset": {
+                "path": f"{path_prefix}/data/concept.jsonl",
+                "sha256": "d" * 64,
+                "manifest_path": f"{path_prefix}/data/concept.jsonl.manifest.json",
+                "manifest_sha256": "e" * 64,
+            },
+        },
+        "model": {
+            "id": "test/model",
+            "requested_revision": "main",
+            "resolved_revision": "resolved",
+        },
+        "analysis": {"endpoint": "exact_error", "pca_dims": 2, "ridge_alpha": 0.001},
+        "bootstrap": {
+            "method": "paired_entity_family_cluster_bootstrap",
+            "unit": "entity_family",
+            "seed": 42,
+            "count": 20,
+        },
+        "permutation": {
+            "method": "paired_entity_family_permutation",
+            "seed": 42,
+            "count": 2000,
+            "fdr_family": ["detection", "intervention"],
+        },
+    }
+    analysis_id = secondary_artifacts.analysis_fingerprint(provenance)
+    provenance["analysis_id"] = analysis_id
+    return {
+        "analysis_id": analysis_id,
+        "analysis_provenance": provenance,
+        "claim_status": "not_supported",
+    }
 
 
 def test_secondary_artifacts_round_trip_in_isolated_namespace(tmp_path):
@@ -139,11 +192,45 @@ def test_existing_metrics_or_completion_marker_blocks_secondary_rerun(tmp_path):
         store.assert_incomplete("concept-main", "exact_error")
 
 
+def test_endpoint_claim_is_exclusive_and_persists_until_completed(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+
+    claim = store.acquire_claim("concept-main", "exact_error")
+
+    assert claim.path.exists()
+    claim_payload = json.loads(claim.path.read_text())
+    assert claim_payload["claim_id"] == claim.claim_id
+    assert claim_payload["run_id"] == "concept-main"
+    assert claim_payload["endpoint"] == "exact_error"
+    with pytest.raises(FileExistsError, match="claim_exact_error.json"):
+        store.acquire_claim("concept-main", "exact_error")
+    with pytest.raises(RuntimeError, match="completion marker"):
+        store.release_claim(claim)
+    assert claim.path.exists()
+
+    metrics = store.write_json(
+        "concept-main", "comparisons", "detection_exact_error", _metrics_with_provenance()
+    )
+    marker = store.write_completion(
+        "concept-main",
+        "exact_error",
+        analysis_id=_metrics_with_provenance()["analysis_id"],
+        metrics_path=metrics,
+    )
+    store.release_claim(claim)
+
+    assert marker.exists()
+    assert not claim.path.exists()
+    with pytest.raises(FileExistsError, match="detection_exact_error.json"):
+        store.acquire_claim("concept-main", "exact_error")
+
+
 def test_completion_marker_binds_analysis_id_to_metrics_hash(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
-    analysis_id = "a" * 64
+    payload = _metrics_with_provenance()
+    analysis_id = payload["analysis_id"]
     metrics = store.write_json(
-        "concept-main", "comparisons", "detection_exact_error", {"analysis_id": analysis_id}
+        "concept-main", "comparisons", "detection_exact_error", payload
     )
 
     marker = store.write_completion(
@@ -155,6 +242,53 @@ def test_completion_marker_binds_analysis_id_to_metrics_hash(tmp_path):
         "metrics_sha256": hashlib.sha256(metrics.read_bytes()).hexdigest(),
     }
     assert marker.name == "completion_exact_error.json"
+
+
+def test_completion_rejects_mismatched_ids_and_tampered_provenance(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+    payload = _metrics_with_provenance()
+    metrics = store.write_json(
+        "concept-main", "comparisons", "detection_exact_error", payload
+    )
+
+    with pytest.raises(ValueError, match="analysis IDs"):
+        store.write_completion(
+            "concept-main",
+            "exact_error",
+            analysis_id="f" * 64,
+            metrics_path=metrics,
+        )
+
+    payload["analysis_provenance"]["analysis"]["pca_dims"] = 99
+    metrics.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="canonical provenance fingerprint"):
+        store.write_completion(
+            "concept-main",
+            "exact_error",
+            analysis_id=payload["analysis_id"],
+            metrics_path=metrics,
+        )
+
+
+def test_completion_marker_is_no_clobber(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+    payload = _metrics_with_provenance()
+    metrics = store.write_json(
+        "concept-main", "comparisons", "detection_exact_error", payload
+    )
+    existing = store.write_json(
+        "concept-main", "comparisons", "completion_exact_error", {"legacy": True}
+    )
+
+    with pytest.raises(FileExistsError, match="completion_exact_error.json"):
+        store.write_completion(
+            "concept-main",
+            "exact_error",
+            analysis_id=payload["analysis_id"],
+            metrics_path=metrics,
+        )
+
+    assert json.loads(existing.read_text()) == {"legacy": True}
 
 
 def test_analysis_provenance_is_canonical_and_rejects_ambiguous_model_revision(tmp_path):
@@ -202,13 +336,7 @@ def test_analysis_provenance_is_canonical_and_rejects_ambiguous_model_revision(t
     second = secondary_artifacts.build_analysis_provenance(**kwargs)
 
     assert first == second
-    assert first["analysis_id"] == hashlib.sha256(
-        json.dumps(
-            {key: value for key, value in first.items() if key != "analysis_id"},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    assert first["analysis_id"] == secondary_artifacts.analysis_fingerprint(first)
     assert first["implementation"]["git_commit"]
     assert isinstance(first["implementation"]["tracked_dirty"], bool)
     assert len(first["implementation"]["source_sha256"]) == 64
@@ -228,3 +356,77 @@ def test_analysis_provenance_is_canonical_and_rejects_ambiguous_model_revision(t
 
     with pytest.raises(ValueError, match="unique resolved model revision"):
         secondary_artifacts.build_analysis_provenance(**kwargs)
+
+
+def test_analysis_id_is_stable_when_identical_inputs_are_relocated(tmp_path):
+    first_root = tmp_path / "first"
+    first_run = first_root / "runs" / "concept-main"
+    examples = first_run / "examples"
+    examples.mkdir(parents=True)
+    (first_root / "config.json").write_text(
+        '{"model_id":"test/model","model_revision":"requested"}'
+    )
+    (first_root / "preregistration.md").write_text("frozen protocol\n")
+    (first_run / "manifest.json").write_text(
+        json.dumps(
+            {
+                "config": {"model_id": "test/model", "model_revision": "requested"},
+                "dataset": {
+                    "path": "/machine/one/data/concept.jsonl",
+                    "sha256": "a" * 64,
+                    "manifest_path": "/machine/one/data/concept.manifest.json",
+                    "manifest_sha256": "b" * 64,
+                },
+            }
+        )
+    )
+    (examples / "train-0001.json").write_text(
+        json.dumps(
+            {
+                "provenance": {
+                    "model_id": "test/model",
+                    "model_revision": "requested",
+                    "resolved_model_revision": "resolved-commit",
+                }
+            }
+        )
+    )
+    second_root = tmp_path / "second"
+    shutil.copytree(first_root, second_root)
+    second_manifest = json.loads(
+        (second_root / "runs" / "concept-main" / "manifest.json").read_text()
+    )
+    second_manifest["dataset"]["path"] = "/machine/two/data/concept.jsonl"
+    second_manifest["dataset"]["manifest_path"] = (
+        "/machine/two/data/concept.manifest.json"
+    )
+    (second_root / "runs" / "concept-main" / "manifest.json").write_text(
+        json.dumps(second_manifest)
+    )
+
+    common = {
+        "repo_root": Path(__file__).resolve().parents[1],
+        "endpoint": "exact_error",
+        "pca_dims": 32,
+        "ridge_alpha": 0.001,
+        "bootstrap_count": 2000,
+        "permutation_method": "paired_entity_family_permutation",
+        "permutation_seed": 42,
+        "permutation_count": 2000,
+        "fdr_family": ["detection", "intervention"],
+    }
+    first = secondary_artifacts.build_analysis_provenance(
+        preregistration_path=first_root / "preregistration.md",
+        config_path=first_root / "config.json",
+        run_root=first_run,
+        **common,
+    )
+    second = secondary_artifacts.build_analysis_provenance(
+        preregistration_path=second_root / "preregistration.md",
+        config_path=second_root / "config.json",
+        run_root=second_root / "runs" / "concept-main",
+        **common,
+    )
+
+    assert first["inputs"] != second["inputs"]
+    assert first["analysis_id"] == second["analysis_id"]
