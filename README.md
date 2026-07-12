@@ -68,23 +68,24 @@ writes a checksum manifest next to the frozen study file.
 
 Do not use the following commands for the frozen `concept-main` run. It must not
 be rerun; its tracked frozen result is [docs/results.md](docs/results.md). Use a
-new run ID for a fresh or replication study, represented below by
-`<NEW_CONCEPT_RUN_ID>`.
+new run ID for a fresh or replication study.
 
 The concept track is executed in four explicit stages:
 
 ```bash
-feature-dynamics extract-concept --run-id <NEW_CONCEPT_RUN_ID> --pilot-per-split 10
-feature-dynamics extract-concept --run-id <NEW_CONCEPT_RUN_ID>
-feature-dynamics evaluate-concept --run-id <NEW_CONCEPT_RUN_ID>
+RUN_ID=concept-replication-01
+
+feature-dynamics extract-concept --run-id "$RUN_ID" --pilot-per-split 10
+feature-dynamics extract-concept --run-id "$RUN_ID"
+feature-dynamics evaluate-concept --run-id "$RUN_ID"
 feature-dynamics evaluate-secondary-concept \
   --config configs/llama32_1b.json \
-  --run-id <NEW_CONCEPT_RUN_ID> \
+  --run-id "$RUN_ID" \
   --bootstrap 2000 \
   --endpoint exact_error
-feature-dynamics ablate-concept --run-id <NEW_CONCEPT_RUN_ID>
-feature-dynamics intervene-concept --baseline-run-id <NEW_CONCEPT_RUN_ID>
-feature-dynamics prepare-circuit-followup --run-id <NEW_CONCEPT_RUN_ID>
+feature-dynamics ablate-concept --run-id "$RUN_ID"
+feature-dynamics intervene-concept --baseline-run-id "$RUN_ID"
+feature-dynamics prepare-circuit-followup --run-id "$RUN_ID"
 ```
 
 The secondary command evaluates a **metacognitive internal reliability signal**:
@@ -116,7 +117,7 @@ The source-documented transfer file must contain 200 JSONL rows with `id`,
 ```bash
 feature-dynamics prepare-real-transfer
 feature-dynamics extract-transfer data/external/real_transfer.jsonl
-feature-dynamics evaluate-transfer --reference-run-id <NEW_CONCEPT_RUN_ID> --run-id real-transfer
+feature-dynamics evaluate-transfer --reference-run-id "$RUN_ID" --run-id real-transfer
 ```
 
 Transfer evaluation fits every learned component and selects its prefix on the
@@ -139,7 +140,7 @@ feature-dynamics select-jailbreak-intervention
 feature-dynamics prepare-jailbreak-intervention-test data/external/jailbreakbench/study.jsonl
 feature-dynamics judge-jailbreak --run-id jailbreak-intervention-test
 feature-dynamics evaluate-jailbreak-intervention
-feature-dynamics report-study --output docs/results.md
+feature-dynamics report-study --output docs/jailbreak_results.md
 ```
 
 `configs/llama32_1b_jailbreak.json` allows 96 response tokens; the 12-token
