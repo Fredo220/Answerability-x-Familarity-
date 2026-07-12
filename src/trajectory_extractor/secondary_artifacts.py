@@ -41,7 +41,7 @@ class SecondaryArtifactStore:
     def write_json(self, run_id: str, section: str, name: str, value) -> Path:
         destination = self._path(run_id, section, name, ".json")
         payload = json.dumps(value, indent=2, sort_keys=True).encode("utf-8")
-        _atomic_write_bytes(destination, payload)
+        _exclusive_write_bytes(destination, payload)
         return destination
 
     def write_npz(self, run_id: str, section: str, name: str, **arrays: np.ndarray) -> Path:
@@ -61,7 +61,10 @@ class SecondaryArtifactStore:
                 np.savez_compressed(handle, **arrays)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, destination)
+            os.link(temporary, destination)
+            temporary.unlink()
+            temporary = None
+            _fsync_directory(destination.parent)
         finally:
             if temporary is not None and temporary.exists():
                 temporary.unlink()
@@ -133,41 +136,96 @@ class SecondaryArtifactStore:
         endpoint: str,
         *,
         analysis_id: str,
-        metrics_path: str | Path,
+        artifact_paths: list[str | Path],
     ) -> Path:
         if not _SHA256.fullmatch(analysis_id):
             raise ValueError("analysis_id must be a lowercase SHA-256 fingerprint")
-        expected = self._path(
-            run_id, "comparisons", f"detection_{endpoint}", ".json"
-        ).resolve()
-        metrics = Path(metrics_path).resolve()
-        if metrics != expected or not metrics.is_file():
-            raise ValueError("metrics_path must be the endpoint's existing metrics file")
+        artifacts = self._validated_endpoint_artifacts(run_id, endpoint, artifact_paths)
+        metrics = artifacts[f"comparisons/detection_{endpoint}.json"]
         metrics_payload = _read_json_object(metrics, "secondary metrics")
-        provenance = metrics_payload.get("analysis_provenance")
-        if not isinstance(provenance, dict):
-            raise ValueError("secondary metrics must contain analysis_provenance")
-        metrics_id = metrics_payload.get("analysis_id")
-        provenance_id = provenance.get("analysis_id")
-        if metrics_id != analysis_id or provenance_id != analysis_id:
-            raise ValueError(
-                "metrics, provenance, and completion analysis IDs must match"
-            )
-        if analysis_fingerprint(provenance) != analysis_id:
-            raise ValueError("analysis ID does not match the canonical provenance fingerprint")
+        _validate_metrics_analysis(metrics_payload, analysis_id)
         destination = self._path(
             run_id, "comparisons", f"completion_{endpoint}", ".json"
         )
         payload = json.dumps(
             {
+                "schema_version": 1,
                 "analysis_id": analysis_id,
-                "metrics_sha256": _sha256(metrics),
+                "artifacts": {
+                    relative: _sha256(path)
+                    for relative, path in sorted(artifacts.items())
+                },
             },
             indent=2,
             sort_keys=True,
         ).encode("utf-8")
         _exclusive_write_bytes(destination, payload)
         return destination
+
+    def verify_completion(self, run_id: str, endpoint: str) -> dict:
+        marker_path = self._path(
+            run_id, "comparisons", f"completion_{endpoint}", ".json"
+        )
+        marker = _read_json_object(marker_path, "secondary completion marker")
+        analysis_id = marker.get("analysis_id")
+        hashes = marker.get("artifacts")
+        if marker.get("schema_version") != 1 or not isinstance(analysis_id, str):
+            raise ValueError("secondary completion marker has an invalid schema")
+        if not _SHA256.fullmatch(analysis_id) or not isinstance(hashes, dict):
+            raise ValueError("secondary completion marker has invalid hashes")
+        artifacts = self._validated_endpoint_artifacts(
+            run_id,
+            endpoint,
+            [
+                self.root / _safe_id(run_id) / "secondary" / path
+                for path in hashes
+            ],
+        )
+        if set(hashes) != set(artifacts):
+            raise ValueError(
+                "completion marker does not bind the expected endpoint artifacts"
+            )
+        for relative, path in artifacts.items():
+            recorded = hashes.get(relative)
+            if not isinstance(recorded, str) or not _SHA256.fullmatch(recorded):
+                raise ValueError("secondary completion marker has invalid hashes")
+            if _sha256(path) != recorded:
+                raise ValueError(f"artifact hash mismatch: {relative}")
+        metrics = artifacts[f"comparisons/detection_{endpoint}.json"]
+        _validate_metrics_analysis(
+            _read_json_object(metrics, "secondary metrics"), analysis_id
+        )
+        return marker
+
+    def _validated_endpoint_artifacts(
+        self,
+        run_id: str,
+        endpoint: str,
+        artifact_paths: list[str | Path],
+    ) -> dict[str, Path]:
+        run = _safe_id(run_id)
+        endpoint = _safe_id(endpoint)
+        namespace = self.root / run / "secondary"
+        relative_paths = (
+            f"contrastive_vectors/{endpoint}.npz",
+            f"vector_dynamics/{endpoint}.npz",
+            f"comparisons/predictions_{endpoint}.npz",
+            f"comparisons/detection_{endpoint}.json",
+            f"comparisons/figures/method_comparison_{endpoint}.png",
+            f"comparisons/figures/validation_metacognitive_risk_gap_{endpoint}.png",
+        )
+        expected = {relative: namespace / relative for relative in relative_paths}
+        provided = {Path(path).absolute() for path in artifact_paths}
+        expected_absolute = {path.absolute() for path in expected.values()}
+        if provided != expected_absolute or len(artifact_paths) != len(expected):
+            raise ValueError("artifact_paths must be the expected endpoint artifact paths")
+        resolved_namespace = namespace.resolve()
+        for path in expected.values():
+            if not path.is_file() or not path.resolve().is_relative_to(
+                resolved_namespace
+            ):
+                raise ValueError("artifact_paths must stay under the run secondary namespace")
+        return expected
 
     def _path(self, run_id: str, section: str, name: str, suffix: str) -> Path:
         if section not in _SECTIONS:
@@ -179,26 +237,6 @@ class SecondaryArtifactStore:
             / section
             / f"{_safe_id(name)}{suffix}"
         )
-
-
-def _atomic_write_bytes(destination: Path, payload: bytes) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w+b",
-            suffix=".tmp",
-            dir=destination.parent,
-            delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, destination)
-    finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
 
 
 def _exclusive_write_bytes(destination: Path, payload: bytes) -> None:
@@ -251,6 +289,21 @@ def _fsync_directory(directory: Path) -> None:
                 raise
     finally:
         os.close(descriptor)
+
+
+def _validate_metrics_analysis(metrics: dict, analysis_id: str) -> None:
+    provenance = metrics.get("analysis_provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("secondary metrics must contain analysis_provenance")
+    if (
+        metrics.get("analysis_id") != analysis_id
+        or provenance.get("analysis_id") != analysis_id
+    ):
+        raise ValueError("metrics, provenance, and completion analysis IDs must match")
+    if analysis_fingerprint(provenance) != analysis_id:
+        raise ValueError(
+            "analysis ID does not match the canonical provenance fingerprint"
+        )
 
 
 def build_analysis_provenance(

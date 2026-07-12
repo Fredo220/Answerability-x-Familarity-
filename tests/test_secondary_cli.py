@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -96,6 +97,12 @@ def _fake_secondary_result():
 
 def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypatch):
     config_path, output_dir = _write_config_and_run_provenance(tmp_path)
+    run_root = output_dir / "concept-main"
+    primary_before = {
+        path.relative_to(run_root): path.read_bytes()
+        for path in run_root.rglob("*")
+        if path.is_file()
+    }
     fake_batch = object()
     monkeypatch.setattr(cli.RunStore, "load_batch", lambda self, run_id, label_key: fake_batch)
 
@@ -105,7 +112,6 @@ def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypa
         return _fake_secondary_result()
 
     monkeypatch.setattr(cli, "evaluate_concept_secondary", fake_evaluation)
-    monkeypatch.setattr(cli, "_write_secondary_figures", lambda *args, **kwargs: None)
 
     exit_code = cli.main(
         [
@@ -133,6 +139,12 @@ def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypa
     assert not (
         output_dir / "concept-main" / "metrics" / "detection_exact_error.json"
     ).exists()
+    primary_after = {
+        path.relative_to(run_root): path.read_bytes()
+        for path in run_root.rglob("*")
+        if path.is_file() and "secondary" not in path.relative_to(run_root).parts
+    }
+    assert primary_after == primary_before
 
     metrics = json.loads((root / "comparisons" / "detection_exact_error.json").read_text())
     assert metrics["claim_status"] == "provisional_supported"
@@ -154,16 +166,31 @@ def test_evaluate_secondary_concept_writes_isolated_artifacts(tmp_path, monkeypa
         "ridge_alpha": 0.001,
     }
     assert provenance["permutation"]["count"] == 2000
+    secondary_preregistration = (
+        Path(cli.__file__).resolve().parents[2] / "docs" / "secondary_preregistration.md"
+    )
+    assert provenance["inputs"]["preregistration"] == {
+        "path": str(secondary_preregistration),
+        "sha256": hashlib.sha256(secondary_preregistration.read_bytes()).hexdigest(),
+    }
 
     completion = json.loads(
         (root / "comparisons" / "completion_exact_error.json").read_text()
     )
-    assert completion == {
-        "analysis_id": metrics["analysis_id"],
-        "metrics_sha256": hashlib.sha256(
-            (root / "comparisons" / "detection_exact_error.json").read_bytes()
-        ).hexdigest(),
+    expected_artifacts = {
+        "comparisons/detection_exact_error.json",
+        "comparisons/figures/method_comparison_exact_error.png",
+        "comparisons/figures/validation_metacognitive_risk_gap_exact_error.png",
+        "comparisons/predictions_exact_error.npz",
+        "contrastive_vectors/exact_error.npz",
+        "vector_dynamics/exact_error.npz",
     }
+    assert completion["schema_version"] == 1
+    assert completion["analysis_id"] == metrics["analysis_id"]
+    assert set(completion["artifacts"]) == expected_artifacts
+    assert SecondaryArtifactStore(output_dir).verify_completion(
+        "concept-main", "exact_error"
+    ) == completion
 
     with np.load(root / "comparisons" / "predictions_exact_error.npz") as predictions:
         assert set(predictions.files) == {
@@ -331,3 +358,49 @@ def test_secondary_figures_stay_within_artifact_namespace(tmp_path):
     assert (
         directory / "validation_metacognitive_risk_gap_exact_error.png"
     ).exists()
+
+
+def test_report_study_defaults_to_generated_report(tmp_path, monkeypatch):
+    config_path, output_dir = _write_config_and_run_provenance(tmp_path)
+    captured = {}
+
+    def fake_write(store, output):
+        captured["store_root"] = store.root
+        captured["output"] = output
+        return Path(output)
+
+    monkeypatch.setattr(cli, "write_study_report", fake_write)
+
+    assert cli.main(["report-study", "--config", str(config_path)]) == 0
+    assert captured == {
+        "store_root": output_dir,
+        "output": "docs/generated_study_report.md",
+    }
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "docs/results.md",
+        str(Path(cli.__file__).resolve().parents[2] / "docs" / "results.md"),
+        "docs/../docs/results.md",
+    ],
+)
+def test_report_study_rejects_repository_results_path(tmp_path, monkeypatch, output):
+    config_path, _ = _write_config_and_run_provenance(tmp_path)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("protected results report must not be written")
+
+    monkeypatch.setattr(cli, "write_study_report", fail_if_called)
+
+    with pytest.raises(ValueError, match="docs/results.md"):
+        cli.main(
+            [
+                "report-study",
+                "--config",
+                str(config_path),
+                "--output",
+                output,
+            ]
+        )

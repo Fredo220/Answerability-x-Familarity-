@@ -121,33 +121,36 @@ def test_secondary_artifacts_keep_distinct_valid_identifiers_exact(tmp_path):
     assert endpoint.name == "detection_exact_error.json"
 
 
-def test_replacement_leaves_a_complete_readable_artifact(tmp_path):
+def test_json_write_is_no_clobber(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
     store.write_json("run", "comparisons", "result", {"version": 1})
-    store.write_json("run", "comparisons", "result", {"version": 2})
 
-    assert store.read_json("run", "comparisons", "result") == {"version": 2}
+    with pytest.raises(FileExistsError, match="result.json"):
+        store.write_json("run", "comparisons", "result", {"version": 2})
+
+    assert store.read_json("run", "comparisons", "result") == {"version": 1}
     assert list((tmp_path / "run" / "secondary" / "comparisons").glob("*.tmp")) == []
 
 
-def test_npz_replacement_leaves_version_two_complete_and_readable(tmp_path):
+def test_npz_write_is_no_clobber(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
     first = np.array([1, 2], dtype=np.int64)
     second = np.array([3, 4], dtype=np.int64)
 
     store.write_npz("run", "vector_dynamics", "result", values=first)
-    store.write_npz("run", "vector_dynamics", "result", values=second)
+    with pytest.raises(FileExistsError, match="result.npz"):
+        store.write_npz("run", "vector_dynamics", "result", values=second)
 
     arrays = store.read_npz("run", "vector_dynamics", "result")
-    np.testing.assert_array_equal(arrays["values"], second)
+    np.testing.assert_array_equal(arrays["values"], first)
     assert list((tmp_path / "run" / "secondary" / "vector_dynamics").glob("*.tmp")) == []
 
 
-def test_npz_write_failure_preserves_existing_artifact_and_cleans_temp(tmp_path, monkeypatch):
+def test_npz_write_failure_leaves_no_artifact_and_cleans_temp(
+    tmp_path, monkeypatch
+):
     store = SecondaryArtifactStore(tmp_path)
-    original = np.array([1, 2], dtype=np.int64)
     replacement = np.array([3, 4], dtype=np.int64)
-    store.write_npz("run", "vector_dynamics", "result", values=original)
 
     def write_partial_then_raise(handle, **arrays):
         handle.write(b"partial npz")
@@ -157,23 +160,23 @@ def test_npz_write_failure_preserves_existing_artifact_and_cleans_temp(tmp_path,
     with pytest.raises(RuntimeError, match="injected npz failure"):
         store.write_npz("run", "vector_dynamics", "result", values=replacement)
 
-    arrays = store.read_npz("run", "vector_dynamics", "result")
-    np.testing.assert_array_equal(arrays["values"], original)
+    assert not (
+        tmp_path / "run" / "secondary" / "vector_dynamics" / "result.npz"
+    ).exists()
     assert list((tmp_path / "run" / "secondary" / "vector_dynamics").glob("*.tmp")) == []
 
 
-def test_json_replace_failure_preserves_existing_artifact_and_cleans_temp(tmp_path, monkeypatch):
+def test_json_link_failure_leaves_no_artifact_and_cleans_temp(tmp_path, monkeypatch):
     store = SecondaryArtifactStore(tmp_path)
-    store.write_json("run", "comparisons", "result", {"version": 1})
 
-    def raise_on_replace(source, destination):
-        raise OSError("injected replace failure")
+    def raise_on_link(source, destination):
+        raise OSError("injected link failure")
 
-    monkeypatch.setattr(secondary_artifacts.os, "replace", raise_on_replace)
-    with pytest.raises(OSError, match="injected replace failure"):
+    monkeypatch.setattr(secondary_artifacts.os, "link", raise_on_link)
+    with pytest.raises(OSError, match="injected link failure"):
         store.write_json("run", "comparisons", "result", {"version": 2})
 
-    assert store.read_json("run", "comparisons", "result") == {"version": 1}
+    assert not (tmp_path / "run" / "secondary" / "comparisons" / "result.json").exists()
     assert list((tmp_path / "run" / "secondary" / "comparisons").glob("*.tmp")) == []
 
 
@@ -293,14 +296,12 @@ def test_endpoint_claim_is_exclusive_and_persists_until_completed(tmp_path):
         store.release_claim(claim)
     assert claim.path.exists()
 
-    metrics = store.write_json(
-        "concept-main", "comparisons", "detection_exact_error", _metrics_with_provenance()
-    )
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
     marker = store.write_completion(
         "concept-main",
         "exact_error",
-        analysis_id=_metrics_with_provenance()["analysis_id"],
-        metrics_path=metrics,
+        analysis_id=payload["analysis_id"],
+        artifact_paths=artifacts,
     )
     store.release_claim(claim)
 
@@ -310,38 +311,138 @@ def test_endpoint_claim_is_exclusive_and_persists_until_completed(tmp_path):
         store.acquire_claim("concept-main", "exact_error")
 
 
-def test_completion_marker_binds_analysis_id_to_metrics_hash(tmp_path):
-    store = SecondaryArtifactStore(tmp_path)
+def _write_complete_endpoint_artifacts(
+    store, run_id="concept-main", endpoint="exact_error"
+):
     payload = _metrics_with_provenance()
+    paths = [
+        store.write_npz(
+            run_id,
+            "contrastive_vectors",
+            endpoint,
+            directions=np.eye(2, dtype=np.float32),
+        ),
+        store.write_npz(
+            run_id,
+            "vector_dynamics",
+            endpoint,
+            means=np.zeros(2, dtype=np.float32),
+        ),
+        store.write_npz(
+            run_id,
+            "comparisons",
+            f"predictions_{endpoint}",
+            probabilities=np.array([0.1, 0.9]),
+        ),
+        store.write_json(run_id, "comparisons", f"detection_{endpoint}", payload),
+    ]
+    figures = paths[-1].parent / "figures"
+    figures.mkdir()
+    for name in (
+        f"method_comparison_{endpoint}.png",
+        f"validation_metacognitive_risk_gap_{endpoint}.png",
+    ):
+        path = figures / name
+        path.write_bytes(f"figure:{name}".encode())
+        paths.append(path)
+    return payload, paths
+
+
+def test_completion_marker_binds_all_endpoint_artifacts_by_relative_path(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
     analysis_id = payload["analysis_id"]
-    metrics = store.write_json(
-        "concept-main", "comparisons", "detection_exact_error", payload
-    )
 
     marker = store.write_completion(
-        "concept-main", "exact_error", analysis_id=analysis_id, metrics_path=metrics
+        "concept-main", "exact_error", analysis_id=analysis_id, artifact_paths=artifacts
     )
 
+    expected_hashes = {
+        str(path.relative_to(tmp_path / "concept-main" / "secondary")): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in artifacts
+    }
     assert store.read_json("concept-main", "comparisons", "completion_exact_error") == {
+        "schema_version": 1,
         "analysis_id": analysis_id,
-        "metrics_sha256": hashlib.sha256(metrics.read_bytes()).hexdigest(),
+        "artifacts": dict(sorted(expected_hashes.items())),
     }
     assert marker.name == "completion_exact_error.json"
+    assert store.verify_completion("concept-main", "exact_error")["artifacts"] == dict(
+        sorted(expected_hashes.items())
+    )
+
+
+@pytest.mark.parametrize("artifact_index", range(6))
+def test_completion_verification_rejects_tampered_bound_artifact(
+    tmp_path, artifact_index
+):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+    store.write_completion(
+        "concept-main",
+        "exact_error",
+        analysis_id=payload["analysis_id"],
+        artifact_paths=artifacts,
+    )
+
+    artifacts[artifact_index].write_bytes(b"tampered")
+
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        store.verify_completion("concept-main", "exact_error")
+
+
+def test_completion_verification_recomputes_analysis_fingerprint(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+    marker_path = store.write_completion(
+        "concept-main",
+        "exact_error",
+        analysis_id=payload["analysis_id"],
+        artifact_paths=artifacts,
+    )
+    metrics = artifacts[3]
+    tampered = json.loads(metrics.read_text())
+    tampered["analysis_provenance"]["analysis"]["pca_dims"] = 999
+    metrics.write_text(json.dumps(tampered))
+    marker = json.loads(marker_path.read_text())
+    marker["artifacts"]["comparisons/detection_exact_error.json"] = hashlib.sha256(
+        metrics.read_bytes()
+    ).hexdigest()
+    marker_path.write_text(json.dumps(marker))
+
+    with pytest.raises(ValueError, match="canonical provenance fingerprint"):
+        store.verify_completion("concept-main", "exact_error")
+
+
+def test_completion_rejects_artifact_outside_expected_secondary_namespace(tmp_path):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"outside")
+    artifacts[-1] = outside
+
+    with pytest.raises(ValueError, match="expected endpoint artifact paths"):
+        store.write_completion(
+            "concept-main",
+            "exact_error",
+            analysis_id=payload["analysis_id"],
+            artifact_paths=artifacts,
+        )
 
 
 def test_completion_rejects_mismatched_ids_and_tampered_provenance(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
-    payload = _metrics_with_provenance()
-    metrics = store.write_json(
-        "concept-main", "comparisons", "detection_exact_error", payload
-    )
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+    metrics = artifacts[3]
 
     with pytest.raises(ValueError, match="analysis IDs"):
         store.write_completion(
             "concept-main",
             "exact_error",
             analysis_id="f" * 64,
-            metrics_path=metrics,
+            artifact_paths=artifacts,
         )
 
     payload["analysis_provenance"]["analysis"]["pca_dims"] = 99
@@ -351,16 +452,13 @@ def test_completion_rejects_mismatched_ids_and_tampered_provenance(tmp_path):
             "concept-main",
             "exact_error",
             analysis_id=payload["analysis_id"],
-            metrics_path=metrics,
+            artifact_paths=artifacts,
         )
 
 
 def test_completion_marker_is_no_clobber(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
-    payload = _metrics_with_provenance()
-    metrics = store.write_json(
-        "concept-main", "comparisons", "detection_exact_error", payload
-    )
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
     existing = store.write_json(
         "concept-main", "comparisons", "completion_exact_error", {"legacy": True}
     )
@@ -370,7 +468,7 @@ def test_completion_marker_is_no_clobber(tmp_path):
             "concept-main",
             "exact_error",
             analysis_id=payload["analysis_id"],
-            metrics_path=metrics,
+            artifact_paths=artifacts,
         )
 
     assert json.loads(existing.read_text()) == {"legacy": True}

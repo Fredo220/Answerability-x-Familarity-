@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = subparsers.add_parser("report-study")
     report.add_argument("--config", default="configs/llama32_1b.json")
-    report.add_argument("--output", default="docs/results.md")
+    report.add_argument("--output", default="docs/generated_study_report.md")
 
     circuit_followup = subparsers.add_parser("prepare-circuit-followup")
     circuit_followup.add_argument("--config", default="configs/llama32_1b.json")
@@ -343,21 +343,21 @@ def main(argv: list[str] | None = None) -> int:
         result["analysis_provenance"] = provenance
         result["analysis_id"] = provenance["analysis_id"]
         arrays = result.pop("artifacts")
-        secondary.write_npz(
+        contrastive_path = secondary.write_npz(
             args.run_id,
             "contrastive_vectors",
             args.endpoint,
             directions=arrays["directions"],
             centers=arrays["centers"],
         )
-        secondary.write_npz(
+        dynamics_path = secondary.write_npz(
             args.run_id,
             "vector_dynamics",
             args.endpoint,
             means=arrays["vector_means"],
             scales=arrays["vector_scales"],
         )
-        secondary.write_npz(
+        predictions_path = secondary.write_npz(
             args.run_id,
             "comparisons",
             f"predictions_{args.endpoint}",
@@ -379,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
             f"detection_{args.endpoint}",
             result,
         )
-        _write_secondary_figures(
+        figure_paths = _write_secondary_figures(
             metrics_path.parent / "figures",
             result,
             arrays,
@@ -389,7 +389,13 @@ def main(argv: list[str] | None = None) -> int:
             args.run_id,
             args.endpoint,
             analysis_id=provenance["analysis_id"],
-            metrics_path=metrics_path,
+            artifact_paths=[
+                contrastive_path,
+                dynamics_path,
+                predictions_path,
+                metrics_path,
+                *figure_paths,
+            ],
         )
         secondary.release_claim(claim)
         print(
@@ -617,6 +623,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "report-study":
         config = ExperimentConfig.from_json(args.config)
+        protected_results = Path(__file__).resolve().parents[2] / "docs" / "results.md"
+        if Path(args.output).resolve() == protected_results.resolve():
+            raise ValueError("report-study must not overwrite repository docs/results.md")
         path = write_study_report(RunStore(config.output_dir), args.output)
         print(json.dumps({"report": str(path)}))
         return 0
@@ -667,19 +676,20 @@ def _write_secondary_figures(
     arrays: dict[str, np.ndarray],
     *,
     endpoint: str,
-) -> None:
+) -> tuple[Path, Path]:
     from trajectory_extractor.plotting import plot_class_risk_gap, plot_method_comparison
 
-    plot_method_comparison(
+    comparison = plot_method_comparison(
         {name: values["test_auroc"] for name, values in result["methods"].items()},
         directory / f"method_comparison_{endpoint}.png",
     )
-    plot_class_risk_gap(
+    risk_gap = plot_class_risk_gap(
         arrays["validation_metacognitive_risk_surface"],
         arrays["validation_labels"],
         directory / f"validation_metacognitive_risk_gap_{endpoint}.png",
         title="Validation metacognitive risk gap",
     )
+    return comparison, risk_gap
 
 
 def _secondary_analysis_provenance(
@@ -703,7 +713,7 @@ def _secondary_analysis_provenance(
     repo_root = Path(__file__).resolve().parents[2]
     return build_analysis_provenance(
         repo_root=repo_root,
-        preregistration_path=repo_root / "docs" / "preregistration.md",
+        preregistration_path=repo_root / "docs" / "secondary_preregistration.md",
         config_path=Path(config_path).resolve(),
         run_root=(Path(config.output_dir) / run_id).resolve(),
         endpoint=endpoint,
