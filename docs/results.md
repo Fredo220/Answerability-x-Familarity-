@@ -88,13 +88,16 @@ or stratified evaluation, and a shared genuinely pre-output prefix. This
 confound strengthens the existing caution; it does not replace the registered
 negative finding.
 
-The audit reads only the frozen parent artifacts: sorted
+The audit reads only the frozen archived artifacts: sorted
 `runs/concept-main/examples/*.json`/`.npz` records establish response length,
 and `secondary/comparisons/predictions_exact_error.npz` supplies the registered
-test labels and probabilities. Reproduce it from this worktree:
+test labels and probabilities. Reproduce it from a checkout containing the run,
+or set `RUNS_ROOT` to the archived `runs` directory:
 
 ```bash
-PYTHONPATH=src .venv/bin/python - <<'PY'
+RUNS_ROOT="${RUNS_ROOT:-runs}"
+PYTHONPATH=src RUNS_ROOT="$RUNS_ROOT" .venv/bin/python - <<'PY'
+import os
 from pathlib import Path
 
 import numpy as np
@@ -102,7 +105,7 @@ from sklearn.metrics import roc_auc_score
 
 from trajectory_extractor.artifacts import RunStore
 
-root = Path("/Users/friedrichreichelt/Documents/Machanistic Interpretability/runs")
+root = Path(os.environ["RUNS_ROOT"])
 predictions = np.load(root / "concept-main/secondary/comparisons/predictions_exact_error.npz")
 batch = RunStore(root).load_batch("concept-main", label_key="exact_error")
 indices = predictions["test_indices"]
