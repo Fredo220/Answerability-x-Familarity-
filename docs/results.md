@@ -12,6 +12,22 @@
 These results are a frozen record. They were not rerun or reinterpreted for this
 report.
 
+## Secondary Artifact Boundary
+
+The live frozen secondary artifacts were created by implementation commit
+`04568b9f1c1629ac7f08323b1c0602843fe91f48`, before the modern provenance and
+completion sealing protocol existed. They contain no `analysis_id`, no
+`analysis_provenance`, and no completion marker. They are therefore historical
+evidence for the frozen result, not artifacts that satisfy the current sealed
+secondary-analysis schema.
+
+They are deliberately not retrofitted: doing so would create a new analysis
+object after the fact. They are protected now by the legacy metrics guard, which
+refuses a rerun when endpoint metrics already exist, together with the tracked
+artifact hash and this tracked result report. The guard, hashes, and report
+preserve the historical record; they do not turn the legacy files into modern
+provenance-sealed artifacts.
+
 ## Registered Exact-Error Findings
 
 The primary `exact_error` comparison is `not_supported`. The registered AUROC

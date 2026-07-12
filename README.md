@@ -74,6 +74,8 @@ The concept track is executed in four explicit stages:
 
 ```bash
 RUN_ID=concept-replication-01
+TRANSFER_RUN_ID="${RUN_ID}-real-transfer"
+INTERVENTION_RUN_ID="${RUN_ID}-intervention"
 
 feature-dynamics extract-concept --run-id "$RUN_ID" --pilot-per-split 10
 feature-dynamics extract-concept --run-id "$RUN_ID"
@@ -84,7 +86,9 @@ feature-dynamics evaluate-secondary-concept \
   --bootstrap 2000 \
   --endpoint exact_error
 feature-dynamics ablate-concept --run-id "$RUN_ID"
-feature-dynamics intervene-concept --baseline-run-id "$RUN_ID"
+feature-dynamics intervene-concept \
+  --baseline-run-id "$RUN_ID" \
+  --run-id "$INTERVENTION_RUN_ID"
 feature-dynamics prepare-circuit-followup --run-id "$RUN_ID"
 ```
 
@@ -116,8 +120,11 @@ The source-documented transfer file must contain 200 JSONL rows with `id`,
 
 ```bash
 feature-dynamics prepare-real-transfer
-feature-dynamics extract-transfer data/external/real_transfer.jsonl
-feature-dynamics evaluate-transfer --reference-run-id "$RUN_ID" --run-id real-transfer
+feature-dynamics extract-transfer data/external/real_transfer.jsonl \
+  --run-id "$TRANSFER_RUN_ID"
+feature-dynamics evaluate-transfer \
+  --reference-run-id "$RUN_ID" \
+  --run-id "$TRANSFER_RUN_ID"
 ```
 
 Transfer evaluation fits every learned component and selects its prefix on the
@@ -140,11 +147,15 @@ feature-dynamics select-jailbreak-intervention
 feature-dynamics prepare-jailbreak-intervention-test data/external/jailbreakbench/study.jsonl
 feature-dynamics judge-jailbreak --run-id jailbreak-intervention-test
 feature-dynamics evaluate-jailbreak-intervention
-feature-dynamics report-study --output docs/jailbreak_results.md
+feature-dynamics report-study
 ```
 
 `configs/llama32_1b_jailbreak.json` allows 96 response tokens; the 12-token
 concept cap is never reused for safety-response judging.
+
+`report-study` writes its generated output to `docs/generated_study_report.md`.
+`docs/results.md` is the immutable hand-maintained concept record and must never
+be used as report-study output.
 
 ## Method families
 
