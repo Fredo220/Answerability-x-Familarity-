@@ -65,6 +65,65 @@ not used to make a timing claim.
 The exploratory full monitor AUROC of 0.9535655058043118 is descriptive and
 non-confirmatory. It does not alter the registered negative finding.
 
+## Post-Hoc Response-Length Confound
+
+This is a post-hoc audit of the frozen `exact_error` test artifacts. It changes
+no frozen claim, endpoint, artifact, threshold, or registered result. Test
+`n=240` error rates vary sharply by generated response-token length: length 2 is
+6/6 (1.0), length 3 is 19/19 (1.0), length 4 is 11/148 (0.0743243), and length
+5 is 3/67 (0.0447761). Negative response length alone has AUROC
+0.8392014287536678.
+
+The selected token 4 aggregates each example through its last available token,
+so shorter completed responses are not measured at a uniform pre-output time
+point. Candidate risk correlates with response length at -0.7160313591464588;
+the static baseline correlates at -0.6467679666859326. Within length 4, candidate
+AUROC is 0.7159920 and baseline AUROC is 0.7611148. Within length 5, candidate
+AUROC is 0.9583333 and baseline AUROC is 0.9427083, but that stratum has only
+three positive examples.
+
+Accordingly, high absolute AUROCs from this frozen run are not interpretable as
+metacognitive evidence without a response-length-only baseline, length-matched
+or stratified evaluation, and a shared genuinely pre-output prefix. This
+confound strengthens the existing caution; it does not replace the registered
+negative finding.
+
+The audit reads only the frozen parent artifacts: sorted
+`runs/concept-main/examples/*.json`/`.npz` records establish response length,
+and `secondary/comparisons/predictions_exact_error.npz` supplies the registered
+test labels and probabilities. Reproduce it from this worktree:
+
+```bash
+PYTHONPATH=src .venv/bin/python - <<'PY'
+from pathlib import Path
+
+import numpy as np
+from sklearn.metrics import roc_auc_score
+
+from trajectory_extractor.artifacts import RunStore
+
+root = Path("/Users/friedrichreichelt/Documents/Machanistic Interpretability/runs")
+predictions = np.load(root / "concept-main/secondary/comparisons/predictions_exact_error.npz")
+batch = RunStore(root).load_batch("concept-main", label_key="exact_error")
+indices = predictions["test_indices"]
+labels = predictions["test_labels"]
+lengths = batch.token_mask.sum(axis=1)[indices]
+candidate = predictions["metacognitive_risk_probability"]
+baseline = predictions["contrastive_vector_probability"]
+assert np.array_equal(labels, batch.labels[indices])
+
+for length in sorted(set(lengths.tolist())):
+    rows = lengths == length
+    print(length, int(labels[rows].sum()), int(rows.sum()), float(labels[rows].mean()))
+print("negative_length_auc", roc_auc_score(labels, -lengths))
+print("candidate_length_corr", np.corrcoef(candidate, lengths)[0, 1])
+print("baseline_length_corr", np.corrcoef(baseline, lengths)[0, 1])
+for length in (4, 5):
+    rows = lengths == length
+    print(length, roc_auc_score(labels[rows], candidate[rows]), roc_auc_score(labels[rows], baseline[rows]))
+PY
+```
+
 ## Scope And Remaining Controls
 
 This is a synthetic-only result for the resolved local concept task. It does not
@@ -78,6 +137,10 @@ The following controls remain pending:
   32, and 64; raw dynamics versus operator residual versus combined; shuffled
   layers and random projection controls; and prompt-length, rarity-proxy, and
   distractor-count subgroups.
+- Response length: preregister a length-only baseline; report length-matched or
+  stratified test metrics with uncertainty; and require one shared genuinely
+  pre-output prefix rather than per-example aggregation through the last
+  available response token.
 - Transfer: evaluate all 200 source-documented Wikidata triples with components
   fitted and prefixes selected only on synthetic train/validation data.
 - Intervention: validation-only selection followed by held-out comparisons with

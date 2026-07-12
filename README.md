@@ -111,6 +111,14 @@ supplies confidence intervals only. The validation figure is named
 provisional until the frozen falsification controls and external transfer are
 completed.
 
+For the next run, response length is a required nuisance control. Pre-register
+a response-length-only baseline, report length-matched or stratified test
+metrics with uncertainty, and use one shared genuinely pre-output prefix for all
+examples. Do not aggregate shorter completed responses through their individual
+last available token when testing an early-warning claim. The frozen run's
+post-hoc audit and its unchanged negative result are recorded in
+[docs/results.md](docs/results.md).
+
 The pilot and full command share a run ID. Completed artifacts are verified and
 skipped, so the full command resumes rather than repeats the pilot. Extraction
 records per-example runtime and prints a rolling ETA.

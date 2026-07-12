@@ -26,11 +26,11 @@ the parent `runs/concept-main/secondary` artifact directory.
 ## Verification
 
 - From `/Users/friedrichreichelt/Documents/Machanistic Interpretability/runs/concept-main/secondary`:
-  `shasum -a 256 -c /Users/friedrichreichelt/Documents/Machanistic Interpretability/.worktrees/metacognitive-feature-flow/docs/legacy_secondary_sha256.txt`
+  `shasum -a 256 -c "/Users/friedrichreichelt/Documents/Machanistic Interpretability/.worktrees/metacognitive-feature-flow/docs/legacy_secondary_sha256.txt"`
   returned `OK` for all 12 artifacts.
 - `git diff --check` completed successfully.
-- `.venv/bin/python -m pytest -q` completed successfully: `132 passed in
-  13.12s`.
+- `.venv/bin/python -m pytest -q` completed successfully: `140 passed in
+  13.40s`.
 
 ## Files Owned By This Audit
 

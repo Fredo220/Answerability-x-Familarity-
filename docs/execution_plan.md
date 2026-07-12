@@ -129,6 +129,26 @@ user-facing phrase "artificial intuition" is metaphorical. External-fact transfe
 activation control, JailbreakBench transfer, and multi-model replication require
 separate plans before any broad reliability or safety claim.
 
+### Required next-run response-length controls
+
+The frozen run's post-hoc audit found that response length is materially
+associated with both error and selected risk scores. The audit does not modify
+the frozen negative result or its artifacts. Before the next concept run, the
+protocol must:
+
+1. Register a response-length-only baseline alongside the static and dynamics
+   baselines.
+2. Report length-matched or stratified test AUROC, calibration, and uncertainty;
+   identify sparse positive strata as not independently conclusive.
+3. Use one shared genuinely pre-output prefix for every example. A fixed selected
+   token must not aggregate a shorter completed response through that example's
+   final available token when used to support an early-warning claim.
+4. Retain overall metrics only as secondary summaries after the controls above;
+   do not interpret high absolute AUROC as metacognitive evidence by itself.
+
+The post-hoc numeric audit and read-only reproduction command are in
+[docs/results.md](results.md).
+
 ## Stage 4: Concept ablations and transfer - pending
 
 - Full trajectory versus last token.

@@ -6,7 +6,7 @@
 # This is a post-hoc archival identification of the twelve frozen legacy files.
 # It is not embedded provenance and is not a retrofitted modern completion seal.
 # Verify from the artifact root with:
-# shasum -a 256 -c /Users/friedrichreichelt/Documents/Machanistic Interpretability/.worktrees/metacognitive-feature-flow/docs/legacy_secondary_sha256.txt
+# shasum -a 256 -c "/Users/friedrichreichelt/Documents/Machanistic Interpretability/.worktrees/metacognitive-feature-flow/docs/legacy_secondary_sha256.txt"
 ce30ab888cc6a880032a46eb648dfa20d80c835827acbd5ab2577a5eedb6c306  comparisons/detection_binding_error.json
 988e96f76b5a10032d05b2633a6be9d9f68498b6417c41516f5d0c0b6d532f5a  comparisons/detection_exact_error.json
 c01ba3447b16fd2c730ccf2caedad84f420bc82b869344631252f79e057ecb4f  comparisons/figures/method_comparison_binding_error.png
