@@ -48,7 +48,7 @@ class SecondaryArtifactStore:
         if not arrays:
             raise ValueError("write_npz requires at least one named array")
         destination = self._path(run_id, section, name, ".npz")
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        ensure_durable_directory(destination.parent)
         temporary: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -144,6 +144,9 @@ class SecondaryArtifactStore:
         metrics = artifacts[f"comparisons/detection_{endpoint}.json"]
         metrics_payload = _read_json_object(metrics, "secondary metrics")
         _validate_metrics_analysis(metrics_payload, analysis_id)
+        for _, path in sorted(artifacts.items()):
+            _fsync_file(path)
+            _fsync_directory(path.parent)
         destination = self._path(
             run_id, "comparisons", f"completion_{endpoint}", ".json"
         )
@@ -240,7 +243,7 @@ class SecondaryArtifactStore:
 
 
 def _exclusive_write_bytes(destination: Path, payload: bytes) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    ensure_durable_directory(destination.parent)
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -273,6 +276,28 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         remaining = remaining[written:]
 
 
+def ensure_durable_directory(directory: str | Path) -> Path:
+    destination = Path(directory)
+    missing = []
+    current = destination
+    while not current.exists():
+        missing.append(current)
+        parent = current.parent
+        if parent == current:
+            raise FileNotFoundError(f"no existing ancestor for directory: {destination}")
+        current = parent
+    if not current.is_dir():
+        raise NotADirectoryError(current)
+    for child in reversed(missing):
+        try:
+            os.mkdir(child)
+        except FileExistsError:
+            if not child.is_dir():
+                raise
+        _fsync_directory(child.parent)
+    return destination
+
+
 def _fsync_directory(directory: Path) -> None:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
@@ -287,6 +312,14 @@ def _fsync_directory(directory: Path) -> None:
         except OSError as error:
             if error.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
                 raise
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_file(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
     finally:
         os.close(descriptor)
 

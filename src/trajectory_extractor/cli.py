@@ -43,6 +43,7 @@ from trajectory_extractor.report_builder import write_study_report
 from trajectory_extractor.secondary_artifacts import (
     SecondaryArtifactStore,
     build_analysis_provenance,
+    ensure_durable_directory,
 )
 from trajectory_extractor.secondary_study import evaluate_concept_secondary
 from trajectory_extractor.steering import SteeringHook
@@ -624,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "report-study":
         config = ExperimentConfig.from_json(args.config)
         protected_results = Path(__file__).resolve().parents[2] / "docs" / "results.md"
-        if Path(args.output).resolve() == protected_results.resolve():
+        if _same_output_file(Path(args.output), protected_results):
             raise ValueError("report-study must not overwrite repository docs/results.md")
         path = write_study_report(RunStore(config.output_dir), args.output)
         print(json.dumps({"report": str(path)}))
@@ -640,6 +641,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"selected": len(result["cases"]), "counts": result["counts"]}))
         return 0
     return 1
+
+
+def _same_output_file(candidate: Path, protected: Path) -> bool:
+    if candidate.exists() and protected.exists():
+        return candidate.samefile(protected)
+    return candidate.resolve() == protected.resolve()
 
 
 def _timed_detection(batch, **kwargs):
@@ -679,6 +686,7 @@ def _write_secondary_figures(
 ) -> tuple[Path, Path]:
     from trajectory_extractor.plotting import plot_class_risk_gap, plot_method_comparison
 
+    ensure_durable_directory(directory)
     comparison = plot_method_comparison(
         {name: values["test_auroc"] for name, values in result["methods"].items()},
         directory / f"method_comparison_{endpoint}.png",

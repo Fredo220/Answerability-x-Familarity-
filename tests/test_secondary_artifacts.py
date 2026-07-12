@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import json
 import os
@@ -262,6 +263,83 @@ def test_concurrent_exclusive_publishers_create_one_complete_winner(tmp_path):
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_secondary_write_durably_creates_each_missing_directory(
+    tmp_path, monkeypatch
+):
+    synced = []
+    monkeypatch.setattr(
+        secondary_artifacts,
+        "_fsync_directory",
+        lambda path: synced.append(path),
+    )
+    store = SecondaryArtifactStore(tmp_path)
+
+    store.write_json("run", "comparisons", "result", {"ok": True})
+
+    assert synced == [
+        tmp_path,
+        tmp_path / "run",
+        tmp_path / "run" / "secondary",
+        tmp_path / "run" / "secondary" / "comparisons",
+    ]
+
+
+def test_durable_hierarchy_stops_when_parent_sync_fails(tmp_path, monkeypatch):
+    store = SecondaryArtifactStore(tmp_path)
+
+    def fail_first_parent(path):
+        if path == tmp_path:
+            raise OSError("injected directory fsync failure")
+
+    monkeypatch.setattr(
+        secondary_artifacts, "_fsync_directory", fail_first_parent
+    )
+
+    with pytest.raises(OSError, match="injected directory fsync failure"):
+        store.write_json("run", "comparisons", "result", {"ok": True})
+
+    assert (tmp_path / "run").is_dir()
+    assert not (tmp_path / "run" / "secondary").exists()
+
+
+def test_durable_hierarchy_accepts_concurrent_creator(tmp_path, monkeypatch):
+    destination = tmp_path / "run" / "secondary" / "comparisons"
+    contested = tmp_path / "run"
+    real_mkdir = os.mkdir
+    raced = False
+
+    def concurrent_mkdir(path, mode=0o777):
+        nonlocal raced
+        candidate = Path(path)
+        if candidate == contested and not raced:
+            raced = True
+            real_mkdir(path, mode)
+            raise FileExistsError(errno.EEXIST, "concurrent creator", path)
+        return real_mkdir(path, mode)
+
+    monkeypatch.setattr(secondary_artifacts.os, "mkdir", concurrent_mkdir)
+
+    secondary_artifacts.ensure_durable_directory(destination)
+
+    assert raced
+    assert destination.is_dir()
+
+
+def test_concurrent_durable_hierarchy_creators_both_succeed(tmp_path):
+    destination = tmp_path / "run" / "secondary" / "comparisons"
+    barrier = Barrier(2)
+
+    def create():
+        barrier.wait()
+        secondary_artifacts.ensure_durable_directory(destination)
+        return destination.is_dir()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: create(), range(2)))
+
+    assert outcomes == [True, True]
+
+
 def test_existing_metrics_or_completion_marker_blocks_secondary_rerun(tmp_path):
     store = SecondaryArtifactStore(tmp_path)
     metrics = store.write_json(
@@ -372,6 +450,80 @@ def test_completion_marker_binds_all_endpoint_artifacts_by_relative_path(tmp_pat
     assert store.verify_completion("concept-main", "exact_error")["artifacts"] == dict(
         sorted(expected_hashes.items())
     )
+
+
+def test_completion_syncs_every_artifact_and_parent_before_marker(
+    tmp_path, monkeypatch
+):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+    events = []
+
+    monkeypatch.setattr(
+        secondary_artifacts,
+        "_fsync_file",
+        lambda path: events.append(("file", path)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        secondary_artifacts,
+        "_fsync_directory",
+        lambda path: events.append(("directory", path)),
+    )
+    monkeypatch.setattr(
+        secondary_artifacts,
+        "_exclusive_write_bytes",
+        lambda path, payload: events.append(("marker", path)),
+    )
+
+    store.write_completion(
+        "concept-main",
+        "exact_error",
+        analysis_id=payload["analysis_id"],
+        artifact_paths=artifacts,
+    )
+
+    expected = []
+    for path in sorted(artifacts):
+        expected.extend((("file", path), ("directory", path.parent)))
+    assert events[:-1] == expected
+    assert events[-1] == (
+        "marker",
+        tmp_path
+        / "concept-main"
+        / "secondary"
+        / "comparisons"
+        / "completion_exact_error.json",
+    )
+
+
+def test_completion_sync_failure_prevents_marker_publication(tmp_path, monkeypatch):
+    store = SecondaryArtifactStore(tmp_path)
+    payload, artifacts = _write_complete_endpoint_artifacts(store)
+
+    def fail_on_png(path):
+        if path.suffix == ".png":
+            raise OSError("injected artifact fsync failure")
+
+    monkeypatch.setattr(
+        secondary_artifacts, "_fsync_file", fail_on_png, raising=False
+    )
+
+    with pytest.raises(OSError, match="injected artifact fsync failure"):
+        store.write_completion(
+            "concept-main",
+            "exact_error",
+            analysis_id=payload["analysis_id"],
+            artifact_paths=artifacts,
+        )
+
+    assert not (
+        tmp_path
+        / "concept-main"
+        / "secondary"
+        / "comparisons"
+        / "completion_exact_error.json"
+    ).exists()
 
 
 @pytest.mark.parametrize("artifact_index", range(6))

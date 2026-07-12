@@ -360,6 +360,38 @@ def test_secondary_figures_stay_within_artifact_namespace(tmp_path):
     ).exists()
 
 
+def test_secondary_figures_use_durable_directory_creation(tmp_path, monkeypatch):
+    store = SecondaryArtifactStore(tmp_path)
+    metrics_path = store.write_json("concept-main", "comparisons", "detection", {})
+    directory = metrics_path.parent / "figures"
+    created = []
+    monkeypatch.setattr(
+        cli,
+        "ensure_durable_directory",
+        lambda path: created.append(path),
+        raising=False,
+    )
+
+    cli._write_secondary_figures(
+        directory,
+        {
+            "methods": {
+                "contrastive_vector": {"test_auroc": 0.60},
+                "contrastive_plus_dynamics": {"test_auroc": 0.70},
+            }
+        },
+        {
+            "validation_labels": np.array([0, 1]),
+            "validation_metacognitive_risk_surface": np.array(
+                [[[0.1]], [[0.9]]]
+            ),
+        },
+        endpoint="exact_error",
+    )
+
+    assert created == [directory]
+
+
 def test_report_study_defaults_to_generated_report(tmp_path, monkeypatch):
     config_path, output_dir = _write_config_and_run_provenance(tmp_path)
     captured = {}
@@ -404,3 +436,66 @@ def test_report_study_rejects_repository_results_path(tmp_path, monkeypatch, out
                 output,
             ]
         )
+
+
+def test_report_study_rejects_hard_link_to_repository_results(
+    tmp_path, monkeypatch
+):
+    config_path, _ = _write_config_and_run_provenance(tmp_path)
+    protected = Path(cli.__file__).resolve().parents[2] / "docs" / "results.md"
+    alias = tmp_path / "results-hard-link.md"
+    alias.hardlink_to(protected)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("protected results report must not be written")
+
+    monkeypatch.setattr(cli, "write_study_report", fail_if_called)
+
+    with pytest.raises(ValueError, match="docs/results.md"):
+        cli.main(
+            [
+                "report-study",
+                "--config",
+                str(config_path),
+                "--output",
+                str(alias),
+            ]
+        )
+
+
+def test_report_study_rejects_case_alias_when_filesystem_exposes_it(
+    tmp_path, monkeypatch
+):
+    config_path, _ = _write_config_and_run_provenance(tmp_path)
+    protected = Path(cli.__file__).resolve().parents[2] / "docs" / "results.md"
+    alias = protected.with_name(protected.name.swapcase())
+    if not alias.exists() or not alias.samefile(protected):
+        pytest.skip("filesystem does not expose case-insensitive aliases")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("protected results report must not be written")
+
+    monkeypatch.setattr(cli, "write_study_report", fail_if_called)
+
+    with pytest.raises(ValueError, match="docs/results.md"):
+        cli.main(
+            [
+                "report-study",
+                "--config",
+                str(config_path),
+                "--output",
+                str(alias),
+            ]
+        )
+
+
+def test_report_output_identity_retains_resolved_fallback_for_nonexistent_path(
+    tmp_path,
+):
+    protected = tmp_path / "docs" / "results.md"
+    protected.parent.mkdir()
+    protected.write_text("protected")
+    candidate = tmp_path / "missing" / ".." / "docs" / "results.md"
+
+    assert not candidate.exists()
+    assert cli._same_output_file(candidate, protected)
