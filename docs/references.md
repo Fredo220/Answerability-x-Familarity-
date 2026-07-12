@@ -2,7 +2,7 @@
 
 - [Azaria and Mitchell, The Internal State of an LLM Knows When It's Lying](https://arxiv.org/abs/2304.13734)
 - [Marks and Tegmark, The Geometry of Truth](https://arxiv.org/abs/2310.06824)
-- [Galkin and Remizov, On Rates of Convergence for Chernoff Approximations](https://arxiv.org/abs/2104.01249)
+- [Galkin and Remizov, Upper and lower estimates for rate of convergence in the Chernoff product formula for semigroups of operators](https://arxiv.org/abs/2104.01249)
 - [Toy Models of Superposition](https://www.transformer-circuits.pub/2022/toy_model/index.html)
 - [Towards Monosemanticity](https://www.transformer-circuits.pub/2023/monosemantic-features/index.html)
 - [JailbreakBench](https://arxiv.org/abs/2404.01318)

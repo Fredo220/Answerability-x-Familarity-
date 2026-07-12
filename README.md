@@ -4,6 +4,14 @@ CPU-first research infrastructure for testing whether layerwise representation d
 
 The operator residual is Remizov/Chernoff-inspired, not a claimed application of an operator-semigroup theorem to transformers. It keeps that name only if it beats simpler baselines under the frozen criteria in [the preregistration](docs/preregistration.md).
 
+## Frozen Concept Result
+
+The completed synthetic concept run is negative: neither primary nor secondary
+exact-error comparisons support the registered dynamics claim. The selected
+registered prefix is the latest pre-token state, so it does not demonstrate early
+warning or "artificial intuition." See the full frozen-result record and pending
+controls in [docs/results.md](docs/results.md).
+
 ## Scope
 
 - Target: `meta-llama/Llama-3.2-1B-Instruct`
@@ -82,10 +90,12 @@ it is not a failure proof. The registered question is whether dynamics add held-
 predictive value beyond the same contrastive direction used statically.
 
 The secondary analysis uses a strict holdout: validation receives full prefix
-probability surfaces and crossing diagnostics for selection, while test receives
-only the frozen selected-prefix probability. Its confirmatory p-value is a paired
-entity-family permutation test with seed 42 and 2,000 permutations; the cluster
-bootstrap supplies confidence intervals only. The validation figure is named
+probability surfaces for selection, while test receives only the frozen
+selected-prefix probability. Because each prefix cell is an independently fitted
+classifier, thresholds do not transfer across cells and crossing diagnostics are
+explicitly not interpretable. Its confirmatory p-value is a paired entity-family
+permutation test with seed 42 and 2,000 permutations; the cluster bootstrap
+supplies confidence intervals only. The validation figure is named
 `validation_metacognitive_risk_gap_<endpoint>.png`. A positive result is
 provisional until the frozen falsification controls and external transfer are
 completed.
@@ -140,8 +150,9 @@ concept cap is never reused for safety-response judging.
 
 All fitted components record their training example IDs. Evaluation builds and
 persists AUROC/AUPRC surfaces across causal token/layer prefixes, freezes the
-threshold on validation, and reports test calibration, false-positive rate,
-and earliest threshold crossing. Steering compares no intervention,
+selected-prefix threshold on validation, and reports selected-prefix test
+calibration and false-positive rate. It does not report threshold-crossing timing
+across prefix cells. Steering compares no intervention,
 norm-matched random, shuffled-label, ITI-style always-on, and
 operator-residual-triggered intervention.
 

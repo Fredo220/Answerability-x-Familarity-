@@ -11,7 +11,6 @@ from trajectory_extractor.evaluation import (
     predict_at_prefix,
     predict_prefix_probability_surface,
     select_threshold,
-    threshold_metrics,
 )
 from trajectory_extractor.features import make_method_tensor
 from trajectory_extractor.operator_residual import LayerwiseOperatorResidual
@@ -120,22 +119,6 @@ def evaluate_concept_secondary(
             train_indices=train,
             predict_indices=validation,
         )
-        causal_validation_scores = validation_surface.copy()
-        valid_validation_scores = np.broadcast_to(
-            batch.token_mask[validation, :, None], causal_validation_scores.shape
-        )
-        causal_validation_scores[~valid_validation_scores] = -np.inf
-        crossings = threshold_metrics(
-            causal_validation_scores,
-            batch.labels[validation],
-            threshold=threshold,
-        )
-        positive_crossings = crossings.earliest_crossing[batch.labels[validation] == 1]
-        observed_crossings = positive_crossings[positive_crossings >= 0]
-        positive_tokens = crossings.earliest_token[batch.labels[validation] == 1]
-        observed_tokens = positive_tokens[positive_tokens >= 0]
-        positive_layers = crossings.earliest_layer[batch.labels[validation] == 1]
-        observed_layers = positive_layers[positive_layers >= 0]
         method_results[name] = {
             "selected_token": int(selected[0]),
             "selected_layer": int(selected[1]),
@@ -151,15 +134,9 @@ def evaluate_concept_secondary(
                 "auprc": surface.auprc.tolist(),
             },
             "validation_diagnostics": {
-                "false_positive_rate": crossings.false_positive_rate,
-                "median_positive_crossing": (
-                    float(np.median(observed_crossings)) if observed_crossings.size else None
-                ),
-                "median_positive_crossing_token": (
-                    float(np.median(observed_tokens)) if observed_tokens.size else None
-                ),
-                "median_positive_crossing_layer": (
-                    float(np.median(observed_layers)) if observed_layers.size else None
+                "status": "not_interpretable",
+                "reason": (
+                    "independently_fitted_prefix_classifiers_do_not_share_a_transferable_threshold"
                 ),
             },
             "metadata": {

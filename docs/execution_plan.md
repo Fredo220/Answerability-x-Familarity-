@@ -1,6 +1,6 @@
 # Execution Plan and Live Status
 
-Last updated: 2026-07-10. This file preserves the complete execution sequence
+Last updated: 2026-07-12. This file preserves the complete execution sequence
 across chat compaction and future sessions. The frozen scientific criteria live
 in `docs/preregistration.md`; this file does not replace them.
 
@@ -14,8 +14,8 @@ damaging matched controls.
 
 ## Frozen interpretation
 
-- Early warning means prediction from pre-token causal prefixes, never an exact
-  mathematical failure point.
+- Early-warning timing is not inferred from cross-cell threshold crossings; no
+  such claim is reported without a preregistered shared calibrated score.
 - Concept mixing and jailbreaks remain separate mechanisms, labels, operators,
   directions, interventions, and result tables.
 - PCA is a tractable coordinate system, not a reversal of superposition.
@@ -62,7 +62,7 @@ damaging matched controls.
 - Llama Guard 3 1B labels after unloading the target model.
 - Stratified 20 percent human audit required before final safety conclusions.
 
-## Stage 2: Target-model smoke and representative pilots - in progress
+## Stage 2: Target-model smoke and representative pilots - concept completed; safety pilot pending
 
 1. Hugging Face CLI authentication and gated repository access are verified for
    `Fredolin21`, Llama 3.2 1B Instruct, and Llama Guard 3 1B.
@@ -75,51 +75,40 @@ damaging matched controls.
    genuine distractor-binding errors. The first ten training examples were all
    correct, so pilot class balance is diagnostic only and is not analyzed as a
    scientific result.
-4. The full `concept-main` extraction is resumable and currently has 93 complete
-   examples. It was paused without partial artifacts because the laptop reported
-   15 percent battery and continued discharging under AC power; resume only after
-   the power source can sustain the CPU load.
+4. The full `concept-main` extraction completed with 1,200 exact artifact pairs.
+   Its frozen analysis is a negative concept result; it must not be re-extracted
+   or rerun to reinterpret the registered endpoint. See [the frozen results](results.md).
 5. Run one matched harmful/benign pair per jailbreak category; inspect target
    responses and Guard parsing before the complete safety run.
 
-## Stage 3: Concept detection - extraction in progress
+## Stage 3: Concept detection - complete negative run
 
-1. Extract all 1,200 examples under `concept-main`.
-2. Fit only on training folds:
-   - output baseline: token log probability and entropy;
-   - static baseline: layerwise logistic probes;
-   - raw dynamics: normalized velocity, curvature, direction change;
-   - stable operator residual: layerwise PCA-32 plus ridge transition operators,
-     fitted only on correct training responses;
-   - combined static plus dynamics model.
-3. Select token/layer prefix and decision threshold on validation only.
-4. Evaluate exact error once on held-out test; cluster bootstrap by entity family.
-5. Repeat independently for distractor-binding error.
-6. Persist AUROC/AUPRC surfaces, calibration, FPR, threshold crossing,
-   per-example predictions, bootstrap draws, figures, runtime, and fit IDs.
-7. Apply the frozen acceptance rule: dynamics gain at least 0.03 AUROC over the
-   best simple baseline and paired 95 percent CI excludes zero.
+1. The 1,200 frozen `concept-main` artifact pairs were evaluated once under the
+   registered train/validation/test protocol.
+2. Primary `exact_error` is `not_supported`: the registered AUROC delta is
+   -0.03610154356423012 with 95% CI
+   [-0.05645103380084038, -0.006502990610897541].
+3. Secondary `exact_error` is `not_supported`; `binding_error` is
+   `not_evaluable` because it has 13 positives across 8 clusters.
+4. The validation probability surface is retained for prefix selection. Its cells
+   are independently fitted classifiers, so threshold-crossing timing is not
+   interpretable and is not reported as an early warning diagnostic.
+5. The complete result record, hashes, selected-prefix limitation, and remaining
+   controls are in [docs/results.md](results.md).
 
-### Stage 3b: Prospective metacognitive feature-flow monitor
+### Stage 3b: Prospective metacognitive feature-flow monitor - complete negative run
 
-1. Keep `docs/preregistration.md` and `evaluate-concept` unchanged.
-2. Fit centered risk-minus-control activation directions on training examples only.
-3. Standardize direction projections per layer with training-only statistics.
-4. Derive causal cross-layer and prior-token differences.
-5. Select the prefix and threshold on validation only. Validation receives full
-   prefix probability surfaces and crossing diagnostics; test receives only the
-   frozen selected-prefix probability.
-6. Compare `contrastive_plus_dynamics` against `contrastive_vector` once on test.
-   The confirmatory p-value is a paired entity-family permutation test with seed
-   42 and 2,000 permutations. Cluster bootstrap is used for confidence intervals
-   only.
-7. Persist results under `runs/concept-main/secondary/`; never overwrite primary
-   metrics. Write the validation figure as
-   `validation_metacognitive_risk_gap_<endpoint>.png`, not as a test risk surface.
-8. Mark the result `not_evaluable` unless test has 20 positive examples across 10
-   independent entity families. Even when supported, mark the positive result
-   provisional until the frozen falsification controls and external transfer are
-   completed.
+1. `contrastive_plus_dynamics` was compared with `contrastive_vector` once on the
+   frozen test fold using the registered paired entity-family permutation test
+   (seed 42, 2,000 permutations) and cluster bootstrap confidence interval.
+2. The secondary endpoint is `not_supported`; the result is synthetic-only and
+   does not establish an early warning, intuition, transfer, or safety signal.
+3. The selected registered prefix, token 4/layer 16, is the latest pre-token
+   prefix and has observed all but the final response token. It is not early.
+4. No cross-cell threshold-crossing claim is retained because the validation
+   surface consists of independently fitted prefix classifiers. See
+   [docs/results.md](results.md) for the frozen numeric record and pending
+   controls.
 
 This stage validates a non-anthropomorphic monitoring signal only. The scientific
 term is a metacognitive internal reliability signal: a model-derived risk score,
@@ -162,7 +151,8 @@ separate plans before any broad reliability or safety claim.
 5. Run leave-one-category-out detection with the same five method families.
 6. Aggregate out-of-fold predictions and category-clustered paired bootstrap.
 7. Report unsafe response rate, refusal rate, benign over-refusal, AUROC, AUPRC,
-   calibration, FPR, early crossing, and runtime.
+   selected-prefix calibration, FPR, and runtime. Do not report cross-cell
+   threshold-crossing timing without a preregistered shared calibrated score.
 
 ## Stage 7: Jailbreak intervention - pending
 
@@ -191,21 +181,18 @@ separate plans before any broad reliability or safety claim.
 - Full public transcoder sets require external GPU/hosted resources; they exceed
   the local 8-GB memory budget.
 
-## Stage 9: Final report - pending
+## Stage 9: Final report - concept result completed; safety report pending
 
-- Generate `docs/results.md` only from frozen artifacts.
-- Report supported, partially supported, not supported, or not evaluable without
+- [docs/results.md](results.md) records the frozen negative concept result without
   changing thresholds after observing results.
-- Separate preregistered findings, exploratory circuit evidence, limitations,
-  negative controls, runtime, and model-local generalization limits.
+- The report separates the registered findings from the exploratory full monitor,
+  limitations, and remaining falsification, transfer, intervention, and safety
+  controls.
 - Do not make a final jailbreak claim until the human audit is completed.
 
-## Immediate next commands
+## Immediate next work
 
-```bash
-.venv/bin/feature-dynamics extract-concept \
-  --config configs/llama32_1b.json --run-id concept-main
-.venv/bin/feature-dynamics evaluate-concept \
-  --config configs/llama32_1b.json --run-id concept-main --bootstrap 2000 \
-  --endpoint exact_error
-```
+Do not rerun the frozen concept extraction or registered evaluations. Remaining
+work is the pending concept falsification and transfer controls, intervention
+study, and the separate jailbreak extraction, audit, detection, and intervention
+stages.

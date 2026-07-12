@@ -147,8 +147,13 @@ def test_secondary_evaluation_keeps_registered_comparison_and_fit_ids(monkeypatc
         result["methods"]["contrastive_plus_dynamics"]["test_false_positive_rate"]
         == result["methods"]["contrastive_plus_dynamics"]["test"]["false_positive_rate"]
     )
-    assert "validation_diagnostics" in result["methods"]["contrastive_plus_dynamics"]
-    assert "median_positive_crossing" not in result["methods"]["contrastive_plus_dynamics"]
+    diagnostics = result["methods"]["contrastive_plus_dynamics"]["validation_diagnostics"]
+    assert diagnostics == {
+        "status": "not_interpretable",
+        "reason": (
+            "independently_fitted_prefix_classifiers_do_not_share_a_transferable_threshold"
+        ),
+    }
     for value in result["artifacts"].values():
         if np.issubdtype(np.asarray(value).dtype, np.floating):
             assert np.isfinite(value).all()
