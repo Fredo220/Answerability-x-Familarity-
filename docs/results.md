@@ -2,8 +2,10 @@
 
 ## Provenance
 
-- Implementation SHA used for this run:
+- Execution-audit implementation commit:
   `04568b9f1c1629ac7f08323b1c0602843fe91f48`
+- This commit is recorded by the execution audit; it is not embedded provenance
+  in the legacy secondary artifact files.
 - Primary artifact SHA-256:
   `bf9c33a17f86d5a3c0851bedb302876aec2436bea662bc61099b0150f853bcd8`
 - Dataset and evaluation: 1,200 exact artifact pairs from the frozen synthetic
@@ -14,19 +16,21 @@ report.
 
 ## Secondary Artifact Boundary
 
-The live frozen secondary artifacts were created by implementation commit
+The execution audit attributes the live frozen secondary artifacts to
 `04568b9f1c1629ac7f08323b1c0602843fe91f48`, before the modern provenance and
-completion sealing protocol existed. They contain no `analysis_id`, no
-`analysis_provenance`, and no completion marker. They are therefore historical
-evidence for the frozen result, not artifacts that satisfy the current sealed
-secondary-analysis schema.
+completion sealing protocol existed. That attribution is not embedded artifact
+provenance. The files contain no `analysis_id`, no `analysis_provenance`, and no
+completion marker. They are therefore historical evidence for the frozen result,
+not artifacts that satisfy the current sealed secondary-analysis schema.
 
 They are deliberately not retrofitted: doing so would create a new analysis
 object after the fact. They are protected now by the legacy metrics guard, which
 refuses a rerun when endpoint metrics already exist, together with the tracked
-artifact hash and this tracked result report. The guard, hashes, and report
-preserve the historical record; they do not turn the legacy files into modern
-provenance-sealed artifacts.
+artifact hash and this tracked result report. The twelve file hashes in
+[docs/legacy_secondary_sha256.txt](legacy_secondary_sha256.txt) are post-hoc
+archival identification, not a retrofitted modern completion seal. The guard,
+hashes, and report preserve the historical record; they do not turn the legacy
+files into modern provenance-sealed artifacts.
 
 ## Registered Exact-Error Findings
 

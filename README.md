@@ -76,6 +76,7 @@ The concept track is executed in four explicit stages:
 RUN_ID=concept-replication-01
 TRANSFER_RUN_ID="${RUN_ID}-real-transfer"
 INTERVENTION_RUN_ID="${RUN_ID}-intervention"
+TRANSFER_DATA="data/external/${RUN_ID}-real-transfer.jsonl"
 
 feature-dynamics extract-concept --run-id "$RUN_ID" --pilot-per-split 10
 feature-dynamics extract-concept --run-id "$RUN_ID"
@@ -119,8 +120,8 @@ The source-documented transfer file must contain 200 JSONL rows with `id`,
 `distractor_answers`:
 
 ```bash
-feature-dynamics prepare-real-transfer
-feature-dynamics extract-transfer data/external/real_transfer.jsonl \
+feature-dynamics prepare-real-transfer --output "$TRANSFER_DATA"
+feature-dynamics extract-transfer "$TRANSFER_DATA" \
   --run-id "$TRANSFER_RUN_ID"
 feature-dynamics evaluate-transfer \
   --reference-run-id "$RUN_ID" \

@@ -26,13 +26,15 @@ damaging matched controls.
 
 ## Historical Secondary Artifact Boundary
 
-The live frozen secondary artifacts were produced by
-`04568b9f1c1629ac7f08323b1c0602843fe91f48` before the current provenance and
-completion protocol. They contain no `analysis_id`, `analysis_provenance`, or
-completion marker. They remain frozen legacy evidence: the current legacy
-metrics guard blocks a rerun, while the tracked artifact hash and
-[frozen result report](results.md) preserve the record. They are not retrofitted
-or represented as modern provenance-sealed artifacts.
+The execution audit, rather than embedded artifact provenance, attributes the
+live frozen secondary artifacts to `04568b9f1c1629ac7f08323b1c0602843fe91f48`
+before the current provenance and completion protocol. They contain no
+`analysis_id`, `analysis_provenance`, or completion marker. They remain frozen
+legacy evidence: the current legacy metrics guard blocks a rerun, while the
+post-hoc [SHA-256 archive manifest](legacy_secondary_sha256.txt) and
+[frozen result report](results.md) preserve the record. The manifest is archival
+identification, not a retrofitted modern completion seal; the artifacts are not
+represented as modern provenance-sealed artifacts.
 
 ## Stage 0: Infrastructure and design - completed
 
