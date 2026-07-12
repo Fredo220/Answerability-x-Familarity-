@@ -1,7 +1,10 @@
 import hashlib
 import json
+import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import numpy as np
 import pytest
@@ -172,6 +175,88 @@ def test_json_replace_failure_preserves_existing_artifact_and_cleans_temp(tmp_pa
 
     assert store.read_json("run", "comparisons", "result") == {"version": 1}
     assert list((tmp_path / "run" / "secondary" / "comparisons").glob("*.tmp")) == []
+
+
+def test_write_all_retries_short_writes(monkeypatch):
+    read_descriptor, write_descriptor = os.pipe()
+    real_write = os.write
+    calls = []
+
+    def short_write(descriptor, payload):
+        calls.append(len(payload))
+        return real_write(descriptor, payload[:2])
+
+    monkeypatch.setattr(secondary_artifacts.os, "write", short_write)
+    try:
+        secondary_artifacts._write_all(write_descriptor, b"complete-payload")
+    finally:
+        os.close(write_descriptor)
+    try:
+        assert os.read(read_descriptor, 1024) == b"complete-payload"
+    finally:
+        os.close(read_descriptor)
+    assert len(calls) > 1
+
+
+def test_exclusive_publish_write_failure_leaves_no_destination_or_temp(
+    tmp_path, monkeypatch
+):
+    destination = tmp_path / "claim.json"
+    real_write = os.write
+    calls = 0
+
+    def partial_then_fail(descriptor, payload):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return real_write(descriptor, payload[:3])
+        raise OSError("injected write failure")
+
+    monkeypatch.setattr(secondary_artifacts.os, "write", partial_then_fail)
+
+    with pytest.raises(OSError, match="injected write failure"):
+        secondary_artifacts._exclusive_write_bytes(destination, b"complete-payload")
+
+    assert not destination.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_exclusive_publish_fsync_failure_leaves_no_destination_or_temp(
+    tmp_path, monkeypatch
+):
+    destination = tmp_path / "completion.json"
+
+    def fail_fsync(descriptor):
+        raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(secondary_artifacts.os, "fsync", fail_fsync)
+
+    with pytest.raises(OSError, match="injected fsync failure"):
+        secondary_artifacts._exclusive_write_bytes(destination, b"complete-payload")
+
+    assert not destination.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_concurrent_exclusive_publishers_create_one_complete_winner(tmp_path):
+    destination = tmp_path / "claim.json"
+    payloads = (b"publisher-one", b"publisher-two-with-more-bytes")
+    barrier = Barrier(2)
+
+    def publish(payload):
+        barrier.wait()
+        try:
+            secondary_artifacts._exclusive_write_bytes(destination, payload)
+        except FileExistsError:
+            return "blocked"
+        return "published"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(publish, payloads))
+
+    assert sorted(outcomes) == ["blocked", "published"]
+    assert destination.read_bytes() in payloads
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def test_existing_metrics_or_completion_marker_blocks_secondary_rerun(tmp_path):

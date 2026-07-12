@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -202,15 +203,54 @@ def _atomic_write_bytes(destination: Path, payload: bytes) -> None:
 
 def _exclusive_write_bytes(destination: Path, payload: bytes) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(
-        destination,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-        0o644,
-    )
-    with os.fdopen(descriptor, "wb") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w+b",
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            _write_all(handle.fileno(), payload)
+            handle.flush()
+            os.fchmod(handle.fileno(), 0o644)
+            os.fsync(handle.fileno())
+        os.link(temporary, destination)
+        temporary.unlink()
+        temporary = None
+        _fsync_directory(destination.parent)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _write_all(descriptor: int, payload: bytes) -> None:
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError("write made no progress")
+        remaining = remaining[written:]
+
+
+def _fsync_directory(directory: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(directory, flags)
+    except OSError as error:
+        if error.errno in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+            return
+        raise
+    try:
+        try:
+            os.fsync(descriptor)
+        except OSError as error:
+            if error.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+                raise
+    finally:
+        os.close(descriptor)
 
 
 def build_analysis_provenance(
