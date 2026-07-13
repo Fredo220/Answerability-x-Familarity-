@@ -505,7 +505,7 @@ RLMFArtifactStore(root: str | Path)
 RLMFArtifactStore.write_jsonl(study_id, section, name, rows) -> Path
 RLMFArtifactStore.write_json(study_id, section, name, value) -> Path
 RLMFArtifactStore.write_npz(study_id, section, name, **arrays) -> Path
-RLMFArtifactStore.complete_endpoint(study_id, endpoint, config_hash, paths) -> Path
+RLMFArtifactStore.complete_endpoint(study_id, endpoint, config: RLMFConfig, paths) -> Path
 RLMFArtifactStore.verify_endpoint(study_id, endpoint) -> dict[str, Any]
 ```
 
