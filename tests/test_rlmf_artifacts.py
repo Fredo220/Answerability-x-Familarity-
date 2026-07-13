@@ -81,7 +81,30 @@ def test_completion_binds_parent_config_and_artifact_hashes(tmp_path):
     assert verified["artifact_hashes"] == {
         "metrics/behavior.json": rlmf_artifacts.sha256_file(artifact)
     }
+    assert verified["created_at"].endswith("+00:00")
 
+
+def test_completion_accepts_and_verifies_additional_sealed_parent_hashes(tmp_path):
+    store = RLMFArtifactStore(tmp_path)
+    artifact = store.write_json("rlmf-qwen06b-v1", "evaluation", "test", {"rows": 1})
+    parent_hashes = {
+        "locked_judge_audit": "a" * 64,
+        "candidate_population": "b" * 64,
+    }
+
+    store.complete_endpoint(
+        "rlmf-qwen06b-v1",
+        "audit-candidates-test",
+        confirmatory_config(),
+        [artifact],
+        parent_hashes=parent_hashes,
+    )
+    verified = store.verify_endpoint("rlmf-qwen06b-v1", "audit-candidates-test")
+
+    assert verified["parent_hashes"] == {
+        "config": confirmatory_config().config_hash,
+        **parent_hashes,
+    }
 
 def test_completion_requires_a_config_record_and_is_immutable(tmp_path):
     store = RLMFArtifactStore(tmp_path)

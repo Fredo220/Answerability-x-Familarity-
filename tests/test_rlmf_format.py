@@ -8,6 +8,7 @@ from trajectory_extractor.rlmf_format import (
     bound_differential_judge_bias,
     build_judge_audit_sample,
     completion_equivalent,
+    estimate_arm_confusion_uncertainty,
     normalized_answer,
     parse_metascore_output,
     parse_rlmf_output,
@@ -66,20 +67,34 @@ def test_malformed_metascores_are_invalid_without_guessing(text):
     assert parsed.metascore is None
 
 
-def test_alias_judge_uses_unicode_normalization_and_never_substrings():
-    assert normalized_answer(" The\u00a0\uff37\uff49\uff4c\uff4c\uff49\uff41\uff4d, Shakespeare! ") == "william shakespeare"
+def test_alias_normalization_matches_the_registered_contract_without_symbol_collisions():
+    assert (
+        normalized_answer(" The\u00a0\uff37\uff49\uff4c\uff4c\uff49\uff41\uff4d, Shakespeare! ")
+        == "william shakespeare"
+    )
+    assert normalized_answer("War of the Worlds") == "war of worlds"
     assert alias_exact_match("The U.S.A.", ("usa",))
+    assert not alias_exact_match("AB", ("A+B",))
     assert not alias_exact_match("Shakespeare", ("William Shakespeare",))
-    assert completion_equivalent("William Shakespeare", "Shakespeare", ("William Shakespeare", "Shakespeare"))
+    assert completion_equivalent(
+        "William Shakespeare", "Shakespeare", ("William Shakespeare", "Shakespeare")
+    )
     assert completion_equivalent("A Mercury", "Mercury", ("Mercury",))
     assert not completion_equivalent("Mercury", "Freddie Mercury", ("Mercury",))
 
+    with pytest.raises(ValueError, match="non-string sequence"):
+        alias_exact_match("a", "abc")
+    with pytest.raises(ValueError, match="strings"):
+        alias_exact_match("a", ("a", None))
 
-def test_audit_sampling_is_deterministic_balanced_and_blinded():
-    candidates = _candidates(per_stratum=50)
 
-    first = build_judge_audit_sample(candidates, phase="locked", size=400, seed=17)
-    second = build_judge_audit_sample(list(reversed(candidates)), phase="locked", size=400, seed=17)
+def test_locked_sampling_is_deterministic_balanced_blinded_and_proxy_bound():
+    candidates = _candidates(per_stratum=50, phase="locked")
+
+    first = build_judge_audit_sample(candidates, phase="locked", size=400, seed=20260713)
+    second = build_judge_audit_sample(
+        list(reversed(candidates)), phase="locked", size=400, seed=20260713
+    )
 
     assert first == second
     assert len(first) == 400
@@ -90,90 +105,202 @@ def test_audit_sampling_is_deterministic_balanced_and_blinded():
         for label in (False, True)
     }
     payload = first[0].rater_payload()
-    assert set(payload) == {"audit_id", "judgment_type", "question", "answer", "comparison_answer", "reference_answer"}
-    assert not {"arm", "seed", "confidence", "reward", "model_id", "proxy_label"} & set(payload)
+    assert set(payload) == {
+        "audit_id",
+        "judgment_type",
+        "question",
+        "answer",
+        "comparison_answer",
+        "reference_answer",
+    }
+    assert not {"arm", "split", "aliases", "proxy_label"} & set(payload)
+    ledger = first[0].to_ledger_record()
+    assert ledger["aliases"] == ["william shakespeare"]
+    assert first[0] == AuditRow.from_ledger_record(ledger)
+
+    contradictory = [dict(row) for row in candidates]
+    contradictory[0]["proxy_label"] = not contradictory[0]["proxy_label"]
+    with pytest.raises(ValueError, match="proxy_label"):
+        build_judge_audit_sample(
+            contradictory, phase="locked", size=400, seed=20260713
+        )
 
 
-def test_audit_sampling_enforces_registered_phase_sizes_and_available_strata():
-    candidates = _candidates(per_stratum=125)
+def test_development_uses_shared_pretreatment_split_strata_without_arms():
+    rows = build_judge_audit_sample(
+        _candidates(per_stratum=25, phase="development"),
+        phase="development",
+        size=200,
+        seed=20260713,
+    )
 
-    test_rows = build_judge_audit_sample(candidates, phase="test", size=1000, seed=17)
-    assert set(_stratum_counts(test_rows).values()) == {125}
-    with pytest.raises(ValueError, match="registered"):
-        build_judge_audit_sample(candidates, phase="locked", size=200, seed=17)
-    with pytest.raises(ValueError, match="insufficient"):
-        build_judge_audit_sample(candidates[:-1], phase="test", size=1000, seed=17)
+    assert {row.arm for row in rows} == {None}
+    assert {
+        (row.split, row.judgment_type, row.proxy_label) for row in rows
+    } == {
+        (split, judgment_type, label)
+        for split in ("pre_sft", "rl_train")
+        for judgment_type in ("correctness", "equivalence")
+        for label in (False, True)
+    }
+    counts = {
+        key: sum((row.split, row.judgment_type, row.proxy_label) == key for row in rows)
+        for key in {
+            (row.split, row.judgment_type, row.proxy_label) for row in rows
+        }
+    }
+    assert set(counts.values()) == {25}
+
+    invented_arm = _candidates(per_stratum=25, phase="development")
+    invented_arm[0]["arm"] = "standard_grpo"
+    with pytest.raises(ValueError, match="pre-treatment"):
+        build_judge_audit_sample(
+            invented_arm, phase="development", size=200, seed=20260713
+        )
 
 
-def test_locked_audit_requires_two_raters_adjudication_and_registered_gates():
-    rows = _rated(build_judge_audit_sample(_candidates(per_stratum=50), phase="locked", size=400, seed=1))
-    decision = score_blinded_judge_audit(rows)
+@pytest.mark.parametrize(
+    ("phase", "wrong_split"),
+    [("development", "validation"), ("locked", "test"), ("test", "validation")],
+)
+def test_sampling_enforces_phase_split_eligibility(phase, wrong_split):
+    per_stratum = {"development": 25, "locked": 50, "test": 125}[phase]
+    size = {"development": 200, "locked": 400, "test": 1000}[phase]
+    candidates = _candidates(per_stratum=per_stratum, phase=phase)
+    candidates[0]["split"] = wrong_split
 
-    assert decision.phase == "locked"
-    assert decision.passed is True
-    assert decision.status == "passed"
-    assert decision.kappa == 1.0
-    assert all(value == 1.0 for value in decision.sensitivity.values())
-    assert all(value == 1.0 for value in decision.specificity.values())
+    with pytest.raises(ValueError, match="split"):
+        build_judge_audit_sample(candidates, phase=phase, size=size, seed=20260713)
 
-    disagreement = replace(rows[0], rater_b="incorrect", adjudicated_label=None)
-    with pytest.raises(ValueError, match="adjudicated"):
-        score_blinded_judge_audit((disagreement, *rows[1:]))
+
+@pytest.mark.parametrize("bad_id", [None, "", "   "])
+def test_sampling_rejects_missing_null_and_empty_candidate_ids(bad_id):
+    candidates = _candidates(per_stratum=50, phase="locked")
+    candidates[0]["candidate_id"] = bad_id
+
+    with pytest.raises(ValueError, match="source ID"):
+        build_judge_audit_sample(
+            candidates, phase="locked", size=400, seed=20260713
+        )
+
+
+def test_sampling_rejects_duplicate_ids_and_extension_preserves_selected_ids():
+    candidates = _candidates(per_stratum=250, phase="test")
+    duplicate = [dict(row) for row in candidates]
+    duplicate[1]["candidate_id"] = duplicate[0]["candidate_id"]
+    with pytest.raises(ValueError, match="unique"):
+        build_judge_audit_sample(duplicate, phase="test", size=1000, seed=20260713)
+
+    rows_1000 = build_judge_audit_sample(
+        candidates, phase="test", size=1000, seed=20260713
+    )
+    rows_1250 = build_judge_audit_sample(
+        list(reversed(candidates)), phase="test", size=1250, seed=20260713
+    )
+    ids_1000 = {row.source_id: row.audit_id for row in rows_1000}
+    ids_1250 = {row.source_id: row.audit_id for row in rows_1250}
+
+    assert ids_1000.items() <= ids_1250.items()
+    assert len(ids_1250) == 1250
+
+
+def test_locked_and_test_audits_apply_all_registered_gates_fail_closed():
+    locked = _rated(
+        build_judge_audit_sample(
+            _candidates(per_stratum=50, phase="locked"),
+            phase="locked",
+            size=400,
+            seed=20260713,
+        )
+    )
+    assert score_blinded_judge_audit(locked).passed is True
+
+    test_rows = _rated(
+        build_judge_audit_sample(
+            _candidates(per_stratum=125, phase="test"),
+            phase="test",
+            size=1000,
+            seed=20260713,
+        )
+    )
+    test_decision = score_blinded_judge_audit(test_rows)
+    assert test_decision.passed is True
+    assert test_decision.status == "passed"
+
+    disagreement = tuple(
+        replace(
+            row,
+            rater_b="incorrect" if row.rater_a == "correct" else "correct",
+            adjudicated_label=row.rater_a,
+        )
+        for row in test_rows
+    )
+    failed = score_blinded_judge_audit(disagreement)
+    assert failed.passed is False
+    assert failed.status == "failed"
+    assert failed.kappa < 0.80
 
     ambiguous = tuple(
-        replace(row, rater_a="ambiguous", rater_b="ambiguous") if index < 21 else row
-        for index, row in enumerate(rows)
+        replace(row, rater_a="ambiguous", rater_b="ambiguous") if index < 51 else row
+        for index, row in enumerate(test_rows)
     )
-    ambiguous_decision = score_blinded_judge_audit(ambiguous)
-    assert ambiguous_decision.passed is False
-    assert ambiguous_decision.ambiguous_fraction > 0.05
+    assert score_blinded_judge_audit(ambiguous).passed is False
 
 
-def test_test_audit_only_measures_bias_and_bounds_differential_error_deterministically():
-    rows = _rated(build_judge_audit_sample(_candidates(per_stratum=125), phase="test", size=1000, seed=2))
-    decision = score_blinded_judge_audit(rows)
-    bound = bound_differential_judge_bias(rows, replicates=200)
-
-    assert decision.status == "measurement_bias_only"
-    assert decision.passed is None
-    assert bound.upper == 0.0
-
-    biased = tuple(
-        replace(row, rater_b="incorrect", adjudicated_label="incorrect")
-        if (
-            row.arm == "rlmf"
-            and row.proxy_label
-            and row.judgment_type == "correctness"
-            and int(row.source_id.rsplit("-", 1)[1]) < 20
+def test_task4_emits_confusion_uncertainty_but_defers_endpoint_bias_propagation():
+    rows = _rated(
+        build_judge_audit_sample(
+            _candidates(per_stratum=125, phase="test"),
+            phase="test",
+            size=1000,
+            seed=20260713,
         )
-        else row
-        for row in rows
     )
-    biased_bound = bound_differential_judge_bias(biased, replicates=200)
-    assert biased_bound.estimate > 0.015
-    assert biased_bound.upper >= biased_bound.estimate
+
+    uncertainty = estimate_arm_confusion_uncertainty(rows)
+
+    assert set(uncertainty) == {
+        f"{arm}:{judgment_type}"
+        for arm in ("standard_grpo", "rlmf")
+        for judgment_type in ("correctness", "equivalence")
+    }
+    for value in uncertainty.values():
+        assert value["sensitivity"]["estimate"] == 1.0
+        assert 0.0 <= value["sensitivity"]["lower"] <= value["sensitivity"]["upper"] <= 1.0
+        assert value["specificity"]["estimate"] == 1.0
+
+    with pytest.raises(ValueError, match="Task 5/10"):
+        bound_differential_judge_bias(rows, replicates=200)
 
 
-def _candidates(*, per_stratum):
+def _candidates(*, per_stratum: int, phase: str):
+    if phase == "development":
+        groups = ((split, None) for split in ("pre_sft", "rl_train"))
+    else:
+        split = "validation" if phase == "locked" else "test"
+        groups = ((split, arm) for arm in ("standard_grpo", "rlmf"))
     candidates = []
-    for arm in ("standard_grpo", "rlmf"):
+    for split, arm in groups:
         for judgment_type in ("correctness", "equivalence"):
             for proxy_label in (False, True):
                 for index in range(per_stratum):
+                    prefix = arm or split
+                    source_id = f"{prefix}-{judgment_type}-{proxy_label}-{index}"
+                    answer = "William Shakespeare" if proxy_label else "Marlowe"
+                    comparison = "William Shakespeare" if proxy_label else "Jonson"
                     candidates.append(
                         {
-                            "candidate_id": f"{arm}-{judgment_type}-{proxy_label}-{index}",
+                            "candidate_id": source_id,
+                            "example_id": f"example-{source_id}",
+                            "split": split,
                             "arm": arm,
-                            "seed": 11,
-                            "confidence": 0.8,
-                            "reward": 1.0,
-                            "model_id": "hidden-model",
                             "judgment_type": judgment_type,
                             "proxy_label": proxy_label,
                             "question": "Who wrote Hamlet?",
-                            "answer": "William Shakespeare" if proxy_label else "Marlowe",
-                            "comparison_answer": "William Shakespeare" if proxy_label else "Marlowe",
+                            "answer": answer,
+                            "comparison_answer": comparison,
                             "reference_answer": "William Shakespeare",
+                            "gold_aliases": ["william shakespeare"],
                         }
                     )
     return candidates
@@ -192,12 +319,8 @@ def _rated(rows):
 
 def _stratum_counts(rows):
     return {
-        key: sum(
-            (row.arm, row.judgment_type, row.proxy_label) == key
-            for row in rows
-        )
+        key: sum((row.arm, row.judgment_type, row.proxy_label) == key for row in rows)
         for key in {
-            (row.arm, row.judgment_type, row.proxy_label)
-            for row in rows
+            (row.arm, row.judgment_type, row.proxy_label) for row in rows
         }
     }

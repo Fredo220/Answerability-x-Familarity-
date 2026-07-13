@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -76,6 +77,8 @@ class RLMFArtifactStore:
         endpoint: str,
         config: RLMFConfig,
         paths: Iterable[str | Path] | Mapping[str, str | Path],
+        *,
+        parent_hashes: Mapping[str, str] | None = None,
     ) -> Path:
         if not isinstance(config, RLMFConfig):
             raise ValueError("config must be an RLMFConfig")
@@ -90,6 +93,16 @@ class RLMFArtifactStore:
         if marker.exists():
             raise FileExistsError(marker)
         config_artifact = self._bind_config_artifact(safe_study, config)
+        sealed_parents = {"config": config.config_hash}
+        if parent_hashes is not None:
+            if not isinstance(parent_hashes, Mapping):
+                raise ValueError("parent_hashes must be a mapping")
+            for name, digest in parent_hashes.items():
+                safe_name = _safe_id(name, "parent_hashes key")
+                if safe_name == "config":
+                    raise ValueError("parent_hashes must not replace the config hash")
+                _validate_sha256(digest, "parent_hashes")
+                sealed_parents[safe_name] = digest
         for path in artifacts.values():
             _fsync_file(path)
             _fsync_directory(path.parent)
@@ -97,10 +110,11 @@ class RLMFArtifactStore:
         _fsync_directory(config_artifact.parent)
         payload = {
             "schema_version": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "study_id": safe_study,
             "endpoint": endpoint,
             "config_artifact": "metadata/config.json",
-            "parent_hashes": {"config": config.config_hash},
+            "parent_hashes": dict(sorted(sealed_parents.items())),
             "artifact_hashes": {
                 relative: sha256_file(path) for relative, path in artifacts.items()
             },
@@ -125,10 +139,20 @@ class RLMFArtifactStore:
             raise ValueError("endpoint marker has an invalid schema")
         if value.get("study_id") != safe_study or value.get("endpoint") != safe_endpoint:
             raise ValueError("endpoint marker IDs do not match")
+        created_at = value.get("created_at")
+        if created_at is not None:
+            try:
+                parsed_created_at = datetime.fromisoformat(created_at)
+            except (TypeError, ValueError) as error:
+                raise ValueError("endpoint marker has invalid created_at") from error
+            if parsed_created_at.tzinfo is None or parsed_created_at.utcoffset() is None:
+                raise ValueError("endpoint marker created_at must include a timezone")
         parents = value.get("parent_hashes")
-        if not isinstance(parents, dict) or set(parents) != {"config"}:
+        if not isinstance(parents, dict) or "config" not in parents:
             raise ValueError("endpoint marker has invalid parent_hashes")
-        _validate_sha256(parents["config"], "parent_hashes")
+        for name, digest in parents.items():
+            _safe_id(name, "parent_hashes key")
+            _validate_sha256(digest, "parent_hashes")
         if value.get("config_artifact") != "metadata/config.json":
             raise ValueError("endpoint marker has invalid config_artifact")
         config = self._read_config_artifact(

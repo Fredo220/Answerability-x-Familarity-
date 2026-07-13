@@ -284,11 +284,16 @@ runs/rlmf/rlmf-qwen06b-v1/
     aliases.jsonl
     completion.json
   judge_audit/
-    development.jsonl
-    locked_validation.jsonl
-    blinded_test.jsonl
-    metrics.json
-    completion.json
+    development_200_*.jsonl
+    locked_400_*.jsonl
+    test_1000_*.jsonl
+    test_1250_*.jsonl
+    test_1500_*.jsonl
+    test_1750_*.jsonl
+    test_2000_*.jsonl
+    *_metadata.json
+    *_confusion_uncertainty.json
+    endpoints/*.complete.json
   checkpoints/
     pre_sft/
     seed-11/standard/
@@ -624,7 +629,7 @@ alias_exact_match(answer: str, aliases: Sequence[str]) -> bool
 completion_equivalent(left: str, right: str, gold_aliases: Sequence[str]) -> bool
 build_judge_audit_sample(completions, *, phase: str, size: int, seed: int) -> tuple[AuditRow, ...]
 score_blinded_judge_audit(rows: Sequence[AuditRow]) -> JudgeAuditDecision
-bound_differential_judge_bias(rows: Sequence[AuditRow], *, replicates: int) -> Interval
+estimate_arm_confusion_uncertainty(rows: Sequence[AuditRow]) -> Mapping[str, Mapping[str, Interval]]
 ```
 
 CLI:
@@ -649,11 +654,15 @@ least 0.80 before adjudication, and the ambiguous fraction must not exceed 0.05.
 
 After sealed test rollouts exist but before aggregate test metrics are computed,
 draw a blinded, deterministic test audit of 1,000 judgments using the same strata.
-If needed, add preregistered 250-row increments up to 2,000. Propagate arm-specific
-sensitivity and specificity uncertainty through `delta_cMFG_star`; require the
-95% upper confidence limit on absolute arm-differential judge bias below `0.015`.
-If the bound is not met at 2,000 labels, Study 1 is `not_evaluable`; the proxy is
-not revised from test disagreements.
+Task 4 seals arm-specific sensitivity and specificity uncertainty but does not
+call that uncertainty the preregistered `delta_cMFG_star` bias bound. Task 5/10
+must propagate it through the sealed behavioral records and `delta_cMFG_star`.
+Only that endpoint-specific propagation may finalize the test audit or request a
+preregistered 250-row extension, up to 2,000. Each extension is size-specific,
+append-only, and preserves every prior audit ID and judgment. If the propagated
+95% upper confidence limit on absolute arm-differential judge bias is not below
+`0.015` at 2,000 labels, Study 1 is `not_evaluable`; the proxy is never revised
+from test disagreements.
 
 - [ ] **Step 2: Confirm the tests fail**
 
@@ -663,7 +672,15 @@ not revised from test disagreements.
 
 - [ ] **Step 3: Implement the parser and two-stage audit**
 
-The parsers must return `valid=False` rather than guessing malformed scores. The proxy judge may be revised only using the development audit. After freezing parser version and source hash, run the locked validation audit as a go/no-go gate. Generate test completions only after that gate passes. The later test audit estimates and bounds measurement bias but can never change aliases, normalization, prompts, parsers, thresholds, or report wording.
+The parsers must return `valid=False` rather than guessing malformed scores. The proxy judge may be revised only using the development audit. Development uses shared pre-treatment `pre_sft`/`rl_train` strata; it must not invent treatment arms. After freezing parser version and source hash, run the locked validation audit as a go/no-go gate. Generate test completions only after that gate passes. Locked and test candidates must come from verified sealed candidate endpoints and the registered `validation` and `test` splits respectively. The later test audit estimates arm-specific confusion uncertainty but can never change aliases, normalization, prompts, parsers, thresholds, or report wording.
+
+The single record command consumes a manifest pointing to three separately
+sealed JSONL sources: rater A, rater B, and adjudication. The manifest binds
+distinct identities, timezone-aware timestamps, exact audit IDs, and SHA-256
+hashes. Adjudication contains only rater disagreements and occurs after both
+independent rating timestamps. Task 4 publishes only size-specific test evidence
+endpoints. It must return nonzero while endpoint propagation remains pending and
+must never publish `bounded`, a confirmatory pass, or a final test-audit endpoint.
 
 - [ ] **Step 4: Verify**
 
@@ -708,7 +725,7 @@ judge_bias_adjusted_delta(records, audit, *, replicates, rng_seed) -> Interval
 
 - [ ] **Step 1: Write failing metric tests from hand-computable fixtures**
 
-Include unanimous, split, and all-different training groups; prove that leave-one-out excludes the designated member; verify a designated response plus exactly 20 auxiliaries and the `1 - abs(confidence - g)` golden fixture; test faithful and factual quadratic reward endpoints; strict and soft format parity fixtures from the pinned upstream source; tau-boundary behavior; equal-mass confidence bins; empty-bin avoidance; confidence-axis-width weighting; tie-preserving bins; common support; identical-arm bootstrap centered at zero; fixed seeds with prompts resampled only within seed; per-seed intervals; and confusion-matrix uncertainty propagation.
+Include unanimous, split, and all-different training groups; prove that leave-one-out excludes the designated member; verify a designated response plus exactly 20 auxiliaries and the `1 - abs(confidence - g)` golden fixture; test faithful and factual quadratic reward endpoints; strict and soft format parity fixtures from the pinned upstream source; tau-boundary behavior; equal-mass confidence bins; empty-bin avoidance; confidence-axis-width weighting; tie-preserving bins; common support; identical-arm bootstrap centered at zero; fixed seeds with prompts resampled only within seed; per-seed intervals; and propagation of Task 4's sealed arm-specific confusion uncertainty through behavioral `delta_cMFG_star` records. Proxy-balanced raw label disagreement is not the registered estimand and must not drive the `<0.015` gate.
 
 - [ ] **Step 2: Run and observe failure**
 
@@ -999,7 +1016,7 @@ Test missing-seed rejection, paired-ID equality, duplicate completion rejection,
 
 Generate and seal development rollouts from pre-SFT/RL-train without using test IDs, freeze the proxy, then generate validation bundles for all paired seeds. Every evaluation bundle contains one designated answer/confidence response and 20 independently seeded answer-only auxiliaries. Run the locked 400-item validation audit and verify its completion marker. The test-rollout command must refuse to run before that marker exists and passes.
 
-Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit, collect two independent ratings plus adjudication, and extend it in 250-row increments only if its preregistered precision rule requires it. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, unadjusted, and judge-bias-adjusted tables.
+Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit and collect two independent ratings plus later disagreement-only adjudication through the sealed-source manifest. Task 4 publishes arm-specific confusion uncertainty, not a `delta_cMFG_star` gate. This task joins that uncertainty to the sealed behavioral records, propagates it through `delta_cMFG_star`, and exclusively decides whether the `<0.015` upper-limit gate passes, a 250-row append is required, or the study is `not_evaluable` at 2,000. An extension-required command exits nonzero and writes a sealed request binding the current size-specific evidence endpoint; the next Task 4 audit appends only the requested 250 stable IDs. A final `test_judge_audit` endpoint is published only after reliability gates pass and endpoint-specific propagation yields a final evaluable result. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, unadjusted, and judge-bias-adjusted tables.
 
 Only after the machine-derived Study 1 decision is `supported`, generate and seal one designated-plus-20 `mechanism_train` bundle for every final arm/seed checkpoint. Task 11 adds the corresponding pre-SFT bundles and teacher-forced activation artifacts. These sealed bundles are the only legal probe-training targets in Study 2.
 
