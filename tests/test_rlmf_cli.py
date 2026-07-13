@@ -105,10 +105,21 @@ def test_build_requires_verified_candidate_and_locked_prerequisite_endpoints(
 def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     tmp_path, capsys
 ):
+    development_candidates = _audit_candidates(per_stratum=25, phase="development")
     locked_candidates = _audit_candidates(per_stratum=50, phase="locked")
     test_candidates = _audit_candidates(per_stratum=250, phase="test")
-    _seal_aliases(tmp_path, [*locked_candidates, *test_candidates])
-    _seal_candidates(tmp_path, locked_candidates, phase="locked")
+    _seal_aliases(
+        tmp_path, [*development_candidates, *locked_candidates, *test_candidates]
+    )
+    development_marker = _complete_development_audit(
+        tmp_path, capsys, development_candidates
+    )
+    _seal_candidates(
+        tmp_path,
+        locked_candidates,
+        phase="locked",
+        development_hash=sha256_file(development_marker),
+    )
 
     locked_build = _run_build(tmp_path, capsys, phase="locked", size=400)
     locked_metadata = json.loads(Path(locked_build["metadata"]).read_text())
@@ -123,8 +134,18 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     assert locked_metadata["candidate_endpoint"] == "audit_candidates_locked"
     assert locked_metadata["candidate_marker_hash"]
     assert locked_metadata["parent_sample_hash"] is None
+    assert locked_metadata["development_judge_audit_marker_hash"] == sha256_file(
+        development_marker
+    )
+    assert len(locked_metadata["sampling_design"]["strata"]) == 8
+    for stratum in locked_metadata["sampling_design"]["strata"].values():
+        assert stratum["population_count"] == 50
+        assert stratum["sample_count"] == 50
+        assert stratum["inclusion_probability"] == {"numerator": 1, "denominator": 1}
 
-    locked_manifest = _rating_manifest(tmp_path, Path(locked_build["ledger"]), "locked-400")
+    locked_manifest = _sealed_rating_manifest(
+        tmp_path, capsys, Path(locked_build["ledger"]), "locked-400", phase="locked", size=400
+    )
     assert (
         cli.main(
             [
@@ -142,8 +163,25 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     )
     locked_record = json.loads(capsys.readouterr().out)
     locked_marker = Path(locked_record["marker"])
-    assert RLMFArtifactStore(tmp_path).verify_endpoint(
+    locked_endpoint = RLMFArtifactStore(tmp_path).verify_endpoint(
         _config().study_id, "locked_judge_audit"
+    )
+    assert locked_endpoint["parent_hashes"]["development_judge_audit"] == sha256_file(
+        development_marker
+    )
+    for role in ("rater_a", "rater_b", "adjudication"):
+        assert locked_endpoint["parent_hashes"][f"{role}_endpoint"]
+    persisted_sources = json.loads(
+        (
+            locked_marker.parent.parent
+            / "audits"
+            / "locked_400_rating_sources.json"
+        ).read_text()
+    )
+    assert persisted_sources["schema_version"] == 2
+    assert all(
+        "endpoint" in persisted_sources["sources"][role]
+        for role in ("rater_a", "rater_b", "adjudication")
     )
 
     _seal_candidates(
@@ -158,8 +196,13 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     assert first_build["rows"] == 1000
     assert first_build["cumulative_size"] == 1000
 
-    first_manifest = _rating_manifest(
-        tmp_path, Path(first_build["ledger"]), "test-1000"
+    first_manifest = _sealed_rating_manifest(
+        tmp_path,
+        capsys,
+        Path(first_build["ledger"]),
+        "test-1000",
+        phase="test",
+        size=1000,
     )
     first_exit = cli.main(
         [
@@ -203,8 +246,13 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
         "parent_sample_hash"
     ] == sha256_file(Path(first_record["completed"]))
 
-    second_manifest = _rating_manifest(
-        tmp_path, Path(second_build["ledger"]), "test-1250"
+    second_manifest = _sealed_rating_manifest(
+        tmp_path,
+        capsys,
+        Path(second_build["ledger"]),
+        "test-1250",
+        phase="test",
+        size=1250,
     )
     second_args = [
         "rlmf-record-judge-audit",
@@ -230,69 +278,182 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     assert json.loads(capsys.readouterr().out) == second_record
 
 
-def test_rating_manifest_requires_distinct_identities_ordered_timestamps_and_no_hidden_fields(
+def test_locked_build_requires_postdevelopment_candidate_and_exact_proxy_freeze(
+    tmp_path, capsys, monkeypatch
+):
+    development = _audit_candidates(per_stratum=25, phase="development")
+    candidates = _audit_candidates(per_stratum=50, phase="locked")
+    _seal_aliases(tmp_path, [*development, *candidates])
+    _seal_candidates(tmp_path, candidates, phase="locked")
+
+    with pytest.raises(ValueError, match="development_judge_audit"):
+        _run_build(tmp_path, capsys, phase="locked", size=400)
+
+    wrong_order_root = tmp_path / "wrong-order"
+    _seal_aliases(wrong_order_root, [*development, *candidates])
+    _seal_candidates(wrong_order_root, candidates, phase="locked")
+    development_marker = _complete_development_audit(
+        wrong_order_root, capsys, development
+    )
+    with pytest.raises(ValueError, match="postdate|bind"):
+        _run_build(wrong_order_root, capsys, phase="locked", size=400)
+
+    changed_parser_root = tmp_path / "changed-parser"
+    _seal_aliases(changed_parser_root, [*development, *candidates])
+    development_marker = _complete_development_audit(
+        changed_parser_root, capsys, development
+    )
+    _seal_candidates(
+        changed_parser_root,
+        candidates,
+        phase="locked",
+        development_hash=sha256_file(development_marker),
+    )
+    monkeypatch.setattr(cli, "PARSER_VERSION", "rlmf-output-parser-changed")
+    with pytest.raises(ValueError, match="development proxy freeze"):
+        _run_build(changed_parser_root, capsys, phase="locked", size=400)
+
+    changed_alias_root = tmp_path / "changed-alias"
+    _seal_aliases(changed_alias_root, [*development, *candidates])
+    development_marker = _complete_development_audit(
+        changed_alias_root, capsys, development
+    )
+    _seal_candidates(
+        changed_alias_root,
+        candidates,
+        phase="locked",
+        development_hash=sha256_file(development_marker),
+    )
+    aliases = (
+        changed_alias_root / "runs" / "rlmf" / _config().study_id / "data" / "aliases.jsonl"
+    )
+    aliases.write_text(aliases.read_text() + "\n")
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        _run_build(changed_alias_root, capsys, phase="locked", size=400)
+
+
+@pytest.mark.parametrize("same_path", [True, False])
+def test_rater_endpoints_reject_same_source_path_or_bytes(
+    tmp_path, capsys, same_path
+):
+    development = _audit_candidates(per_stratum=25, phase="development")
+    _seal_aliases(tmp_path, development)
+    _seal_candidates(tmp_path, development, phase="development")
+    build = _run_build(tmp_path, capsys, phase="development", size=200)
+    rows = _pending_ratings(Path(build["ledger"]))
+    manual = tmp_path / "manual"
+    manual.mkdir()
+    rater_a = manual / "rater-a.jsonl"
+    rater_b = rater_a if same_path else manual / "rater-b.jsonl"
+    _write_jsonl(rater_a, rows)
+    if not same_path:
+        _write_jsonl(rater_b, rows)
+    _seal_rating(tmp_path, capsys, rater_a, role="rater_a", phase="development", size=200)
+
+    with pytest.raises(ValueError, match="distinct.*path|distinct.*hash"):
+        _seal_rating(
+            tmp_path, capsys, rater_b, role="rater_b", phase="development", size=200
+        )
+
+
+def test_adjudication_requires_both_rater_endpoints_and_final_record_uses_marker_order(
     tmp_path, capsys
 ):
-    candidates = _audit_candidates(per_stratum=50, phase="locked")
-    _seal_aliases(tmp_path, candidates)
-    _seal_candidates(tmp_path, candidates, phase="locked")
+    development = _audit_candidates(per_stratum=25, phase="development")
+    _seal_aliases(tmp_path, development)
+    _seal_candidates(tmp_path, development, phase="development")
+    build = _run_build(tmp_path, capsys, phase="development", size=200)
+    ratings = _pending_ratings(Path(build["ledger"]))
+    manual = tmp_path / "manual"
+    manual.mkdir()
+    rater_a = manual / "rater-a.jsonl"
+    rater_b = manual / "rater-b.jsonl"
+    adjudication = manual / "adjudication.jsonl"
+    _write_jsonl(rater_a, ratings)
+    _write_jsonl(rater_b, reversed(ratings))
+    _write_jsonl(adjudication, [])
+    _seal_rating(tmp_path, capsys, rater_a, role="rater_a", phase="development", size=200)
+
+    with pytest.raises(ValueError, match="rater_b"):
+        _seal_adjudication(
+            tmp_path, capsys, adjudication, phase="development", size=200
+        )
+
+    _seal_rating(tmp_path, capsys, rater_b, role="rater_b", phase="development", size=200)
+    adjudication_result = _seal_adjudication(
+        tmp_path, capsys, adjudication, phase="development", size=200
+    )
+    adjudication_marker = Path(adjudication_result["marker"])
+    marker_record = json.loads(adjudication_marker.read_text())
+    marker_record["created_at"] = "2000-01-01T00:00:00+00:00"
+    adjudication_marker.write_text(json.dumps(marker_record, indent=2, sort_keys=True))
+    manifest = _endpoint_manifest(
+        tmp_path, phase="development", size=200, stem="too-early"
+    )
+
+    with pytest.raises(ValueError, match="adjudication.*after both"):
+        cli.main(
+            [
+                "rlmf-record-judge-audit",
+                str(manifest),
+                "--config",
+                str(CONFIG_PATH),
+                "--phase", "development",
+                "--root",
+                str(tmp_path),
+            ]
+        )
+
+
+def test_final_record_rejects_missing_development_endpoint_and_fabricated_manifest_time(
+    tmp_path, capsys
+):
+    development = _audit_candidates(per_stratum=25, phase="development")
+    locked = _audit_candidates(per_stratum=50, phase="locked")
+    _seal_aliases(tmp_path, [*development, *locked])
+    development_marker = _complete_development_audit(tmp_path, capsys, development)
+    _seal_candidates(
+        tmp_path,
+        locked,
+        phase="locked",
+        development_hash=sha256_file(development_marker),
+    )
     build = _run_build(tmp_path, capsys, phase="locked", size=400)
-    manifest_path = _rating_manifest(tmp_path, Path(build["ledger"]), "invalid")
+    manifest_path = _sealed_rating_manifest(
+        tmp_path,
+        capsys,
+        Path(build["ledger"]),
+        "locked-record-adversarial",
+        phase="locked",
+        size=400,
+    )
+    args = [
+        "rlmf-record-judge-audit", str(manifest_path),
+        "--config", str(CONFIG_PATH),
+        "--phase", "locked",
+        "--root", str(tmp_path),
+    ]
+    hidden_marker = development_marker.with_suffix(".removed")
+    development_marker.rename(hidden_marker)
+    with pytest.raises(ValueError, match="development_judge_audit"):
+        cli.main(args)
+    hidden_marker.rename(development_marker)
+
     manifest = json.loads(manifest_path.read_text())
-    manifest["rater_b"]["identity"] = manifest["rater_a"]["identity"]
+    manifest["rater_a"]["timestamp"] = "1999-01-01T00:00:00+00:00"
     manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="endpoint schema"):
+        cli.main(args)
 
-    with pytest.raises(ValueError, match="distinct"):
-        cli.main(
-            [
-                "rlmf-record-judge-audit",
-                str(manifest_path),
-                "--config",
-                str(CONFIG_PATH),
-                "--phase",
-                "locked",
-                "--root",
-                str(tmp_path),
-            ]
-        )
 
-    manifest["rater_b"]["identity"] = "rater-b"
-    manifest["adjudication"]["timestamp"] = "2029-12-31T23:59:59+00:00"
-    manifest_path.write_text(json.dumps(manifest))
-    with pytest.raises(ValueError, match="after both"):
-        cli.main(
-            [
-                "rlmf-record-judge-audit",
-                str(manifest_path),
-                "--config",
-                str(CONFIG_PATH),
-                "--phase",
-                "locked",
-                "--root",
-                str(tmp_path),
-            ]
-        )
+def test_cli_help_documents_staged_human_input_commands(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["--help"])
+    assert exit_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "rlmf-seal-judge-rating" in output
+    assert "rlmf-seal-judge-adjudication" in output
 
-    rater_a = manifest_path.parent / manifest["rater_a"]["path"]
-    rows = _read_jsonl(rater_a)
-    rows[0]["proxy_label"] = True
-    _write_jsonl(rater_a, rows)
-    manifest["rater_a"]["sha256"] = sha256_file(rater_a)
-    manifest["adjudication"]["timestamp"] = "2030-01-01T00:00:03+00:00"
-    manifest_path.write_text(json.dumps(manifest))
-    with pytest.raises(ValueError, match="hidden metadata"):
-        cli.main(
-            [
-                "rlmf-record-judge-audit",
-                str(manifest_path),
-                "--config",
-                str(CONFIG_PATH),
-                "--phase",
-                "locked",
-                "--root",
-                str(tmp_path),
-            ]
-        )
 
 
 def _config():
@@ -332,7 +493,9 @@ def _seal_aliases(tmp_path, candidates):
     store.complete_endpoint(_config().study_id, "prepare-data", _config(), [path])
 
 
-def _seal_candidates(tmp_path, candidates, *, phase, locked_hash=None):
+def _seal_candidates(
+    tmp_path, candidates, *, phase, locked_hash=None, development_hash=None
+):
     store = RLMFArtifactStore(tmp_path)
     path = store.write_jsonl(
         _config().study_id,
@@ -340,13 +503,17 @@ def _seal_candidates(tmp_path, candidates, *, phase, locked_hash=None):
         f"audit_candidates_{phase}",
         candidates,
     )
-    parents = {"locked_judge_audit": locked_hash} if locked_hash is not None else None
+    parents = {}
+    if locked_hash is not None:
+        parents["locked_judge_audit"] = locked_hash
+    if development_hash is not None:
+        parents["development_judge_audit"] = development_hash
     store.complete_endpoint(
         _config().study_id,
         f"audit_candidates_{phase}",
         _config(),
         [path],
-        parent_hashes=parents,
+        parent_hashes=parents or None,
     )
 
 
@@ -380,16 +547,70 @@ def _seal_extension_request(tmp_path, *, from_size, requested_size):
     )
 
 
-def _rating_manifest(tmp_path, ledger_path, stem):
+def _pending_ratings(ledger_path):
     rows = _read_jsonl(ledger_path)
     pending = [row for row in rows if row["rater_a"] is None and row["rater_b"] is None]
-    ratings = [
+    return [
         {
             "audit_id": row["audit_id"],
             "label": "correct" if row["proxy_label"] else "incorrect",
         }
         for row in pending
     ]
+
+
+def _seal_rating(tmp_path, capsys, path, *, role, phase, size):
+    assert cli.main(
+        [
+            "rlmf-seal-judge-rating",
+            str(path),
+            "--identity", f"{role}-identity",
+            "--role", role,
+            "--config", str(CONFIG_PATH),
+            "--phase", phase,
+            "--size", str(size),
+            "--root", str(tmp_path),
+        ]
+    ) == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def _seal_adjudication(tmp_path, capsys, path, *, phase, size):
+    result = cli.main(
+        [
+            "rlmf-seal-judge-adjudication",
+            str(path),
+            "--identity", "adjudicator-identity",
+            "--config", str(CONFIG_PATH),
+            "--phase", phase,
+            "--size", str(size),
+            "--root", str(tmp_path),
+        ]
+    )
+    if result != 0:
+        return result
+    return json.loads(capsys.readouterr().out)
+
+
+def _endpoint_manifest(tmp_path, *, phase, size, stem):
+    endpoints = tmp_path / "runs" / "rlmf" / _config().study_id / "endpoints"
+    manifest = {"schema_version": 2}
+    for role in ("rater_a", "rater_b", "adjudication"):
+        endpoint = f"{phase}_judge_audit_{role}_{size}"
+        marker = endpoints / f"{endpoint}.complete.json"
+        manifest[role] = {
+            "endpoint": endpoint,
+            "marker_sha256": sha256_file(marker),
+        }
+    directory = tmp_path / "manual"
+    directory.mkdir(exist_ok=True)
+    path = directory / f"{stem}-endpoint-manifest.json"
+    path.write_text(json.dumps(manifest))
+    return path
+
+
+def _sealed_rating_manifest(tmp_path, capsys, ledger_path, stem, *, phase, size):
+    ratings = _pending_ratings(ledger_path)
     directory = tmp_path / "manual"
     directory.mkdir(exist_ok=True)
     paths = {
@@ -398,42 +619,55 @@ def _rating_manifest(tmp_path, ledger_path, stem):
         "adjudication": directory / f"{stem}-adjudication.jsonl",
     }
     _write_jsonl(paths["rater_a"], ratings)
-    _write_jsonl(paths["rater_b"], ratings)
+    _write_jsonl(paths["rater_b"], reversed(ratings))
     _write_jsonl(paths["adjudication"], [])
-    manifest = {
-        "schema_version": 1,
-        "rater_a": {
-            "identity": "rater-a",
-            "timestamp": "2030-01-01T00:00:01+00:00",
-            "path": paths["rater_a"].name,
-            "sha256": sha256_file(paths["rater_a"]),
-        },
-        "rater_b": {
-            "identity": "rater-b",
-            "timestamp": "2030-01-01T00:00:02+00:00",
-            "path": paths["rater_b"].name,
-            "sha256": sha256_file(paths["rater_b"]),
-        },
-        "adjudication": {
-            "identity": "adjudicator",
-            "timestamp": "2030-01-01T00:00:03+00:00",
-            "path": paths["adjudication"].name,
-            "sha256": sha256_file(paths["adjudication"]),
-        },
-    }
-    manifest_path = directory / f"{stem}-manifest.json"
-    manifest_path.write_text(json.dumps(manifest))
-    return manifest_path
+    _seal_rating(
+        tmp_path, capsys, paths["rater_a"], role="rater_a", phase=phase, size=size
+    )
+    _seal_rating(
+        tmp_path, capsys, paths["rater_b"], role="rater_b", phase=phase, size=size
+    )
+    _seal_adjudication(
+        tmp_path, capsys, paths["adjudication"], phase=phase, size=size
+    )
+    return _endpoint_manifest(tmp_path, phase=phase, size=size, stem=stem)
+
+
+def _complete_development_audit(tmp_path, capsys, candidates):
+    _seal_candidates(tmp_path, candidates, phase="development")
+    build = _run_build(tmp_path, capsys, phase="development", size=200)
+    manifest = _sealed_rating_manifest(
+        tmp_path,
+        capsys,
+        Path(build["ledger"]),
+        "development-200",
+        phase="development",
+        size=200,
+    )
+    assert cli.main(
+        [
+            "rlmf-record-judge-audit", str(manifest),
+            "--config", str(CONFIG_PATH),
+            "--phase", "development",
+            "--root", str(tmp_path),
+        ]
+    ) == 0
+    result = json.loads(capsys.readouterr().out)
+    return Path(result["marker"])
 
 
 def _audit_candidates(*, per_stratum, phase):
-    split = "validation" if phase == "locked" else "test"
+    if phase == "development":
+        groups = ((split, None) for split in ("pre_sft", "rl_train"))
+    else:
+        split = "validation" if phase == "locked" else "test"
+        groups = ((split, arm) for arm in ("standard_grpo", "rlmf"))
     candidates = []
-    for arm in ("standard_grpo", "rlmf"):
+    for split, arm in groups:
         for judgment_type in ("correctness", "equivalence"):
             for proxy_label in (False, True):
                 for index in range(per_stratum):
-                    candidate_id = f"{arm}-{judgment_type}-{proxy_label}-{index}"
+                    candidate_id = f"{arm or split}-{judgment_type}-{proxy_label}-{index}"
                     candidates.append(
                         {
                             "candidate_id": candidate_id,

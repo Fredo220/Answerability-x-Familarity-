@@ -259,12 +259,15 @@ def test_task4_emits_confusion_uncertainty_but_defers_endpoint_bias_propagation(
 
     uncertainty = estimate_arm_confusion_uncertainty(rows)
 
-    assert set(uncertainty) == {
+    assert uncertainty["schema_version"] == 2
+    assert uncertainty["method"] == "deterministic_stratified_bootstrap"
+    assert uncertainty["sampling_design"]["schema_version"] == 1
+    assert set(uncertainty["estimates"]) == {
         f"{arm}:{judgment_type}"
         for arm in ("standard_grpo", "rlmf")
         for judgment_type in ("correctness", "equivalence")
     }
-    for value in uncertainty.values():
+    for value in uncertainty["estimates"].values():
         assert value["sensitivity"]["estimate"] == 1.0
         assert 0.0 <= value["sensitivity"]["lower"] <= value["sensitivity"]["upper"] <= 1.0
         assert value["specificity"]["estimate"] == 1.0
@@ -272,6 +275,23 @@ def test_task4_emits_confusion_uncertainty_but_defers_endpoint_bias_propagation(
     with pytest.raises(ValueError, match="Task 5/10"):
         bound_differential_judge_bias(rows, replicates=200)
 
+
+def test_proxy_stratified_confusion_uses_population_weights_not_raw_audit_ratios():
+    low_prevalence = _reviewer_probe_rows(
+        proxy_positive_population=125, proxy_negative_population=1125
+    )
+    high_prevalence = _reviewer_probe_rows(
+        proxy_positive_population=1000, proxy_negative_population=250
+    )
+
+    low = score_blinded_judge_audit(low_prevalence)
+    high = score_blinded_judge_audit(high_prevalence)
+
+    key = "standard_grpo:correctness"
+    assert low.sensitivity[key] == pytest.approx(0.5714285714)
+    assert high.sensitivity[key] == pytest.approx(0.9795918367)
+    assert low.sensitivity[key] != pytest.approx(120 / 130)
+    assert high.sensitivity[key] != pytest.approx(120 / 130)
 
 def _candidates(*, per_stratum: int, phase: str):
     if phase == "development":
@@ -315,6 +335,34 @@ def _rated(rows):
         )
         for row in rows
     )
+
+
+def _reviewer_probe_rows(*, proxy_positive_population: int, proxy_negative_population: int):
+    candidates = _candidates(per_stratum=125, phase="test")
+    rows = build_judge_audit_sample(
+        candidates, phase="test", size=1000, seed=20260713
+    )
+    by_stratum = {}
+    for row in rows:
+        by_stratum.setdefault((row.arm, row.judgment_type, row.proxy_label), []).append(row)
+
+    rated = []
+    for (_arm, _judgment_type, proxy_label), stratum_rows in by_stratum.items():
+        human_positive = 120 if proxy_label else 10
+        population_count = (
+            proxy_positive_population if proxy_label else proxy_negative_population
+        )
+        for index, row in enumerate(stratum_rows):
+            label = "correct" if index < human_positive else "incorrect"
+            rated.append(
+                replace(
+                    row,
+                    stratum_population_count=population_count,
+                    rater_a=label,
+                    rater_b=label,
+                )
+            )
+    return tuple(rated)
 
 
 def _stratum_counts(rows):

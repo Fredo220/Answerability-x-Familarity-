@@ -629,15 +629,18 @@ alias_exact_match(answer: str, aliases: Sequence[str]) -> bool
 completion_equivalent(left: str, right: str, gold_aliases: Sequence[str]) -> bool
 build_judge_audit_sample(completions, *, phase: str, size: int, seed: int) -> tuple[AuditRow, ...]
 score_blinded_judge_audit(rows: Sequence[AuditRow]) -> JudgeAuditDecision
-estimate_arm_confusion_uncertainty(rows: Sequence[AuditRow]) -> Mapping[str, Mapping[str, Interval]]
+audit_sampling_design(rows: Sequence[AuditRow]) -> Mapping[str, object]
+estimate_arm_confusion_uncertainty(rows: Sequence[AuditRow]) -> Mapping[str, object]
 ```
 
 CLI:
 
 ```bash
 feature-dynamics rlmf-build-judge-audit --config ... --phase development
-feature-dynamics rlmf-record-judge-audit manual_locked.jsonl --config ... --phase locked
-feature-dynamics rlmf-record-judge-audit manual_test.jsonl --config ... --phase test
+feature-dynamics rlmf-seal-judge-rating rater_a.jsonl --identity ... --role rater_a --config ... --phase locked
+feature-dynamics rlmf-seal-judge-rating rater_b.jsonl --identity ... --role rater_b --config ... --phase locked
+feature-dynamics rlmf-seal-judge-adjudication adjudication.jsonl --identity ... --config ... --phase locked
+feature-dynamics rlmf-record-judge-audit endpoint_manifest.json --config ... --phase locked
 ```
 
 - [ ] **Step 1: Write failing parser and audit tests**
@@ -654,7 +657,13 @@ least 0.80 before adjudication, and the ambiguous fraction must not exceed 0.05.
 
 After sealed test rollouts exist but before aggregate test metrics are computed,
 draw a blinded, deterministic test audit of 1,000 judgments using the same strata.
-Task 4 seals arm-specific sensitivity and specificity uncertainty but does not
+Every sample ledger row carries its immutable eligible stratum population count,
+and sample metadata records every registered stratum's population count, exact
+sample count, and reduced rational inclusion probability. Sensitivity and
+specificity are inverse-inclusion/post-stratification weighted against those
+eligible populations. Task 4 seals a schema-v2 deterministic stratified-bootstrap
+object containing the complete sampling design, method, replicate count, RNG
+seed, and arm/judgment intervals, but does not
 call that uncertainty the preregistered `delta_cMFG_star` bias bound. Task 5/10
 must propagate it through the sealed behavioral records and `delta_cMFG_star`.
 Only that endpoint-specific propagation may finalize the test audit or request a
@@ -672,13 +681,18 @@ from test disagreements.
 
 - [ ] **Step 3: Implement the parser and two-stage audit**
 
-The parsers must return `valid=False` rather than guessing malformed scores. The proxy judge may be revised only using the development audit. Development uses shared pre-treatment `pre_sft`/`rl_train` strata; it must not invent treatment arms. After freezing parser version and source hash, run the locked validation audit as a go/no-go gate. Generate test completions only after that gate passes. Locked and test candidates must come from verified sealed candidate endpoints and the registered `validation` and `test` splits respectively. The later test audit estimates arm-specific confusion uncertainty but can never change aliases, normalization, prompts, parsers, thresholds, or report wording.
+The parsers must return `valid=False` rather than guessing malformed scores. The proxy judge may be revised only using the development audit. Development uses shared pre-treatment `pre_sft`/`rl_train` strata; it must not invent treatment arms. Recording the final development audit publishes an immutable `development_judge_audit` endpoint. A locked candidate endpoint must bind that marker and postdate it; locked build and record reverify the endpoint and bind its hash. Parser version and source hash, normalization version, alias artifact and endpoint hashes, and candidate proxy-parent provenance must exactly equal the development proxy freeze. Generate test completions only after the locked gate passes. Locked and test candidates must come from verified sealed candidate endpoints and the registered `validation` and `test` splits respectively. The later test audit estimates arm-specific confusion uncertainty but can never change aliases, normalization, prompts, parsers, thresholds, or report wording.
 
-The single record command consumes a manifest pointing to three separately
-sealed JSONL sources: rater A, rater B, and adjudication. The manifest binds
-distinct identities, timezone-aware timestamps, exact audit IDs, and SHA-256
-hashes. Adjudication contains only rater disagreements and occurs after both
-independent rating timestamps. Task 4 publishes only size-specific test evidence
+Rater A and rater B are sealed by separate commands before adjudication. Their
+verified endpoints must have distinct identities, resolved input paths, source
+hashes, endpoint markers, and marker hashes, and each completion marker must
+postdate the sample completion marker. Adjudication can be sealed only after both
+rater endpoints verify; it contains exactly their disagreement IDs and its
+completion marker postdates both rater markers. The single final record command
+consumes a schema-v2 manifest that references only these three endpoint names and
+marker hashes. It derives labels only from their sealed copies and binds all three
+endpoint markers. Operator-supplied timestamps and raw paths are not accepted in
+the final manifest. Task 4 publishes only size-specific test evidence
 endpoints. It must return nonzero while endpoint propagation remains pending and
 must never publish `bounded`, a confirmatory pass, or a final test-audit endpoint.
 
@@ -1016,7 +1030,7 @@ Test missing-seed rejection, paired-ID equality, duplicate completion rejection,
 
 Generate and seal development rollouts from pre-SFT/RL-train without using test IDs, freeze the proxy, then generate validation bundles for all paired seeds. Every evaluation bundle contains one designated answer/confidence response and 20 independently seeded answer-only auxiliaries. Run the locked 400-item validation audit and verify its completion marker. The test-rollout command must refuse to run before that marker exists and passes.
 
-Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit and collect two independent ratings plus later disagreement-only adjudication through the sealed-source manifest. Task 4 publishes arm-specific confusion uncertainty, not a `delta_cMFG_star` gate. This task joins that uncertainty to the sealed behavioral records, propagates it through `delta_cMFG_star`, and exclusively decides whether the `<0.015` upper-limit gate passes, a 250-row append is required, or the study is `not_evaluable` at 2,000. An extension-required command exits nonzero and writes a sealed request binding the current size-specific evidence endpoint; the next Task 4 audit appends only the requested 250 stable IDs. A final `test_judge_audit` endpoint is published only after reliability gates pass and endpoint-specific propagation yields a final evaluable result. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, unadjusted, and judge-bias-adjusted tables.
+Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit and collect two independent ratings plus later disagreement-only adjudication through the sealed-source manifest. Task 4 publishes schema-v2, population-weighted arm-specific confusion uncertainty with the full stratified sampling design and deterministic bootstrap provenance, not a `delta_cMFG_star` gate. This task must verify and consume that design unchanged, join the weighted uncertainty to the sealed behavioral records, propagate it through `delta_cMFG_star`, and exclusively decide whether the `<0.015` upper-limit gate passes, a 250-row append is required, or the study is `not_evaluable` at 2,000. An extension-required command exits nonzero and writes a sealed request binding the current size-specific evidence endpoint; the next Task 4 audit appends only the requested 250 stable IDs. A final `test_judge_audit` endpoint is published only after reliability gates pass and endpoint-specific propagation yields a final evaluable result. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, unadjusted, and judge-bias-adjusted tables.
 
 Only after the machine-derived Study 1 decision is `supported`, generate and seal one designated-plus-20 `mechanism_train` bundle for every final arm/seed checkpoint. Task 11 adds the corresponding pre-SFT bundles and teacher-forced activation artifacts. These sealed bundles are the only legal probe-training targets in Study 2.
 

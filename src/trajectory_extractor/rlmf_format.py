@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import math
+import random
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from fractions import Fraction
 from typing import Any, Mapping, Sequence
 
 from trajectory_extractor.rlmf_types import ParsedRLMFOutput
@@ -64,6 +66,7 @@ class AuditRow:
     comparison_answer: str
     reference_answer: str
     aliases: tuple[str, ...]
+    stratum_population_count: int
     rater_a: str | None = None
     rater_b: str | None = None
     adjudicated_label: str | None = None
@@ -81,6 +84,8 @@ class AuditRow:
             raise ValueError("audit judgment_type is not registered")
         if type(self.proxy_label) is not bool:
             raise ValueError("proxy_label must be boolean")
+        if type(self.stratum_population_count) is not int or self.stratum_population_count < 1:
+            raise ValueError("stratum_population_count must be a positive integer")
         for field in ("question", "answer", "comparison_answer", "reference_answer"):
             if not isinstance(getattr(self, field), str):
                 raise ValueError(f"{field} must be a string")
@@ -115,6 +120,7 @@ class AuditRow:
             "comparison_answer": self.comparison_answer,
             "reference_answer": self.reference_answer,
             "aliases": list(self.aliases),
+            "stratum_population_count": self.stratum_population_count,
             "rater_a": self.rater_a,
             "rater_b": self.rater_b,
             "adjudicated_label": self.adjudicated_label,
@@ -263,9 +269,10 @@ def build_judge_audit_sample(
         if len(available) < quota:
             raise ValueError(f"insufficient candidates for audit stratum {stratum}")
         selected.extend(
-            sorted(available, key=lambda row: (_rank(seed, row.source_id), row.source_id))[
-                :quota
-            ]
+            replace(row, stratum_population_count=len(available))
+            for row in sorted(
+                available, key=lambda row: (_rank(seed, row.source_id), row.source_id)
+            )[:quota]
         )
     selected.sort(key=lambda row: (_rank(seed, f"sample:{row.source_id}"), row.source_id))
     result = tuple(
@@ -284,6 +291,7 @@ def build_judge_audit_sample(
             comparison_answer=row.comparison_answer,
             reference_answer=row.reference_answer,
             aliases=row.aliases,
+            stratum_population_count=row.stratum_population_count,
         )
         for row in selected
     )
@@ -305,6 +313,7 @@ def score_blinded_judge_audit(rows: Sequence[AuditRow]) -> JudgeAuditDecision:
     }
     if actual != expected:
         raise ValueError("audit rows do not match the registered stratum balance")
+    audit_sampling_design(rows)
     if len({row.audit_id for row in rows}) != len(rows):
         raise ValueError("audit IDs must be unique")
     if len({row.source_id for row in rows}) != len(rows):
@@ -345,34 +354,90 @@ def score_blinded_judge_audit(rows: Sequence[AuditRow]) -> JudgeAuditDecision:
 
 def estimate_arm_confusion_uncertainty(
     rows: Sequence[AuditRow],
-) -> dict[str, dict[str, dict[str, float]]]:
+) -> dict[str, Any]:
     rows = tuple(rows)
     if not rows or any(row.phase != "test" for row in rows):
         raise ValueError("arm confusion uncertainty requires a completed test audit")
     decision = score_blinded_judge_audit(rows)
     if decision.passed is not True:
         raise ValueError("test audit reliability gates must pass before uncertainty estimation")
-    result: dict[str, dict[str, dict[str, float]]] = {}
-    for arm in _ARMS:
-        for judgment_type in _JUDGMENT_TYPES:
-            relevant = [
-                row
-                for row in rows
-                if row.arm == arm
-                and row.judgment_type == judgment_type
-                and row.final_label != "ambiguous"
-            ]
-            positives = [row for row in relevant if row.final_label == "correct"]
-            negatives = [row for row in relevant if row.final_label == "incorrect"]
-            result[f"{arm}:{judgment_type}"] = {
-                "sensitivity": _wilson_interval(
-                    sum(row.proxy_label for row in positives), len(positives)
-                ).to_record(),
-                "specificity": _wilson_interval(
-                    sum(not row.proxy_label for row in negatives), len(negatives)
-                ).to_record(),
-            }
-    return result
+    design = audit_sampling_design(rows)
+    sensitivity, specificity = _classification_metrics(rows, "test")
+    replicates = 2000
+    rng = random.Random(REGISTERED_AUDIT_SEED)
+    strata = _rows_by_stratum(rows)
+    sampled_metrics = {
+        key: {"sensitivity": [], "specificity": []} for key in sensitivity
+    }
+    for _ in range(replicates):
+        bootstrap_rows = tuple(
+            row
+            for stratum_rows in strata.values()
+            for row in (
+                stratum_rows[rng.randrange(len(stratum_rows))]
+                for _ in range(len(stratum_rows))
+            )
+        )
+        sampled_sensitivity, sampled_specificity = _classification_metrics(
+            bootstrap_rows, "test"
+        )
+        for key in sampled_metrics:
+            sampled_metrics[key]["sensitivity"].append(sampled_sensitivity[key])
+            sampled_metrics[key]["specificity"].append(sampled_specificity[key])
+
+    estimates = {}
+    for key in sensitivity:
+        estimates[key] = {
+            "sensitivity": _bootstrap_interval(
+                sensitivity[key], sampled_metrics[key]["sensitivity"]
+            ).to_record(),
+            "specificity": _bootstrap_interval(
+                specificity[key], sampled_metrics[key]["specificity"]
+            ).to_record(),
+        }
+    return {
+        "schema_version": 2,
+        "method": "deterministic_stratified_bootstrap",
+        "replicates": replicates,
+        "rng_seed": REGISTERED_AUDIT_SEED,
+        "sampling_design": design,
+        "estimates": estimates,
+    }
+
+
+def audit_sampling_design(rows: Sequence[AuditRow]) -> dict[str, Any]:
+    rows = tuple(rows)
+    if not rows:
+        raise ValueError("audit sampling design requires rows")
+    strata = _rows_by_stratum(rows)
+    records = {}
+    for stratum, stratum_rows in sorted(strata.items(), key=lambda item: str(item[0])):
+        populations = {row.stratum_population_count for row in stratum_rows}
+        if len(populations) != 1:
+            raise ValueError("audit stratum population counts must be consistent")
+        population_count = populations.pop()
+        sample_count = len(stratum_rows)
+        if sample_count > population_count:
+            raise ValueError("audit sample count exceeds its eligible stratum population")
+        probability = Fraction(sample_count, population_count)
+        group, judgment_type, proxy_label = stratum
+        key = f"{group}:{judgment_type}:proxy_{str(proxy_label).lower()}"
+        records[key] = {
+            "group": group,
+            "judgment_type": judgment_type,
+            "proxy_label": proxy_label,
+            "population_count": population_count,
+            "sample_count": sample_count,
+            "inclusion_probability": {
+                "numerator": probability.numerator,
+                "denominator": probability.denominator,
+            },
+        }
+    return {
+        "schema_version": 1,
+        "stratified_on": ["group", "judgment_type", "proxy_label"],
+        "strata": records,
+    }
 
 
 def bound_differential_judge_bias(
@@ -449,6 +514,7 @@ def _candidate_row(value: Any, phase: str) -> AuditRow:
         comparison_answer=comparison_answer,
         reference_answer=get("reference_answer", ""),
         aliases=aliases,
+        stratum_population_count=1,
     )
 
 
@@ -489,6 +555,15 @@ def _stratum(row: AuditRow) -> tuple[Any, str, bool]:
     return group, row.judgment_type, row.proxy_label
 
 
+def _rows_by_stratum(
+    rows: Sequence[AuditRow],
+) -> dict[tuple[Any, str, bool], tuple[AuditRow, ...]]:
+    result: dict[tuple[Any, str, bool], list[AuditRow]] = {}
+    for row in rows:
+        result.setdefault(_stratum(row), []).append(row)
+    return {stratum: tuple(values) for stratum, values in result.items()}
+
+
 def _rank(seed: int, value: str) -> str:
     return hashlib.sha256(f"{seed}:{value}".encode("utf-8")).hexdigest()
 
@@ -516,24 +591,39 @@ def _classification_metrics(
     groups: Sequence[str] = _DEVELOPMENT_SPLITS if phase == "development" else _ARMS
     for group in groups:
         for judgment_type in _JUDGMENT_TYPES:
-            relevant = [
+            group_rows = [
                 row
                 for row in rows
                 if (row.split if phase == "development" else row.arm) == group
                 and row.judgment_type == judgment_type
-                and row.final_label != "ambiguous"
             ]
+            sample_counts = {
+                proxy_label: sum(row.proxy_label == proxy_label for row in group_rows)
+                for proxy_label in (False, True)
+            }
+            relevant = [row for row in group_rows if row.final_label != "ambiguous"]
+
+            def weight(row: AuditRow) -> float:
+                count = sample_counts[row.proxy_label]
+                if count < 1:
+                    raise ValueError("audit confusion metrics require every proxy stratum")
+                return row.stratum_population_count / count
+
             human_positive = [row for row in relevant if row.final_label == "correct"]
             human_negative = [row for row in relevant if row.final_label == "incorrect"]
             key = f"{group}:{judgment_type}"
+            positive_weight = sum(weight(row) for row in human_positive)
+            negative_weight = sum(weight(row) for row in human_negative)
             sensitivity[key] = (
-                sum(row.proxy_label for row in human_positive) / len(human_positive)
-                if human_positive
+                sum(weight(row) for row in human_positive if row.proxy_label)
+                / positive_weight
+                if positive_weight
                 else 0.0
             )
             specificity[key] = (
-                sum(not row.proxy_label for row in human_negative) / len(human_negative)
-                if human_negative
+                sum(weight(row) for row in human_negative if not row.proxy_label)
+                / negative_weight
+                if negative_weight
                 else 0.0
             )
     return sensitivity, specificity
@@ -558,3 +648,22 @@ def _wilson_interval(successes: int, total: int) -> Interval:
         estimate=estimate,
         upper=max(estimate, min(1.0, center + radius)),
     )
+
+
+def _bootstrap_interval(estimate: float, values: Sequence[float]) -> Interval:
+    ordered = sorted(values)
+    return Interval(
+        lower=min(estimate, _quantile(ordered, 0.025)),
+        estimate=estimate,
+        upper=max(estimate, _quantile(ordered, 0.975)),
+    )
+
+
+def _quantile(ordered: Sequence[float], probability: float) -> float:
+    position = probability * (len(ordered) - 1)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction

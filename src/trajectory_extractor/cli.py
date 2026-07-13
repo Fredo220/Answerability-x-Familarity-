@@ -47,6 +47,7 @@ from trajectory_extractor.rlmf_format import (
     PARSER_VERSION,
     REGISTERED_AUDIT_SEED,
     AuditRow,
+    audit_sampling_design,
     build_judge_audit_sample,
     estimate_arm_confusion_uncertainty,
     score_blinded_judge_audit,
@@ -232,6 +233,33 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_record_audit.add_argument("--phase", choices=("development", "locked", "test"), required=True)
     rlmf_record_audit.add_argument("--root", default=".")
     rlmf_record_audit.add_argument("--size", type=int)
+
+    rlmf_seal_rating = subparsers.add_parser(
+        "rlmf-seal-judge-rating",
+        help="Seal one independent rater source before adjudication",
+    )
+    rlmf_seal_rating.add_argument("path")
+    rlmf_seal_rating.add_argument("--identity", required=True)
+    rlmf_seal_rating.add_argument("--role", choices=("rater_a", "rater_b"), required=True)
+    rlmf_seal_rating.add_argument("--config", required=True)
+    rlmf_seal_rating.add_argument(
+        "--phase", choices=("development", "locked", "test"), required=True
+    )
+    rlmf_seal_rating.add_argument("--root", default=".")
+    rlmf_seal_rating.add_argument("--size", type=int)
+
+    rlmf_seal_adjudication = subparsers.add_parser(
+        "rlmf-seal-judge-adjudication",
+        help="Seal disagreement-only adjudication after both rater endpoints",
+    )
+    rlmf_seal_adjudication.add_argument("path")
+    rlmf_seal_adjudication.add_argument("--identity", required=True)
+    rlmf_seal_adjudication.add_argument("--config", required=True)
+    rlmf_seal_adjudication.add_argument(
+        "--phase", choices=("development", "locked", "test"), required=True
+    )
+    rlmf_seal_adjudication.add_argument("--root", default=".")
+    rlmf_seal_adjudication.add_argument("--size", type=int)
 
     args = parser.parse_args(argv)
     if args.command == "generate-concept-data":
@@ -695,6 +723,14 @@ def main(argv: list[str] | None = None) -> int:
         config = RLMFConfig.from_json(args.config)
         store = RLMFArtifactStore(args.root)
         return _record_rlmf_judge_audit(args, config, store)
+    if args.command == "rlmf-seal-judge-rating":
+        config = RLMFConfig.from_json(args.config)
+        return _seal_rlmf_judge_rating(args, config, RLMFArtifactStore(args.root))
+    if args.command == "rlmf-seal-judge-adjudication":
+        config = RLMFConfig.from_json(args.config)
+        return _seal_rlmf_judge_adjudication(
+            args, config, RLMFArtifactStore(args.root)
+        )
     return 1
 
 
@@ -741,9 +777,33 @@ def _build_rlmf_judge_audit(args, config: RLMFConfig, store: RLMFArtifactStore) 
             f"verified candidate endpoint {candidate_endpoint} is required"
         ) from error
 
-    aliases_path, _aliases_marker, _aliases_record = _verified_endpoint_artifact(
+    aliases_path, aliases_marker, _aliases_record = _verified_endpoint_artifact(
         store, config.study_id, "prepare-data", "data/aliases.jsonl"
     )
+    parser_path = Path(__file__).with_name("rlmf_format.py")
+    parser_hash = sha256_file(parser_path)
+    proxy_freeze = _proxy_freeze(
+        parser_hash=parser_hash,
+        aliases_path=aliases_path,
+        aliases_marker=aliases_marker,
+        candidate_record=candidate_record,
+    )
+    development_marker: Path | None = None
+    if args.phase == "locked":
+        development_marker, development_record, development_metadata = (
+            _verified_development_audit(store, config.study_id)
+        )
+        development_hash = sha256_file(development_marker)
+        if candidate_record["parent_hashes"].get("development_judge_audit") != development_hash:
+            raise ValueError(
+                "locked candidate endpoint must bind the verified development_judge_audit marker"
+            )
+        if _parse_timestamp(candidate_record["created_at"]) <= _parse_timestamp(
+            development_record["created_at"]
+        ):
+            raise ValueError("locked candidate endpoint must postdate development_judge_audit")
+        if development_metadata.get("proxy_freeze") != proxy_freeze:
+            raise ValueError("locked sample does not match the development proxy freeze")
     locked_marker: Path | None = None
     if args.phase == "test":
         locked_marker, locked_record = _verified_locked_audit(store, config.study_id)
@@ -827,8 +887,6 @@ def _build_rlmf_judge_audit(args, config: RLMFConfig, store: RLMFArtifactStore) 
     sample_name = f"{args.phase}{suffix}_sample"
     ledger_name = f"{args.phase}{suffix}_ledger"
     metadata_name = f"{args.phase}{suffix}_metadata"
-    parser_path = Path(__file__).with_name("rlmf_format.py")
-    parser_hash = sha256_file(parser_path)
     metadata_path = _rlmf_audit_path(
         args.root, config.study_id, "audits", metadata_name
     ).with_suffix(".json")
@@ -847,10 +905,16 @@ def _build_rlmf_judge_audit(args, config: RLMFConfig, store: RLMFArtifactStore) 
         "parser_source_hash": parser_hash,
         "normalization_version": NORMALIZATION_VERSION,
         "alias_artifact_hash": sha256_file(aliases_path),
+        "alias_endpoint_marker_hash": sha256_file(aliases_marker),
+        "proxy_freeze": proxy_freeze,
+        "sampling_design": audit_sampling_design(selected),
         "candidate_endpoint": candidate_endpoint,
         "candidate_marker_hash": sha256_file(candidate_marker),
         "parent_sample_hash": parent_sample_hash,
         "extension_request_marker_hash": extension_request_hash,
+        "development_judge_audit_marker_hash": (
+            sha256_file(development_marker) if development_marker is not None else None
+        ),
     }
     sample_path = _write_jsonl_resumable(
         store,
@@ -874,6 +938,8 @@ def _build_rlmf_judge_audit(args, config: RLMFConfig, store: RLMFArtifactStore) 
         "alias_artifact": sha256_file(aliases_path),
         "parser_source": parser_hash,
     }
+    if development_marker is not None:
+        parents["development_judge_audit"] = sha256_file(development_marker)
     if parent_sample_hash is not None:
         parents["parent_sample"] = parent_sample_hash
     if extension_request_hash is not None:
@@ -909,7 +975,7 @@ def _record_rlmf_judge_audit(
     suffix = _audit_name_suffix(args.phase, size)
     sample_endpoint = f"{args.phase}_judge_audit_sample_{size}"
     ledger_relative = f"audits/{args.phase}{suffix}_ledger.jsonl"
-    ledger_path, sample_marker, _sample_record = _verified_endpoint_artifact(
+    ledger_path, sample_marker, sample_record = _verified_endpoint_artifact(
         store, config.study_id, sample_endpoint, ledger_relative
     )
     metadata_path = _study_namespace(store, config.study_id) / (
@@ -930,19 +996,42 @@ def _record_rlmf_judge_audit(
     )
     if metadata.get("alias_artifact_hash") != sha256_file(aliases_path):
         raise ValueError("audit alias artifact no longer verifies")
-    if args.phase == "test":
-        _verified_locked_audit(store, config.study_id)
-
     ledger_rows = tuple(
         AuditRow.from_ledger_record(row) for row in _read_jsonl(ledger_path)
     )
+    if metadata.get("sampling_design") != audit_sampling_design(ledger_rows):
+        raise ValueError("audit sampling design no longer verifies")
+    development_marker: Path | None = None
+    if args.phase == "locked":
+        development_marker, _development_record, development_metadata = (
+            _verified_development_audit(store, config.study_id)
+        )
+        development_hash = sha256_file(development_marker)
+        if (
+            metadata.get("development_judge_audit_marker_hash") != development_hash
+            or sample_record["parent_hashes"].get("development_judge_audit")
+            != development_hash
+        ):
+            raise ValueError("locked audit sample does not bind development_judge_audit")
+        if metadata.get("proxy_freeze") != development_metadata.get("proxy_freeze"):
+            raise ValueError("locked audit changed the development proxy freeze")
+    if args.phase == "test":
+        _verified_locked_audit(store, config.study_id)
+
     pending_rows = tuple(
         row for row in ledger_rows if row.rater_a is None and row.rater_b is None
     )
     if not pending_rows:
         raise ValueError("audit ledger contains no pending independent ratings")
     ratings, source_metadata = _load_rating_manifest(
-        Path(args.path), pending_rows, sample_created_at=metadata["created_at"]
+        Path(args.path),
+        pending_rows,
+        store=store,
+        study_id=config.study_id,
+        phase=args.phase,
+        size=size,
+        sample_marker=sample_marker,
+        sample_record=sample_record,
     )
     completed_rows = tuple(
         replace(
@@ -957,27 +1046,10 @@ def _record_rlmf_judge_audit(
     )
     decision = score_blinded_judge_audit(completed_rows)
 
-    source_paths = {
-        name: _write_jsonl_resumable(
-            store,
-            config.study_id,
-            "audits",
-            f"{args.phase}{suffix}_{name}",
-            source_metadata[name]["rows"],
-        )
-        for name in ("rater_a", "rater_b", "adjudication")
-    }
     persisted_manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "input_manifest_sha256": sha256_file(Path(args.path)),
-        "sources": {
-            name: {
-                key: value
-                for key, value in source_metadata[name].items()
-                if key != "rows"
-            }
-            for name in ("rater_a", "rater_b", "adjudication")
-        },
+        "sources": source_metadata,
     }
     sources_path = _write_json_resumable(
         store,
@@ -1004,14 +1076,21 @@ def _record_rlmf_judge_audit(
         completed_path,
         decision_path,
         sources_path,
-        *source_paths.values(),
     )
     endpoint_parents = {
         "audit_sample": sha256_file(sample_marker),
         "parser_source": parser_hash,
         "alias_artifact": sha256_file(aliases_path),
         "rating_manifest": sha256_file(Path(args.path)),
+        **{
+            f"{name}_endpoint": source_metadata[name]["marker_sha256"]
+            for name in ("rater_a", "rater_b", "adjudication")
+        },
     }
+    if development_marker is not None:
+        endpoint_parents["development_judge_audit"] = sha256_file(
+            development_marker
+        )
 
     if args.phase != "development" and decision.passed is not True:
         print(
@@ -1099,6 +1178,171 @@ def _record_rlmf_judge_audit(
     return 3
 
 
+def _seal_rlmf_judge_rating(
+    args, config: RLMFConfig, store: RLMFArtifactStore
+) -> int:
+    size = args.size or _registered_audit_size(args.phase)
+    pending_rows, sample_marker, sample_record = _pending_audit_rows(
+        store, config.study_id, args.phase, size
+    )
+    source = _resolved_source_path(Path(args.path), args.role)
+    rows = _read_rating_rows(source, allow_empty=False)
+    _require_exact_rating_ids(rows, pending_rows, args.role)
+    identity = _validated_identity(args.identity, args.role)
+    source_hash = sha256_file(source)
+    if datetime.now(timezone.utc) <= _parse_timestamp(sample_record["created_at"]):
+        raise ValueError("independent rater endpoint must postdate the sample marker")
+
+    other_role = "rater_b" if args.role == "rater_a" else "rater_a"
+    try:
+        _other_rows, _other_marker, _other_record, other_metadata = (
+            _verified_sealed_source(
+                store, config.study_id, args.phase, size, other_role
+            )
+        )
+    except (FileNotFoundError, ValueError):
+        other_metadata = None
+    if other_metadata is not None:
+        if identity == other_metadata["identity"]:
+            raise ValueError("independent raters must have distinct identities")
+        if str(source) == other_metadata["resolved_source_path"]:
+            raise ValueError("independent raters must use distinct resolved source paths")
+        if source_hash == other_metadata["input_sha256"]:
+            raise ValueError("independent raters must use distinct source hashes")
+
+    suffix = _audit_name_suffix(args.phase, size)
+    rows_path = _write_jsonl_resumable(
+        store,
+        config.study_id,
+        "audits",
+        f"{args.phase}{suffix}_{args.role}_sealed",
+        rows,
+    )
+    metadata = {
+        "schema_version": 1,
+        "role": args.role,
+        "identity": identity,
+        "phase": args.phase,
+        "size": size,
+        "resolved_source_path": str(source),
+        "input_sha256": source_hash,
+        "sample_marker_sha256": sha256_file(sample_marker),
+    }
+    metadata_path = _write_json_resumable(
+        store,
+        config.study_id,
+        "audits",
+        f"{args.phase}{suffix}_{args.role}_source",
+        metadata,
+    )
+    endpoint = f"{args.phase}_judge_audit_{args.role}_{size}"
+    marker = _complete_endpoint_resumable(
+        store,
+        config.study_id,
+        endpoint,
+        config,
+        (rows_path, metadata_path),
+        parent_hashes={"audit_sample": sha256_file(sample_marker)},
+    )
+    marker_record = store.verify_endpoint(config.study_id, endpoint)
+    if _parse_timestamp(marker_record["created_at"]) <= _parse_timestamp(
+        sample_record["created_at"]
+    ):
+        raise ValueError("independent rater endpoint must postdate the sample marker")
+    print(json.dumps({"role": args.role, "endpoint": endpoint, "marker": str(marker)}))
+    return 0
+
+
+def _seal_rlmf_judge_adjudication(
+    args, config: RLMFConfig, store: RLMFArtifactStore
+) -> int:
+    size = args.size or _registered_audit_size(args.phase)
+    pending_rows, sample_marker, sample_record = _pending_audit_rows(
+        store, config.study_id, args.phase, size
+    )
+    sealed = {}
+    for role in ("rater_a", "rater_b"):
+        try:
+            sealed[role] = _verified_sealed_source(
+                store, config.study_id, args.phase, size, role
+            )
+        except (FileNotFoundError, ValueError) as error:
+            raise ValueError(f"verified {role} endpoint is required") from error
+    _validate_rater_endpoints(sealed, sample_marker, sample_record, pending_rows)
+    rater_completion_times = [
+        _parse_timestamp(sealed[role][2]["created_at"])
+        for role in ("rater_a", "rater_b")
+    ]
+    if datetime.now(timezone.utc) <= max(rater_completion_times):
+        raise ValueError("adjudication endpoint must postdate both rater markers")
+    ratings = {
+        role: {row["audit_id"]: row["label"] for row in sealed[role][0]}
+        for role in ("rater_a", "rater_b")
+    }
+    disagreements = {
+        audit_id
+        for audit_id in ratings["rater_a"]
+        if ratings["rater_a"][audit_id] != ratings["rater_b"][audit_id]
+    }
+    source = _resolved_source_path(Path(args.path), "adjudication")
+    rows = _read_rating_rows(source, allow_empty=True)
+    mapping = {row["audit_id"]: row["label"] for row in rows}
+    if len(mapping) != len(rows) or set(mapping) != disagreements:
+        raise ValueError("adjudication must address exactly the rater disagreements")
+    identity = _validated_identity(args.identity, "adjudication")
+    if identity in {sealed[role][3]["identity"] for role in sealed}:
+        raise ValueError("raters and adjudicator must have distinct identities")
+
+    suffix = _audit_name_suffix(args.phase, size)
+    rows_path = _write_jsonl_resumable(
+        store,
+        config.study_id,
+        "audits",
+        f"{args.phase}{suffix}_adjudication_sealed",
+        rows,
+    )
+    metadata = {
+        "schema_version": 1,
+        "role": "adjudication",
+        "identity": identity,
+        "phase": args.phase,
+        "size": size,
+        "resolved_source_path": str(source),
+        "input_sha256": sha256_file(source),
+        "sample_marker_sha256": sha256_file(sample_marker),
+        "rater_a_marker_sha256": sha256_file(sealed["rater_a"][1]),
+        "rater_b_marker_sha256": sha256_file(sealed["rater_b"][1]),
+    }
+    metadata_path = _write_json_resumable(
+        store,
+        config.study_id,
+        "audits",
+        f"{args.phase}{suffix}_adjudication_source",
+        metadata,
+    )
+    endpoint = f"{args.phase}_judge_audit_adjudication_{size}"
+    marker = _complete_endpoint_resumable(
+        store,
+        config.study_id,
+        endpoint,
+        config,
+        (rows_path, metadata_path),
+        parent_hashes={
+            "audit_sample": sha256_file(sample_marker),
+            "rater_a": sha256_file(sealed["rater_a"][1]),
+            "rater_b": sha256_file(sealed["rater_b"][1]),
+        },
+    )
+    marker_record = store.verify_endpoint(config.study_id, endpoint)
+    if _parse_timestamp(marker_record["created_at"]) <= max(
+        _parse_timestamp(sealed[role][2]["created_at"])
+        for role in ("rater_a", "rater_b")
+    ):
+        raise ValueError("adjudication endpoint must postdate both rater markers")
+    print(json.dumps({"role": "adjudication", "endpoint": endpoint, "marker": str(marker)}))
+    return 0
+
+
 def _verified_endpoint_artifact(
     store: RLMFArtifactStore, study_id: str, endpoint: str, relative: str
 ) -> tuple[Path, Path, dict]:
@@ -1111,6 +1355,55 @@ def _verified_endpoint_artifact(
         raise ValueError(f"endpoint {endpoint} artifact hash mismatch")
     marker = namespace / "endpoints" / f"{endpoint}.complete.json"
     return path, marker, record
+
+
+def _proxy_freeze(
+    *, parser_hash: str, aliases_path: Path, aliases_marker: Path, candidate_record: dict
+) -> dict:
+    return {
+        "schema_version": 1,
+        "parser_version": PARSER_VERSION,
+        "parser_source_hash": parser_hash,
+        "normalization_version": NORMALIZATION_VERSION,
+        "alias_artifact_hash": sha256_file(aliases_path),
+        "alias_endpoint_marker_hash": sha256_file(aliases_marker),
+        "candidate_proxy_parent_hashes": {
+            name: digest
+            for name, digest in sorted(candidate_record["parent_hashes"].items())
+            if name.startswith("proxy_")
+        },
+    }
+
+
+def _verified_development_audit(
+    store: RLMFArtifactStore, study_id: str
+) -> tuple[Path, dict, dict]:
+    try:
+        decision_path, marker, record = _verified_endpoint_artifact(
+            store,
+            study_id,
+            "development_judge_audit",
+            "audits/development_200_decision.json",
+        )
+        metadata_path, sample_marker, sample_record = _verified_endpoint_artifact(
+            store,
+            study_id,
+            "development_judge_audit_sample_200",
+            "audits/development_200_metadata.json",
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise ValueError("verified development_judge_audit is required") from error
+    decision = _read_json(decision_path)
+    if decision.get("phase") != "development" or decision.get("status") != "development_review":
+        raise ValueError("development_judge_audit is not the final development review")
+    if record["parent_hashes"].get("audit_sample") != sha256_file(sample_marker):
+        raise ValueError("development_judge_audit does not bind its sealed sample")
+    if _parse_timestamp(record["created_at"]) < _parse_timestamp(sample_record["created_at"]):
+        raise ValueError("development_judge_audit predates its sealed sample")
+    metadata = _read_json(metadata_path)
+    if not isinstance(metadata.get("proxy_freeze"), dict):
+        raise ValueError("development_judge_audit is missing its proxy freeze")
+    return marker, record, metadata
 
 
 def _verified_locked_audit(
@@ -1128,6 +1421,17 @@ def _verified_locked_audit(
     decision = _read_json(decision_path)
     if decision.get("phase") != "locked" or decision.get("passed") is not True:
         raise ValueError("locked_judge_audit did not pass")
+    development_marker, development_record, _metadata = _verified_development_audit(
+        store, study_id
+    )
+    if record["parent_hashes"].get("development_judge_audit") != sha256_file(
+        development_marker
+    ):
+        raise ValueError("locked_judge_audit does not bind development_judge_audit")
+    if _parse_timestamp(record["created_at"]) <= _parse_timestamp(
+        development_record["created_at"]
+    ):
+        raise ValueError("locked_judge_audit must postdate development_judge_audit")
     return marker, record
 
 
@@ -1176,31 +1480,178 @@ def _same_audit_identity(left: AuditRow, right: AuditRow) -> bool:
     return left_record == right_record
 
 
+def _pending_audit_rows(
+    store: RLMFArtifactStore, study_id: str, phase: str, size: int
+) -> tuple[tuple[AuditRow, ...], Path, dict]:
+    suffix = _audit_name_suffix(phase, size)
+    ledger_path, sample_marker, sample_record = _verified_endpoint_artifact(
+        store,
+        study_id,
+        f"{phase}_judge_audit_sample_{size}",
+        f"audits/{phase}{suffix}_ledger.jsonl",
+    )
+    rows = tuple(AuditRow.from_ledger_record(row) for row in _read_jsonl(ledger_path))
+    pending = tuple(row for row in rows if row.rater_a is None and row.rater_b is None)
+    if not pending:
+        raise ValueError("audit ledger contains no pending independent ratings")
+    return pending, sample_marker, sample_record
+
+
+def _resolved_source_path(path: Path, role: str) -> Path:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{role} source file is missing or a symlink")
+    return path.resolve()
+
+
+def _validated_identity(value: object, role: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{role} identity must be a non-empty string")
+    return value.strip()
+
+
+def _require_exact_rating_ids(
+    rows: tuple[dict, ...], pending_rows: tuple[AuditRow, ...], role: str
+) -> None:
+    audit_ids = [row["audit_id"] for row in rows]
+    expected_ids = {row.audit_id for row in pending_rows}
+    if len(set(audit_ids)) != len(audit_ids) or set(audit_ids) != expected_ids:
+        raise ValueError(f"{role} must contain exactly the pending audit IDs")
+
+
+def _verified_sealed_source(
+    store: RLMFArtifactStore, study_id: str, phase: str, size: int, role: str
+) -> tuple[tuple[dict, ...], Path, dict, dict]:
+    suffix = _audit_name_suffix(phase, size)
+    endpoint = f"{phase}_judge_audit_{role}_{size}"
+    rows_relative = f"audits/{phase}{suffix}_{role}_sealed.jsonl"
+    metadata_relative = f"audits/{phase}{suffix}_{role}_source.json"
+    rows_path, marker, record = _verified_endpoint_artifact(
+        store, study_id, endpoint, rows_relative
+    )
+    metadata_path, metadata_marker, metadata_record = _verified_endpoint_artifact(
+        store, study_id, endpoint, metadata_relative
+    )
+    if marker != metadata_marker or record != metadata_record:
+        raise ValueError(f"{role} endpoint artifacts do not share one marker")
+    metadata = _read_json(metadata_path)
+    expected = {
+        "schema_version",
+        "role",
+        "identity",
+        "phase",
+        "size",
+        "resolved_source_path",
+        "input_sha256",
+        "sample_marker_sha256",
+    }
+    if role == "adjudication":
+        expected |= {"rater_a_marker_sha256", "rater_b_marker_sha256"}
+    if set(metadata) != expected or metadata.get("schema_version") != 1:
+        raise ValueError(f"{role} endpoint metadata has an invalid schema")
+    if (
+        metadata.get("role") != role
+        or metadata.get("phase") != phase
+        or metadata.get("size") != size
+    ):
+        raise ValueError(f"{role} endpoint metadata does not match the audit")
+    _validated_identity(metadata.get("identity"), role)
+    if not isinstance(metadata.get("resolved_source_path"), str):
+        raise ValueError(f"{role} endpoint is missing resolved source provenance")
+    if not isinstance(metadata.get("input_sha256"), str):
+        raise ValueError(f"{role} endpoint is missing source hash provenance")
+    rows = _read_rating_rows(rows_path, allow_empty=role == "adjudication")
+    return rows, marker, record, metadata
+
+
+def _validate_rater_endpoints(
+    sealed: dict,
+    sample_marker: Path,
+    sample_record: dict,
+    pending_rows: tuple[AuditRow, ...],
+) -> None:
+    for role in ("rater_a", "rater_b"):
+        rows, marker, record, metadata = sealed[role]
+        _require_exact_rating_ids(rows, pending_rows, role)
+        if (
+            record["parent_hashes"].get("audit_sample") != sha256_file(sample_marker)
+            or metadata["sample_marker_sha256"] != sha256_file(sample_marker)
+        ):
+            raise ValueError(f"{role} endpoint does not bind the audit sample")
+        if _parse_timestamp(record["created_at"]) <= _parse_timestamp(
+            sample_record["created_at"]
+        ):
+            raise ValueError(f"{role} endpoint must postdate the sample marker")
+    metadata_a = sealed["rater_a"][3]
+    metadata_b = sealed["rater_b"][3]
+    if metadata_a["identity"] == metadata_b["identity"]:
+        raise ValueError("independent raters must have distinct identities")
+    if metadata_a["resolved_source_path"] == metadata_b["resolved_source_path"]:
+        raise ValueError("independent raters must use distinct resolved source paths")
+    if metadata_a["input_sha256"] == metadata_b["input_sha256"]:
+        raise ValueError("independent raters must use distinct source hashes")
+    if sealed["rater_a"][1] == sealed["rater_b"][1] or sha256_file(
+        sealed["rater_a"][1]
+    ) == sha256_file(sealed["rater_b"][1]):
+        raise ValueError("independent raters must have distinct endpoint markers and hashes")
+
+
 def _load_rating_manifest(
-    path: Path, pending_rows: tuple[AuditRow, ...], *, sample_created_at: str
+    path: Path,
+    pending_rows: tuple[AuditRow, ...],
+    *,
+    store: RLMFArtifactStore,
+    study_id: str,
+    phase: str,
+    size: int,
+    sample_marker: Path,
+    sample_record: dict,
 ) -> tuple[dict[str, dict[str, str]], dict[str, dict]]:
     manifest = _read_json(path)
     if set(manifest) != {"schema_version", "rater_a", "rater_b", "adjudication"}:
         raise ValueError("rating manifest has an invalid schema")
-    if manifest["schema_version"] != 1:
-        raise ValueError("rating manifest schema_version must be 1")
-    entries = {
-        name: _validate_rating_source_entry(path.parent, name, manifest[name])
-        for name in ("rater_a", "rater_b", "adjudication")
-    }
-    identities = [entry["identity"] for entry in entries.values()]
+    if manifest["schema_version"] != 2:
+        raise ValueError("rating manifest schema_version must be 2")
+    sealed = {}
+    for role in ("rater_a", "rater_b", "adjudication"):
+        entry = manifest[role]
+        expected_endpoint = f"{phase}_judge_audit_{role}_{size}"
+        if not isinstance(entry, dict) or set(entry) != {"endpoint", "marker_sha256"}:
+            raise ValueError(f"{role} manifest entry has an invalid endpoint schema")
+        if entry["endpoint"] != expected_endpoint:
+            raise ValueError(f"{role} manifest references the wrong endpoint")
+        sealed[role] = _verified_sealed_source(store, study_id, phase, size, role)
+        if entry["marker_sha256"] != sha256_file(sealed[role][1]):
+            raise ValueError(f"{role} endpoint marker hash mismatch")
+    _validate_rater_endpoints(sealed, sample_marker, sample_record, pending_rows)
+    identities = [sealed[role][3]["identity"] for role in sealed]
     if len(set(identities)) != 3:
         raise ValueError("raters and adjudicator must have distinct identities")
-    rating_times = [entries["rater_a"]["parsed_time"], entries["rater_b"]["parsed_time"]]
-    if any(value < _parse_timestamp(sample_created_at) for value in rating_times):
-        raise ValueError("independent ratings must occur after the sealed sample")
-    if entries["adjudication"]["parsed_time"] <= max(rating_times):
-        raise ValueError("adjudication timestamp must be after both rating timestamps")
-
-    source_rows = {
-        name: _read_rating_rows(entry["path"], allow_empty=name == "adjudication")
-        for name, entry in entries.items()
+    rater_hashes = {
+        role: sha256_file(sealed[role][1]) for role in ("rater_a", "rater_b")
     }
+    adjudication_rows, adjudication_marker, adjudication_record, adjudication_metadata = (
+        sealed["adjudication"]
+    )
+    if (
+        adjudication_record["parent_hashes"].get("rater_a")
+        != rater_hashes["rater_a"]
+        or adjudication_record["parent_hashes"].get("rater_b")
+        != rater_hashes["rater_b"]
+    ):
+        raise ValueError("adjudication endpoint does not bind both rater endpoints")
+    if (
+        adjudication_metadata["rater_a_marker_sha256"] != rater_hashes["rater_a"]
+        or adjudication_metadata["rater_b_marker_sha256"] != rater_hashes["rater_b"]
+    ):
+        raise ValueError("adjudication source metadata does not bind both raters")
+    rater_times = [
+        _parse_timestamp(sealed[role][2]["created_at"])
+        for role in ("rater_a", "rater_b")
+    ]
+    if _parse_timestamp(adjudication_record["created_at"]) <= max(rater_times):
+        raise ValueError("adjudication endpoint must be sealed after both rater markers")
+
+    source_rows = {name: sealed[name][0] for name in sealed}
     expected_ids = {row.audit_id for row in pending_rows}
     ratings: dict[str, dict[str, str]] = {}
     for name in ("rater_a", "rater_b"):
@@ -1221,50 +1672,17 @@ def _load_rating_manifest(
     if set(adjudication) != disagreements:
         raise ValueError("adjudication must address exactly the rater disagreements")
     ratings["adjudication"] = adjudication
-    metadata = {
-        name: {
-            "identity": entries[name]["identity"],
-            "timestamp": entries[name]["timestamp"],
-            "sha256": entries[name]["sha256"],
+    metadata = {}
+    for name in sealed:
+        metadata[name] = {
+            "endpoint": manifest[name]["endpoint"],
+            "marker_sha256": sha256_file(sealed[name][1]),
+            "identity": sealed[name][3]["identity"],
+            "completion_marker_created_at": sealed[name][2]["created_at"],
+            "input_sha256": sealed[name][3]["input_sha256"],
             "audit_ids": [row["audit_id"] for row in source_rows[name]],
-            "rows": source_rows[name],
         }
-        for name in entries
-    }
     return ratings, metadata
-
-
-def _validate_rating_source_entry(directory: Path, name: str, value: object) -> dict:
-    if not isinstance(value, dict) or set(value) != {
-        "identity",
-        "timestamp",
-        "path",
-        "sha256",
-    }:
-        raise ValueError(f"{name} source entry has an invalid schema")
-    identity = value["identity"]
-    if not isinstance(identity, str) or not identity.strip():
-        raise ValueError(f"{name} identity must be a non-empty string")
-    if not isinstance(value["path"], str):
-        raise ValueError(f"{name} path must be relative to the manifest")
-    source = Path(value["path"])
-    if source.is_absolute() or not source.parts or any(
-        part in {"", ".", ".."} for part in source.parts
-    ):
-        raise ValueError(f"{name} path must be relative to the manifest")
-    source = directory / source
-    if source.is_symlink() or not source.is_file():
-        raise ValueError(f"{name} source file is missing or a symlink")
-    if not isinstance(value["sha256"], str) or sha256_file(source) != value["sha256"]:
-        raise ValueError(f"{name} source hash mismatch")
-    parsed_time = _parse_timestamp(value["timestamp"])
-    return {
-        "identity": identity.strip(),
-        "timestamp": value["timestamp"],
-        "parsed_time": parsed_time,
-        "path": source,
-        "sha256": value["sha256"],
-    }
 
 
 def _read_rating_rows(path: Path, *, allow_empty: bool) -> tuple[dict, ...]:
