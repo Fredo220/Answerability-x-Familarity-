@@ -9,6 +9,7 @@ def test_study_notebooks_import_package_and_consume_artifacts():
         "02_concept_mixing.ipynb",
         "03_jailbreak.ipynb",
         "04_intervention.ipynb",
+        "05_rlmf_colab.ipynb",
     ]
     for path in paths:
         notebook = json.loads(path.read_text())
