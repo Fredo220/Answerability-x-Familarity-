@@ -5,7 +5,7 @@ import hashlib
 import json
 import resource
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,6 +42,12 @@ from trajectory_extractor.labels import is_refusal, safety_rates
 from trajectory_extractor.report_builder import write_study_report
 from trajectory_extractor.rlmf_artifacts import RLMFArtifactStore
 from trajectory_extractor.rlmf_data import write_popqa_snapshot
+from trajectory_extractor.rlmf_format import (
+    AuditRow,
+    bound_differential_judge_bias,
+    build_judge_audit_sample,
+    score_blinded_judge_audit,
+)
 from trajectory_extractor.rlmf_types import RLMFConfig
 from trajectory_extractor.secondary_artifacts import (
     SecondaryArtifactStore,
@@ -207,6 +213,20 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_prepare_data = subparsers.add_parser("rlmf-prepare-data")
     rlmf_prepare_data.add_argument("--config", required=True)
     rlmf_prepare_data.add_argument("--root", default=".")
+
+    rlmf_build_audit = subparsers.add_parser("rlmf-build-judge-audit")
+    rlmf_build_audit.add_argument("--config", required=True)
+    rlmf_build_audit.add_argument("--phase", choices=("development", "locked", "test"), required=True)
+    rlmf_build_audit.add_argument("--root", default=".")
+    rlmf_build_audit.add_argument("--seed", type=int, default=20260713)
+    rlmf_build_audit.add_argument("--size", type=int)
+
+    rlmf_record_audit = subparsers.add_parser("rlmf-record-judge-audit")
+    rlmf_record_audit.add_argument("path")
+    rlmf_record_audit.add_argument("--config", required=True)
+    rlmf_record_audit.add_argument("--phase", choices=("development", "locked", "test"), required=True)
+    rlmf_record_audit.add_argument("--root", default=".")
+    rlmf_record_audit.add_argument("--size", type=int)
 
     args = parser.parse_args(argv)
     if args.command == "generate-concept-data":
@@ -662,6 +682,88 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "rlmf-build-judge-audit":
+        config = RLMFConfig.from_json(args.config)
+        store = RLMFArtifactStore(args.root)
+        size = args.size or _registered_audit_size(args.phase)
+        candidates_path = _rlmf_audit_path(args.root, config.study_id, "evaluation", f"audit_candidates_{args.phase}")
+        rows = build_judge_audit_sample(
+            _read_jsonl(candidates_path),
+            phase=args.phase,
+            size=size,
+            seed=args.seed,
+        )
+        name_suffix = _audit_name_suffix(args.phase, size)
+        payload_path = store.write_jsonl(
+            config.study_id,
+            "audits",
+            f"{args.phase}{name_suffix}_sample",
+            (row.rater_payload() for row in rows),
+        )
+        ledger_path = store.write_jsonl(
+            config.study_id,
+            "audits",
+            f"{args.phase}{name_suffix}_ledger",
+            (row.to_ledger_record() for row in rows),
+        )
+        print(json.dumps({"phase": args.phase, "sample": str(payload_path), "ledger": str(ledger_path), "rows": len(rows)}))
+        return 0
+    if args.command == "rlmf-record-judge-audit":
+        config = RLMFConfig.from_json(args.config)
+        store = RLMFArtifactStore(args.root)
+        size = args.size or _registered_audit_size(args.phase)
+        name_suffix = _audit_name_suffix(args.phase, size)
+        ledger_path = _rlmf_audit_path(
+            args.root, config.study_id, "audits", f"{args.phase}{name_suffix}_ledger"
+        )
+        ledger_rows = tuple(AuditRow.from_ledger_record(row) for row in _read_jsonl(ledger_path))
+        completed_rows = _merge_judge_audit_labels(ledger_rows, _read_jsonl(Path(args.path)))
+        decision = score_blinded_judge_audit(completed_rows)
+        completed_path = store.write_jsonl(
+            config.study_id,
+            "audits",
+            f"{args.phase}{name_suffix}_completed",
+            (row.to_ledger_record() for row in completed_rows),
+        )
+        decision_path = store.write_json(
+            config.study_id,
+            "audits",
+            f"{args.phase}{name_suffix}_decision",
+            decision.to_record(),
+        )
+        if args.phase == "locked":
+            if not decision.passed:
+                print(json.dumps({"phase": args.phase, "status": decision.status, "passed": False}))
+                return 2
+            marker = store.complete_endpoint(
+                config.study_id,
+                "locked_judge_audit",
+                config,
+                {"completed": completed_path, "decision": decision_path},
+            )
+            print(json.dumps({"phase": args.phase, "status": decision.status, "passed": True, "marker": str(marker)}))
+            return 0
+        if args.phase == "test":
+            bias = bound_differential_judge_bias(
+                completed_rows, replicates=config.behavior_bootstrap_replicates
+            )
+            bias_path = store.write_json(
+                config.study_id,
+                "audits",
+                "test_differential_bias",
+                {"lower": bias.lower, "estimate": bias.estimate, "upper": bias.upper},
+            )
+            status = (
+                "bounded"
+                if bias.upper < config.judge_differential_bias_upper_limit
+                else "extension_required"
+                if len(completed_rows) < 2000
+                else "not_evaluable"
+            )
+            print(json.dumps({"phase": "test", "status": status, "bias_bound": str(bias_path)}))
+            return 2 if status == "not_evaluable" else 0
+        print(json.dumps({"phase": args.phase, "status": decision.status, "completed": str(completed_path)}))
+        return 0
     return 1
 
 
@@ -669,6 +771,56 @@ def _same_output_file(candidate: Path, protected: Path) -> bool:
     if candidate.exists() and protected.exists():
         return candidate.samefile(protected)
     return candidate.resolve() == protected.resolve()
+
+
+def _registered_audit_size(phase: str) -> int:
+    return {"development": 200, "locked": 400, "test": 1000}[phase]
+
+
+def _audit_name_suffix(phase: str, size: int) -> str:
+    return "" if size == _registered_audit_size(phase) else f"_{size}"
+
+
+def _rlmf_audit_path(root: str | Path, study_id: str, section: str, name: str) -> Path:
+    return Path(root) / "runs" / "rlmf" / study_id / section / f"{name}.jsonl"
+
+
+def _read_jsonl(path: str | Path) -> tuple[dict, ...]:
+    source = Path(path)
+    try:
+        rows = tuple(json.loads(line) for line in source.read_text().splitlines() if line.strip())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid JSONL audit input: {source}") from error
+    if not rows or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("audit JSONL must contain object rows")
+    return rows
+
+
+def _merge_judge_audit_labels(
+    expected_rows: tuple[AuditRow, ...], manual_rows: tuple[dict, ...]
+) -> tuple[AuditRow, ...]:
+    allowed_fields = {"audit_id", "rater_a", "rater_b", "adjudicated_label", "notes"}
+    received = {}
+    for row in manual_rows:
+        unexpected = set(row) - allowed_fields
+        if unexpected:
+            raise ValueError("manual audit must not contain proxy or hidden metadata")
+        audit_id = row.get("audit_id")
+        if not isinstance(audit_id, str) or audit_id in received:
+            raise ValueError("manual audit IDs must be unique strings")
+        received[audit_id] = row
+    expected = {row.audit_id for row in expected_rows}
+    if set(received) != expected:
+        raise ValueError("manual audit must contain exactly the frozen audit IDs")
+    return tuple(
+        replace(
+            row,
+            rater_a=received[row.audit_id].get("rater_a"),
+            rater_b=received[row.audit_id].get("rater_b"),
+            adjudicated_label=received[row.audit_id].get("adjudicated_label"),
+        )
+        for row in expected_rows
+    )
 
 
 def _timed_detection(batch, **kwargs):
