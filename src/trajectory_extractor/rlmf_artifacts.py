@@ -11,6 +11,8 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
+from trajectory_extractor.rlmf_types import RLMFConfig
+
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -72,21 +74,33 @@ class RLMFArtifactStore:
         self,
         study_id: str,
         endpoint: str,
-        config_hash: str,
+        config: RLMFConfig,
         paths: Iterable[str | Path] | Mapping[str, str | Path],
     ) -> Path:
-        _validate_sha256(config_hash, "config_hash")
+        if not isinstance(config, RLMFConfig):
+            raise ValueError("config must be an RLMFConfig")
+        safe_study = _safe_id(study_id, "study_id")
+        if config.study_id != safe_study:
+            raise ValueError("config study_id must match endpoint study_id")
         endpoint = _safe_id(endpoint, "endpoint")
-        artifacts = self._bound_artifacts(study_id, paths)
+        artifacts = self._bound_artifacts(safe_study, paths)
+        marker = self._section(safe_study, "endpoints", create=True) / f"{endpoint}.complete.json"
+        if marker.is_symlink():
+            raise ValueError("endpoint marker must not be a symlink")
+        if marker.exists():
+            raise FileExistsError(marker)
+        config_artifact = self._bind_config_artifact(safe_study, config)
         for path in artifacts.values():
             _fsync_file(path)
             _fsync_directory(path.parent)
-        marker = self._namespace(study_id) / "endpoints" / f"{endpoint}.complete.json"
+        _fsync_file(config_artifact)
+        _fsync_directory(config_artifact.parent)
         payload = {
             "schema_version": 1,
-            "study_id": _safe_id(study_id, "study_id"),
+            "study_id": safe_study,
             "endpoint": endpoint,
-            "parent_hashes": {"config": config_hash},
+            "config_artifact": "metadata/config.json",
+            "parent_hashes": {"config": config.config_hash},
             "artifact_hashes": {
                 relative: sha256_file(path) for relative, path in artifacts.items()
             },
@@ -99,8 +113,10 @@ class RLMFArtifactStore:
     def verify_endpoint(self, study_id: str, endpoint: str) -> dict[str, Any]:
         safe_study = _safe_id(study_id, "study_id")
         safe_endpoint = _safe_id(endpoint, "endpoint")
-        namespace = self._namespace(safe_study)
-        marker = namespace / "endpoints" / f"{safe_endpoint}.complete.json"
+        namespace = self._namespace(safe_study, create=False)
+        marker = self._section(safe_study, "endpoints", create=False) / f"{safe_endpoint}.complete.json"
+        if marker.is_symlink():
+            raise ValueError("endpoint marker must not be a symlink")
         try:
             value = json.loads(marker.read_text())
         except (OSError, json.JSONDecodeError) as error:
@@ -113,6 +129,15 @@ class RLMFArtifactStore:
         if not isinstance(parents, dict) or set(parents) != {"config"}:
             raise ValueError("endpoint marker has invalid parent_hashes")
         _validate_sha256(parents["config"], "parent_hashes")
+        if value.get("config_artifact") != "metadata/config.json":
+            raise ValueError("endpoint marker has invalid config_artifact")
+        config = self._read_config_artifact(
+            self._section(safe_study, "metadata", create=False) / "config.json"
+        )
+        if config.study_id != safe_study:
+            raise ValueError("config artifact study_id does not match endpoint study_id")
+        if config.config_hash != parents["config"]:
+            raise ValueError("configuration hash mismatch")
         hashes = value.get("artifact_hashes")
         if not isinstance(hashes, dict) or not hashes:
             raise ValueError("endpoint marker has invalid artifact_hashes")
@@ -120,20 +145,86 @@ class RLMFArtifactStore:
             if not isinstance(relative, str) or not isinstance(expected, str):
                 raise ValueError("endpoint marker has invalid artifact_hashes")
             _validate_sha256(expected, "artifact_hashes")
-            path = namespace / relative
-            if not path.is_file() or not path.resolve().is_relative_to(namespace.resolve()):
+            path = _relative_artifact_path(namespace, relative)
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(namespace):
                 raise ValueError("bound artifact is outside the RLMF namespace")
             if sha256_file(path) != expected:
                 raise ValueError(f"artifact hash mismatch: {relative}")
         return value
 
-    def _namespace(self, study_id: str) -> Path:
-        return self.root / "runs" / "rlmf" / _safe_id(study_id, "study_id")
+    def _namespace(self, study_id: str, *, create: bool) -> Path:
+        safe_study = _safe_id(study_id, "study_id")
+        return self._namespace_components(("runs", "rlmf", safe_study), create=create)
 
     def _path(self, study_id: str, section: str, name: str, suffix: str) -> Path:
-        return self._namespace(study_id) / _safe_id(section, "section") / (
+        return self._section(study_id, section, create=True) / (
             f"{_safe_id(name, 'name')}{suffix}"
         )
+
+    def _section(self, study_id: str, section: str, *, create: bool) -> Path:
+        return self._namespace_components(
+            ("runs", "rlmf", _safe_id(study_id, "study_id"), _safe_id(section, "section")),
+            create=create,
+        )
+
+    def _namespace_components(self, components: tuple[str, ...], *, create: bool) -> Path:
+        root = self._trusted_root(create=create)
+        current = root
+        for component in components:
+            current = current / component
+            if current.is_symlink():
+                raise ValueError("RLMF namespace components must not be symlinks")
+            if current.exists():
+                if not current.is_dir():
+                    raise NotADirectoryError(current)
+                continue
+            if not create:
+                raise FileNotFoundError(current)
+            try:
+                os.mkdir(current)
+            except FileExistsError:
+                if current.is_symlink():
+                    raise ValueError("RLMF namespace components must not be symlinks")
+                if not current.is_dir():
+                    raise
+            _fsync_directory(current.parent)
+        return current
+
+    def _trusted_root(self, *, create: bool) -> Path:
+        if self.root.is_symlink():
+            raise ValueError("trusted root must not be a symlink")
+        if create:
+            ensure_durable_directory(self.root)
+        if not self.root.exists() or not self.root.is_dir():
+            raise NotADirectoryError(self.root)
+        return self.root.resolve()
+
+    def _bind_config_artifact(self, study_id: str, config: RLMFConfig) -> Path:
+        destination = self._section(study_id, "metadata", create=True) / "config.json"
+        if destination.is_symlink():
+            raise ValueError("config artifact must not be a symlink")
+        if destination.exists():
+            existing = self._read_config_artifact(destination)
+            if existing.study_id != study_id or existing.config_hash != config.config_hash:
+                raise ValueError("config artifact does not match supplied study config")
+            return destination
+        _exclusive_write_bytes(destination, config.canonical_bytes)
+        return destination
+
+    def _read_config_artifact(self, path: Path) -> RLMFConfig:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("config artifact is missing or outside the RLMF namespace")
+        try:
+            payload = path.read_bytes()
+            value = json.loads(payload)
+            if not isinstance(value, dict):
+                raise ValueError("config artifact must contain a JSON object")
+            config = RLMFConfig(**value)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
+            raise ValueError("config artifact is invalid") from error
+        if payload != config.canonical_bytes:
+            raise ValueError("config artifact is not canonical")
+        return config
 
     def _bound_artifacts(
         self,
@@ -141,14 +232,13 @@ class RLMFArtifactStore:
         paths: Iterable[str | Path] | Mapping[str, str | Path],
     ) -> dict[str, Path]:
         values = paths.values() if isinstance(paths, Mapping) else paths
-        namespace = self._namespace(study_id)
-        resolved_namespace = namespace.resolve()
+        namespace = self._namespace(study_id, create=False)
         artifacts: dict[str, Path] = {}
         for value in values:
             path = Path(value)
-            if not path.is_file() or not path.resolve().is_relative_to(resolved_namespace):
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(namespace):
                 raise ValueError("endpoint artifacts must exist under runs/rlmf/<study_id>")
-            relative = path.resolve().relative_to(resolved_namespace).as_posix()
+            relative = path.resolve().relative_to(namespace).as_posix()
             if relative in artifacts:
                 raise ValueError("endpoint artifacts must be unique")
             artifacts[relative] = path
@@ -163,6 +253,15 @@ def sha256_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _relative_artifact_path(namespace: Path, relative: str) -> Path:
+    candidate = Path(relative)
+    if candidate.is_absolute() or not candidate.parts or any(
+        part in {"", ".", ".."} for part in candidate.parts
+    ):
+        raise ValueError("endpoint marker has invalid artifact path")
+    return namespace / candidate
 
 
 # Adapted from secondary_artifacts.py's durable exclusive-publish pattern.

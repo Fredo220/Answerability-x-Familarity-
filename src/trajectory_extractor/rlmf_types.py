@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z")
@@ -15,11 +15,132 @@ _CONFIDENCE_VALUES = tuple(index / 10 for index in range(11))
 _ARMS = ("standard_grpo", "rlmf")
 _SPLIT_NAMES = {"pre_sft", "rl_train", "validation", "test"}
 
+_COMMON_CONFIG = {
+    "schema_version": 1,
+    "model_id": "Qwen/Qwen3-0.6B",
+    "model_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "dataset_id": "akariasai/PopQA",
+    "dataset_revision": "5cf59972d88d4aaaa7781ac91b83d053563d8268",
+    "split_seed": 20260713,
+    "arms": ["standard_grpo", "rlmf"],
+    "max_prompt_tokens": 192,
+    "max_completion_tokens": 96,
+    "training_consistency_mode": "leave_one_out_group",
+    "metacognition_queries_per_completion": 1,
+    "faithfulness_tau": 0.1,
+    "sft_learning_rate": 0.00003,
+    "sft_weight_decay": 0.01,
+    "learning_rate": 0.000005,
+    "per_device_train_batch_size": 1,
+    "lora_rank": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.0,
+    "lora_targets": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    "quantization": "nf4",
+    "compute_dtype": "float16",
+    "generation": {
+        "do_sample": True,
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repetition_penalty": 1.05,
+        "enable_thinking": False,
+    },
+    "reward_weights": {
+        "soft_format": 3.0,
+        "strict_format": 3.0,
+        "factual_calibration": 1.0,
+        "correctness": 1.0,
+        "faithful_calibration": 12.0,
+    },
+    "confidence_values": list(_CONFIDENCE_VALUES),
+    "bootstrap_seed_mode": "fixed_registered_seeds_prompt_cluster",
+    "judge_differential_bias_upper_limit": 0.015,
+}
+
+_PROFILE_CONFIG = {
+    "smoke": {
+        "profile": "smoke",
+        "study_id": "rlmf-qwen06b-smoke-v1",
+        "split_counts": {"pre_sft": 8, "rl_train": 8, "validation": 4, "test": 4},
+        "seeds": [11],
+        "rollout_group_size": 2,
+        "evaluation_auxiliary_samples": 2,
+        "sft_auxiliary_samples": 1,
+        "sft_epochs": 1,
+        "sft_global_batch_size": 2,
+        "rl_steps": 2,
+        "save_steps": 1,
+        "gradient_accumulation_steps": 2,
+        "generation_batch_size": 2,
+        "num_generations": 2,
+        "behavior_bootstrap_replicates": 10,
+        "mechanism_bootstrap_replicates": 10,
+    },
+    "confirmatory": {
+        "profile": "confirmatory",
+        "study_id": "rlmf-qwen06b-v1",
+        "split_counts": {"pre_sft": 256, "rl_train": 256, "validation": 128, "test": 256},
+        "seeds": [11, 22, 33],
+        "rollout_group_size": 4,
+        "evaluation_auxiliary_samples": 20,
+        "sft_auxiliary_samples": 4,
+        "sft_epochs": 5,
+        "sft_global_batch_size": 8,
+        "rl_steps": 200,
+        "save_steps": 25,
+        "gradient_accumulation_steps": 4,
+        "generation_batch_size": 4,
+        "num_generations": 4,
+        "behavior_bootstrap_replicates": 5000,
+        "mechanism_bootstrap_replicates": 5000,
+    },
+}
+
 
 def _immutable_mapping(value: Mapping[str, Any], field: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field} must be a mapping")
-    return MappingProxyType(dict(value))
+    return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+
+
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_value(item) for item in value)
+    return value
+
+
+def _freeze_sequence(value: Sequence[Any], field: str) -> tuple[Any, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ValueError(f"{field} must be a sequence")
+    return tuple(_freeze_value(item) for item in value)
+
+
+def _thaw_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_value(item) for item in value]
+    return value
+
+
+def _is_int(value: Any) -> bool:
+    return type(value) is int
+
+
+def _is_real(value: Any) -> bool:
+    return type(value) in {int, float}
 
 
 def _validate_sha256(value: str, field: str) -> None:
@@ -87,6 +208,12 @@ class RLMFConfig:
     judge_differential_bias_upper_limit: float
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "split_counts", _immutable_mapping(self.split_counts, "split_counts"))
+        for field in ("arms", "seeds", "lora_targets", "confidence_values"):
+            object.__setattr__(self, field, _freeze_sequence(getattr(self, field), field))
+        object.__setattr__(self, "generation", _immutable_mapping(self.generation, "generation"))
+        object.__setattr__(self, "reward_weights", _immutable_mapping(self.reward_weights, "reward_weights"))
+        self._validate_numeric_fields()
         if self.schema_version != 1:
             raise ValueError("schema_version must be 1")
         if self.profile not in {"smoke", "confirmatory"}:
@@ -100,18 +227,17 @@ class RLMFConfig:
             raise ValueError("dataset_id must use the registered PopQA dataset")
         if self.dataset_revision != "5cf59972d88d4aaaa7781ac91b83d053563d8268":
             raise ValueError("dataset_revision must use the registered immutable revision")
-        if not isinstance(self.split_seed, int) or self.split_seed < 1:
+        if not _is_int(self.split_seed) or self.split_seed < 1:
             raise ValueError("split_seed must be positive")
-        split_counts = _immutable_mapping(self.split_counts, "split_counts")
+        split_counts = self.split_counts
         if set(split_counts) != _SPLIT_NAMES or any(
-            not isinstance(count, int) or count < 1 for count in split_counts.values()
+            not _is_int(count) or count < 1 for count in split_counts.values()
         ):
             raise ValueError("split_counts must contain positive registered split counts")
-        object.__setattr__(self, "split_counts", split_counts)
-        if tuple(self.arms) != _ARMS:
+        if self.arms != _ARMS:
             raise ValueError("arms must be standard_grpo and rlmf in registered order")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds) or any(
-            not isinstance(seed, int) or seed < 1 for seed in self.seeds
+            not _is_int(seed) or seed < 1 for seed in self.seeds
         ):
             raise ValueError("seeds must be unique positive integers")
         if self.profile == "confirmatory" and self.seeds != (11, 22, 33):
@@ -157,7 +283,7 @@ class RLMFConfig:
             self.behavior_bootstrap_replicates,
             self.mechanism_bootstrap_replicates,
         )
-        if any(not isinstance(value, int) or value < 1 for value in positive):
+        if any(not _is_int(value) or value < 1 for value in positive):
             raise ValueError("registered numeric counts must be positive")
         if not 0 <= self.faithfulness_tau <= 1 or not 0 <= self.lora_dropout < 1:
             raise ValueError("faithfulness_tau and lora_dropout must be in range")
@@ -169,7 +295,7 @@ class RLMFConfig:
             raise ValueError("lora_targets must match the preregistered modules")
         if self.quantization != "nf4" or self.compute_dtype != "float16":
             raise ValueError("quantization and compute_dtype must match the registered stack")
-        generation = _immutable_mapping(self.generation, "generation")
+        generation = self.generation
         if generation != {
             "do_sample": True,
             "temperature": 0.7,
@@ -180,8 +306,7 @@ class RLMFConfig:
             "enable_thinking": False,
         }:
             raise ValueError("generation must match the frozen non-thinking settings")
-        object.__setattr__(self, "generation", generation)
-        rewards = _immutable_mapping(self.reward_weights, "reward_weights")
+        rewards = self.reward_weights
         if rewards != {
             "soft_format": 3.0,
             "strict_format": 3.0,
@@ -190,41 +315,79 @@ class RLMFConfig:
             "faithful_calibration": 12.0,
         }:
             raise ValueError("reward_weights must match the preregistration")
-        object.__setattr__(self, "reward_weights", rewards)
-        if tuple(self.confidence_values) != _CONFIDENCE_VALUES:
+        if self.confidence_values != _CONFIDENCE_VALUES:
             raise ValueError("confidence_values must contain the eleven registered values")
         if self.bootstrap_seed_mode != "fixed_registered_seeds_prompt_cluster":
             raise ValueError("bootstrap_seed_mode must be registered")
         if not 0 < self.judge_differential_bias_upper_limit < 1:
             raise ValueError("judge_differential_bias_upper_limit must be in range")
+        expected = {**_COMMON_CONFIG, **_PROFILE_CONFIG[self.profile]}
+        if self.to_dict() != expected:
+            raise ValueError(f"frozen {self.profile} config does not match the preregistration")
+
+    def _validate_numeric_fields(self) -> None:
+        integers = (
+            self.schema_version,
+            self.split_seed,
+            *self.split_counts.values(),
+            self.max_prompt_tokens,
+            self.max_completion_tokens,
+            self.rollout_group_size,
+            self.evaluation_auxiliary_samples,
+            self.metacognition_queries_per_completion,
+            self.sft_auxiliary_samples,
+            self.sft_epochs,
+            self.sft_global_batch_size,
+            self.rl_steps,
+            self.save_steps,
+            self.per_device_train_batch_size,
+            self.gradient_accumulation_steps,
+            self.generation_batch_size,
+            self.num_generations,
+            self.lora_rank,
+            self.lora_alpha,
+            self.behavior_bootstrap_replicates,
+            self.mechanism_bootstrap_replicates,
+            self.generation.get("top_k"),
+        )
+        reals = (
+            self.faithfulness_tau,
+            self.sft_learning_rate,
+            self.sft_weight_decay,
+            self.learning_rate,
+            self.lora_dropout,
+            self.judge_differential_bias_upper_limit,
+            self.generation.get("temperature"),
+            self.generation.get("top_p"),
+            self.generation.get("min_p"),
+            self.generation.get("repetition_penalty"),
+            *self.reward_weights.values(),
+            *self.confidence_values,
+        )
+        if not all(_is_int(value) for value in integers) or not all(
+            _is_real(value) for value in reals
+        ):
+            raise ValueError("all scientific numeric fields must be numeric, not booleans")
 
     @classmethod
     def from_json(cls, path: str | Path) -> "RLMFConfig":
         value = json.loads(Path(path).read_text())
         if not isinstance(value, dict):
             raise ValueError("RLMF config must be a JSON object")
-        for name in ("arms", "seeds", "lora_targets", "confidence_values"):
-            if name in value:
-                value[name] = tuple(value[name])
         return cls(**value)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            **self.__dict__,
-            "split_counts": dict(self.split_counts),
-            "arms": list(self.arms),
-            "seeds": list(self.seeds),
-            "lora_targets": list(self.lora_targets),
-            "generation": dict(self.generation),
-            "reward_weights": dict(self.reward_weights),
-            "confidence_values": list(self.confidence_values),
+            name: _thaw_value(value) for name, value in self.__dict__.items()
         }
 
     @property
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @property
     def config_hash(self) -> str:
-        return hashlib.sha256(
-            json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(self.canonical_bytes).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -258,7 +421,7 @@ class ParsedRLMFOutput:
         if not isinstance(self.answer, str):
             raise ValueError("answer must be a string")
         for name, score in (("confidence", self.confidence), ("metascore", self.metascore)):
-            if score is not None and (not isinstance(score, (int, float)) or not 0 <= score <= 1):
+            if score is not None and (not _is_real(score) or not 0 <= score <= 1):
                 raise ValueError(f"{name} must be in range")
             if score is not None and float(score) not in _CONFIDENCE_VALUES:
                 raise ValueError(f"{name} must use a registered confidence value")
@@ -284,7 +447,7 @@ class RLMFCompletion:
         _validate_id(self.study_id, "study_id")
         if self.arm not in _ARMS:
             raise ValueError("arm must be registered")
-        if not isinstance(self.seed, int) or self.seed < 1:
+        if not _is_int(self.seed) or self.seed < 1:
             raise ValueError("seed must be positive")
         if self.split not in _SPLIT_NAMES:
             raise ValueError("split must be registered")

@@ -159,3 +159,166 @@ def test_popqa_aliases_are_immutable_after_direct_construction():
     )
 
     assert example.answers == ("Pablo Picasso",)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "split_seed",
+        "faithfulness_tau",
+        "sft_learning_rate",
+        "rl_steps",
+        "behavior_bootstrap_replicates",
+        "judge_differential_bias_upper_limit",
+    ],
+)
+def test_confirmatory_config_rejects_changes_to_every_frozen_contract_area(tmp_path, field):
+    payload = load_config_payload("rlmf_qwen06b_confirmatory.json")
+    replacements = {
+        "split_seed": 1,
+        "faithfulness_tau": 0.9,
+        "sft_learning_rate": 0.001,
+        "rl_steps": 1,
+        "behavior_bootstrap_replicates": 1,
+        "judge_differential_bias_upper_limit": 0.02,
+    }
+    payload[field] = replacements[field]
+
+    with pytest.raises(ValueError, match="frozen confirmatory config"):
+        RLMFConfig.from_json(write_config(tmp_path, payload))
+
+
+def test_smoke_config_allows_only_its_explicitly_registered_values(tmp_path):
+    payload = load_config_payload("rlmf_qwen06b_smoke.json")
+    payload["sft_epochs"] = 2
+
+    with pytest.raises(ValueError, match="frozen smoke config"):
+        RLMFConfig.from_json(write_config(tmp_path, payload))
+
+
+def test_config_direct_constructor_deep_freezes_sequences_and_mappings():
+    payload = load_config_payload("rlmf_qwen06b_smoke.json")
+    config = RLMFConfig(**payload)
+    original_hash = config.config_hash
+
+    payload["split_counts"]["pre_sft"] = 999
+    payload["arms"][1] = "tampered"
+    payload["seeds"][0] = 999
+    payload["lora_targets"].append("tampered")
+    payload["generation"]["temperature"] = 0.1
+    payload["reward_weights"]["correctness"] = 999.0
+    payload["confidence_values"][0] = 0.5
+
+    assert config.split_counts["pre_sft"] == 8
+    assert config.arms == ("standard_grpo", "rlmf")
+    assert config.seeds == (11,)
+    assert config.lora_targets[-1] == "down_proj"
+    assert config.generation["temperature"] == 0.7
+    assert config.reward_weights["correctness"] == 1.0
+    assert config.confidence_values[0] == 0.0
+    assert config.config_hash == original_hash
+
+
+def test_record_constructor_deep_freezes_mapping_inputs():
+    completion_parents = {"snapshot": "c" * 64}
+    decision_parents = {"completion": "d" * 64}
+    completion = RLMFCompletion(
+        study_id="rlmf-qwen06b-v1",
+        arm="rlmf",
+        seed=11,
+        split="validation",
+        example_id="popqa-001",
+        candidate_id="candidate-0",
+        raw_output="answer",
+        parsed=ParsedRLMFOutput(answer="answer", confidence=0.8, valid_format=True),
+        checkpoint_hash="a" * 64,
+        config_hash="b" * 64,
+        parent_hashes=completion_parents,
+    )
+    decision = ClaimDecision(
+        study_id="rlmf-qwen06b-v1",
+        endpoint="behavior",
+        status="not_evaluable",
+        config_hash="b" * 64,
+        parent_hashes=decision_parents,
+        reason="validation audit incomplete",
+    )
+
+    completion_parents["snapshot"] = "e" * 64
+    decision_parents["completion"] = "f" * 64
+
+    assert completion.parent_hashes["snapshot"] == "c" * 64
+    assert decision.parent_hashes["completion"] == "d" * 64
+
+
+def _set_nested(payload, path, value):
+    target = payload
+    for name in path[:-1]:
+        target = target[name]
+    target[path[-1]] = value
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("schema_version",),
+        ("split_seed",),
+        ("split_counts", "pre_sft"),
+        ("max_prompt_tokens",),
+        ("max_completion_tokens",),
+        ("rollout_group_size",),
+        ("evaluation_auxiliary_samples",),
+        ("metacognition_queries_per_completion",),
+        ("faithfulness_tau",),
+        ("sft_auxiliary_samples",),
+        ("sft_epochs",),
+        ("sft_learning_rate",),
+        ("sft_weight_decay",),
+        ("sft_global_batch_size",),
+        ("rl_steps",),
+        ("save_steps",),
+        ("learning_rate",),
+        ("per_device_train_batch_size",),
+        ("gradient_accumulation_steps",),
+        ("generation_batch_size",),
+        ("num_generations",),
+        ("lora_rank",),
+        ("lora_alpha",),
+        ("lora_dropout",),
+        ("generation", "temperature"),
+        ("generation", "top_p"),
+        ("generation", "top_k"),
+        ("generation", "min_p"),
+        ("generation", "repetition_penalty"),
+        ("reward_weights", "soft_format"),
+        ("confidence_values", 0),
+        ("behavior_bootstrap_replicates",),
+        ("mechanism_bootstrap_replicates",),
+        ("judge_differential_bias_upper_limit",),
+    ],
+)
+def test_config_rejects_booleans_for_all_numeric_fields(tmp_path, path):
+    payload = load_config_payload("rlmf_qwen06b_confirmatory.json")
+    _set_nested(payload, path, True)
+
+    with pytest.raises(ValueError, match="numeric"):
+        RLMFConfig.from_json(write_config(tmp_path, payload))
+
+
+def test_records_reject_boolean_numeric_values():
+    with pytest.raises(ValueError, match="confidence"):
+        ParsedRLMFOutput(answer="answer", confidence=True, valid_format=True)
+    with pytest.raises(ValueError, match="seed"):
+        RLMFCompletion(
+            study_id="rlmf-qwen06b-v1",
+            arm="rlmf",
+            seed=True,
+            split="validation",
+            example_id="popqa-001",
+            candidate_id="candidate-0",
+            raw_output="answer",
+            parsed=ParsedRLMFOutput(answer="answer", confidence=0.8, valid_format=True),
+            checkpoint_hash="a" * 64,
+            config_hash="b" * 64,
+            parent_hashes={},
+        )
