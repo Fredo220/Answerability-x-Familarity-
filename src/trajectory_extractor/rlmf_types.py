@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
@@ -168,6 +168,18 @@ def _validate_parent_hashes(value: Mapping[str, str]) -> Mapping[str, str]:
         _validate_id(name, "parent_hashes key")
         _validate_sha256(digest, "parent_hashes")
     return frozen
+
+
+def _validate_relative_checkpoint_path(value: str) -> None:
+    if not isinstance(value, str):
+        raise ValueError("checkpoint file paths must be strings")
+    path = PurePosixPath(value)
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("checkpoint file paths must be safe relative paths")
+
+
+def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -451,6 +463,7 @@ class RLMFCompletion:
     checkpoint_hash: str
     config_hash: str
     parent_hashes: Mapping[str, str]
+    source_question: str = ""
 
     def __post_init__(self) -> None:
         _validate_id(self.study_id, "study_id")
@@ -464,6 +477,8 @@ class RLMFCompletion:
         _validate_id(self.candidate_id, "candidate_id")
         if not isinstance(self.raw_output, str):
             raise ValueError("raw_output must be a string")
+        if not isinstance(self.source_question, str):
+            raise ValueError("source_question must be a string")
         if not isinstance(self.parsed, ParsedRLMFOutput):
             raise ValueError("parsed must be a ParsedRLMFOutput")
         _validate_sha256(self.checkpoint_hash, "checkpoint_hash")
@@ -489,6 +504,7 @@ class RLMFCompletion:
             checkpoint_hash=value.get("checkpoint_hash"),
             config_hash=value.get("config_hash"),
             parent_hashes=value.get("parent_hashes", {}),
+            source_question=value.get("source_question", ""),
         )
 
     def to_record(self) -> dict[str, Any]:
@@ -509,6 +525,119 @@ class RLMFCompletion:
             "checkpoint_hash": self.checkpoint_hash,
             "config_hash": self.config_hash,
             "parent_hashes": dict(self.parent_hashes),
+            "source_question": self.source_question,
+        }
+
+
+@dataclass(frozen=True)
+class CheckpointRecord:
+    """Immutable, content-addressed description of one restartable checkpoint."""
+
+    schema_version: int
+    study_id: str
+    stage: str
+    arm: str | None
+    seed: int | None
+    global_step: int
+    micro_step: int
+    sampler_cursor: int
+    files: Mapping[str, str]
+    parent_hashes: Mapping[str, str]
+    checkpoint_hash: str
+    path: str
+    completed: bool
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1:
+            raise ValueError("checkpoint schema_version must be 1")
+        _validate_id(self.study_id, "study_id")
+        if self.stage not in {"pre_sft", "rl"}:
+            raise ValueError("checkpoint stage must be pre_sft or rl")
+        if self.stage == "pre_sft":
+            if self.arm is not None or self.seed is not None:
+                raise ValueError("pre_sft checkpoint must not bind an arm or seed")
+        elif self.arm not in _ARMS or not _is_int(self.seed) or self.seed < 1:
+            raise ValueError("rl checkpoint requires a registered arm and positive seed")
+        for name in ("global_step", "micro_step", "sampler_cursor"):
+            value = getattr(self, name)
+            if not _is_int(value) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if type(self.completed) is not bool:
+            raise ValueError("completed must be boolean")
+        if not isinstance(self.path, str) or not self.path:
+            raise ValueError("checkpoint path must be a non-empty string")
+        files = _immutable_mapping(self.files, "files")
+        if not files:
+            raise ValueError("checkpoint files must not be empty")
+        for relative, digest in files.items():
+            _validate_relative_checkpoint_path(relative)
+            _validate_sha256(digest, "files")
+        object.__setattr__(self, "files", files)
+        object.__setattr__(self, "parent_hashes", _validate_parent_hashes(self.parent_hashes))
+        _validate_sha256(self.checkpoint_hash, "checkpoint_hash")
+        if self.checkpoint_hash != self.computed_hash:
+            raise ValueError("checkpoint_hash does not match checkpoint contents")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        study_id: str,
+        stage: str,
+        arm: str | None,
+        seed: int | None,
+        global_step: int,
+        micro_step: int,
+        sampler_cursor: int,
+        files: Mapping[str, str],
+        parent_hashes: Mapping[str, str],
+        path: str,
+        completed: bool,
+    ) -> "CheckpointRecord":
+        payload = {
+            "schema_version": 1,
+            "study_id": study_id,
+            "stage": stage,
+            "arm": arm,
+            "seed": seed,
+            "global_step": global_step,
+            "micro_step": micro_step,
+            "sampler_cursor": sampler_cursor,
+            "files": dict(files),
+            "parent_hashes": dict(parent_hashes),
+            "completed": completed,
+        }
+        checkpoint_hash = hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+        return cls(checkpoint_hash=checkpoint_hash, path=path, **payload)
+
+    @classmethod
+    def from_record(cls, value: Mapping[str, Any]) -> "CheckpointRecord":
+        if not isinstance(value, Mapping) or set(value) != set(cls.__dataclass_fields__):
+            raise ValueError("checkpoint record has an invalid schema")
+        return cls(**dict(value))
+
+    @property
+    def computed_hash(self) -> str:
+        payload = self.to_record()
+        payload.pop("checkpoint_hash")
+        payload.pop("path")
+        return hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "study_id": self.study_id,
+            "stage": self.stage,
+            "arm": self.arm,
+            "seed": self.seed,
+            "global_step": self.global_step,
+            "micro_step": self.micro_step,
+            "sampler_cursor": self.sampler_cursor,
+            "files": dict(self.files),
+            "parent_hashes": dict(self.parent_hashes),
+            "checkpoint_hash": self.checkpoint_hash,
+            "path": self.path,
+            "completed": self.completed,
         }
 
 

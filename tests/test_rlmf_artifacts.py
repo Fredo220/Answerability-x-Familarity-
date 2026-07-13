@@ -207,3 +207,42 @@ def test_store_rejects_symlinked_namespace_components(tmp_path, component):
         RLMFArtifactStore(root).write_json("rlmf-qwen06b-v1", "metadata", "config", {})
 
     assert list(outside.iterdir()) == []
+
+
+def test_public_binary_and_directory_artifact_apis_publish_durably(tmp_path):
+    store = RLMFArtifactStore(tmp_path / "store")
+    binary = store.write_bytes(
+        "rlmf-qwen06b-v1", "checkpoints", "rng_state", b"rng", suffix=".pth"
+    )
+    source = tmp_path / "checkpoint-source"
+    source.mkdir()
+    (source / "trainer_state.json").write_text('{"step": 25}')
+    (source / "nested").mkdir()
+    (source / "nested" / "state.bin").write_bytes(b"state")
+    published = store.publish_directory(
+        "rlmf-qwen06b-v1", "checkpoints", "checkpoint-25", source
+    )
+
+    assert binary.read_bytes() == b"rng"
+    assert (published / "trainer_state.json").read_text() == '{"step": 25}'
+    assert (published / "nested" / "state.bin").read_bytes() == b"state"
+    with pytest.raises(FileExistsError):
+        store.publish_directory(
+            "rlmf-qwen06b-v1", "checkpoints", "checkpoint-25", source
+        )
+
+
+def test_directory_publish_rejects_symlinks_and_hardlinks(tmp_path):
+    store = RLMFArtifactStore(tmp_path / "store")
+    source = tmp_path / "source"
+    source.mkdir()
+    original = source / "state.bin"
+    original.write_bytes(b"state")
+    (source / "linked.bin").symlink_to(original)
+    with pytest.raises(ValueError, match="symlink"):
+        store.publish_directory("rlmf-qwen06b-v1", "checkpoints", "bad", source)
+
+    (source / "linked.bin").unlink()
+    (source / "hard.bin").hardlink_to(original)
+    with pytest.raises(ValueError, match="hardlink"):
+        store.publish_directory("rlmf-qwen06b-v1", "checkpoints", "bad", source)

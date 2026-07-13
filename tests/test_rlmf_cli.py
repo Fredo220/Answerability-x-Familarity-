@@ -764,3 +764,52 @@ def _write_jsonl(path, rows):
 
 def _read_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+@pytest.mark.parametrize(
+    ("cli_arm", "stored_arm", "advantage_form"),
+    [("standard", "standard_grpo", "standard"), ("rlmf", "rlmf", "mf")],
+)
+def test_rlmf_train_cli_canonicalizes_only_the_advantage_arm(
+    tmp_path, monkeypatch, capsys, cli_arm, stored_arm, advantage_form
+):
+    captured = {}
+
+    def run_rl_arm(config, arm, seed, examples, store, *, resume, stop_after_step=None):
+        captured.update(
+            config=config, arm=arm, seed=seed, examples=examples, store=store,
+            resume=resume, stop_after_step=stop_after_step,
+        )
+        return type(
+            "Record", (),
+            {"checkpoint_hash": "a" * 64, "path": str(tmp_path / "checkpoint")},
+        )()
+
+    monkeypatch.setattr(cli, "run_rl_arm", run_rl_arm)
+    monkeypatch.setattr(cli, "load_training_examples", lambda *_: ("example",))
+    exit_code = cli.main(
+        [
+            "rlmf-train", "--config", str(CONFIG_PATH),
+            "--artifact-root", str(tmp_path), "--stage", "rl",
+            "--arm", cli_arm, "--seed", "11", "--resume",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert captured["arm"] == stored_arm
+    assert cli.advantage_form_for_arm(stored_arm) == advantage_form
+    assert captured["store"].root == tmp_path
+    assert captured["resume"] is True
+    assert payload["arm"] == stored_arm
+
+
+def test_stop_after_step_is_rejected_for_confirmatory_training(tmp_path):
+    with pytest.raises(ValueError, match="smoke profile"):
+        cli.main(
+            [
+                "rlmf-train", "--config", str(CONFIG_PATH),
+                "--artifact-root", str(tmp_path), "--stage", "rl",
+                "--arm", "standard", "--seed", "11", "--stop-after-step", "25",
+            ]
+        )

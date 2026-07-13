@@ -53,6 +53,14 @@ from trajectory_extractor.rlmf_format import (
     score_blinded_judge_audit,
 )
 from trajectory_extractor.rlmf_types import RLMFConfig
+from trajectory_extractor.rlmf_training import (
+    advantage_form_for_arm,
+    export_checkpoint,
+    import_checkpoint,
+    load_training_examples,
+    run_pre_sft,
+    run_rl_arm,
+)
 from trajectory_extractor.secondary_artifacts import (
     SecondaryArtifactStore,
     build_analysis_provenance,
@@ -217,6 +225,24 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_prepare_data = subparsers.add_parser("rlmf-prepare-data")
     rlmf_prepare_data.add_argument("--config", required=True)
     rlmf_prepare_data.add_argument("--root", default=".")
+
+    rlmf_train = subparsers.add_parser("rlmf-train")
+    rlmf_train.add_argument("--config", required=True)
+    rlmf_train.add_argument("--artifact-root", required=True)
+    rlmf_train.add_argument("--stage", choices=("pre-sft", "rl"), required=True)
+    rlmf_train.add_argument("--arm", choices=("standard", "rlmf"))
+    rlmf_train.add_argument("--seed", type=int)
+    rlmf_train.add_argument("--resume", action="store_true")
+    rlmf_train.add_argument("--stop-after-step", type=int)
+
+    rlmf_export = subparsers.add_parser("rlmf-export-checkpoint")
+    rlmf_export.add_argument("--artifact-root", required=True)
+    rlmf_export.add_argument("--checkpoint", required=True)
+    rlmf_export.add_argument("--output", required=True)
+
+    rlmf_import = subparsers.add_parser("rlmf-import-checkpoint")
+    rlmf_import.add_argument("--artifact-root", required=True)
+    rlmf_import.add_argument("--archive", required=True)
 
     rlmf_build_audit = subparsers.add_parser("rlmf-build-judge-audit")
     rlmf_build_audit.add_argument("--config", required=True)
@@ -711,6 +737,62 @@ def main(argv: list[str] | None = None) -> int:
                     "split_counts": dict(config.split_counts),
                     "dataset_revision": config.dataset_revision,
                     "artifacts": {name: str(path) for name, path in paths.items()},
+                }
+            )
+        )
+        return 0
+    if args.command == "rlmf-train":
+        config = RLMFConfig.from_json(args.config)
+        store = RLMFArtifactStore(args.artifact_root)
+        if args.stage == "pre-sft":
+            if args.arm is not None or args.seed is not None or args.stop_after_step is not None:
+                raise ValueError("pre-sft does not accept arm, seed, or stop-after-step")
+            examples = load_training_examples(config, store)
+            record = run_pre_sft(config, examples, store, resume=args.resume)
+            arm = None
+        else:
+            if args.arm is None or args.seed is None:
+                raise ValueError("RL training requires --arm and --seed")
+            if args.stop_after_step is not None and config.profile != "smoke":
+                raise ValueError("--stop-after-step is limited to the smoke profile")
+            arm = "standard_grpo" if args.arm == "standard" else "rlmf"
+            examples = load_training_examples(config, store)
+            record = run_rl_arm(
+                config,
+                arm,
+                args.seed,
+                examples,
+                store,
+                resume=args.resume,
+                stop_after_step=args.stop_after_step,
+            )
+        print(
+            json.dumps(
+                {
+                    "study_id": config.study_id,
+                    "stage": args.stage,
+                    "arm": arm,
+                    "checkpoint": record.path,
+                    "checkpoint_hash": record.checkpoint_hash,
+                }
+            )
+        )
+        return 0
+    if args.command == "rlmf-export-checkpoint":
+        output = export_checkpoint(
+            RLMFArtifactStore(args.artifact_root), args.checkpoint, args.output
+        )
+        print(json.dumps({"archive": str(output)}))
+        return 0
+    if args.command == "rlmf-import-checkpoint":
+        record = import_checkpoint(
+            RLMFArtifactStore(args.artifact_root), args.archive
+        )
+        print(
+            json.dumps(
+                {
+                    "checkpoint": record.path,
+                    "checkpoint_hash": record.checkpoint_hash,
                 }
             )
         )

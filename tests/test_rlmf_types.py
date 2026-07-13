@@ -6,6 +6,7 @@ import pytest
 
 from trajectory_extractor.rlmf_types import (
     BehavioralEvaluationRecord,
+    CheckpointRecord,
     ClaimDecision,
     ParsedRLMFOutput,
     PopQAExample,
@@ -418,4 +419,41 @@ def test_records_reject_boolean_numeric_values():
             checkpoint_hash="a" * 64,
             config_hash="b" * 64,
             parent_hashes={},
+        )
+
+
+def test_checkpoint_record_is_immutable_canonical_and_self_hashing():
+    record = CheckpointRecord.create(
+        study_id="study", stage="rl", arm="rlmf", seed=11,
+        global_step=25, micro_step=100, sampler_cursor=100,
+        files={"optimizer.pt": "a" * 64, "trainer_state.json": "b" * 64},
+        parent_hashes={"pre_sft": "c" * 64}, path="/tmp/checkpoint-25",
+        completed=False,
+    )
+
+    assert CheckpointRecord.from_record(record.to_record()) == record
+    assert len(record.checkpoint_hash) == 64
+    with pytest.raises(TypeError):
+        record.files["new"] = "d" * 64
+    with pytest.raises(FrozenInstanceError):
+        record.global_step = 26
+
+
+def test_checkpoint_record_rejects_invalid_arm_stage_and_self_hash():
+    record = CheckpointRecord.create(
+        study_id="study", stage="pre_sft", arm=None, seed=None,
+        global_step=5, micro_step=40, sampler_cursor=40,
+        files={"trainer_state.json": "a" * 64}, parent_hashes={},
+        path="/tmp/checkpoint-5", completed=True,
+    )
+    payload = record.to_record()
+    payload["checkpoint_hash"] = "f" * 64
+    with pytest.raises(ValueError, match="checkpoint_hash"):
+        CheckpointRecord.from_record(payload)
+    with pytest.raises(ValueError, match="pre_sft"):
+        CheckpointRecord.create(
+            study_id="study", stage="pre_sft", arm="rlmf", seed=11,
+            global_step=1, micro_step=1, sampler_cursor=1,
+            files={"trainer_state.json": "a" * 64}, parent_hashes={},
+            path="/tmp/checkpoint", completed=False,
         )

@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import stat
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +44,62 @@ class RLMFArtifactStore:
             destination, json.dumps(value, indent=2, sort_keys=True).encode("utf-8")
         )
         return destination
+
+    def write_bytes(
+        self,
+        study_id: str,
+        section: str,
+        name: str,
+        payload: bytes,
+        *,
+        suffix: str = ".bin",
+    ) -> Path:
+        if not isinstance(payload, bytes):
+            raise ValueError("binary artifact payload must be bytes")
+        if not isinstance(suffix, str) or not re.fullmatch(r"(?:\.[A-Za-z0-9_-]+)?", suffix):
+            raise ValueError("binary artifact suffix is unsafe")
+        destination = self._path(study_id, section, name, suffix)
+        _exclusive_write_bytes(destination, payload)
+        return destination
+
+    def directory_path(
+        self, study_id: str, section: str, name: str, *, create_parent: bool = False
+    ) -> Path:
+        return self._section(study_id, section, create=create_parent) / _safe_id(name, "name")
+
+    def publish_directory(
+        self, study_id: str, section: str, name: str, source: str | Path
+    ) -> Path:
+        source_path = Path(source)
+        if source_path.is_symlink() or not source_path.is_dir():
+            raise ValueError("directory artifact source must be a real directory")
+        entries = _validated_directory_entries(source_path)
+        destination = self.directory_path(study_id, section, name, create_parent=True)
+        if destination.is_symlink() or destination.exists():
+            raise FileExistsError(destination)
+        temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent))
+        try:
+            for relative, source_entry, is_directory in entries:
+                target = temporary / relative
+                if is_directory:
+                    target.mkdir()
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source_entry.open("rb") as reader, target.open("xb") as writer:
+                    shutil.copyfileobj(reader, writer, length=1024 * 1024)
+                    writer.flush()
+                    os.fchmod(writer.fileno(), 0o644)
+                    os.fsync(writer.fileno())
+                _fsync_directory(target.parent)
+            _fsync_directory(temporary)
+            if destination.exists() or destination.is_symlink():
+                raise FileExistsError(destination)
+            os.rename(temporary, destination)
+            _fsync_directory(destination.parent)
+            return destination
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
 
     def write_npz(self, study_id: str, section: str, name: str, **arrays: np.ndarray) -> Path:
         if not arrays:
@@ -277,6 +335,31 @@ def sha256_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _validated_directory_entries(source: Path) -> list[tuple[Path, Path, bool]]:
+    entries: list[tuple[Path, Path, bool]] = []
+    for root, directories, files in os.walk(source, topdown=True, followlinks=False):
+        root_path = Path(root)
+        for name in sorted(directories):
+            path = root_path / name
+            if path.is_symlink():
+                raise ValueError("directory artifacts must not contain symlinks")
+            mode = path.stat(follow_symlinks=False).st_mode
+            if not stat.S_ISDIR(mode):
+                raise ValueError("directory artifacts must contain only regular entries")
+            entries.append((path.relative_to(source), path, True))
+        for name in sorted(files):
+            path = root_path / name
+            if path.is_symlink():
+                raise ValueError("directory artifacts must not contain symlinks")
+            metadata = path.stat(follow_symlinks=False)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("directory artifacts must contain only regular files")
+            if metadata.st_nlink != 1:
+                raise ValueError("directory artifacts must not contain hardlinks")
+            entries.append((path.relative_to(source), path, False))
+    return sorted(entries, key=lambda item: (len(item[0].parts), item[0].as_posix()))
 
 
 def _relative_artifact_path(namespace: Path, relative: str) -> Path:
