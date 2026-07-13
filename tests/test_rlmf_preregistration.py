@@ -20,6 +20,8 @@ def test_vendored_reference_matches_upstream_manifest():
     for name, digest in upstream["files"].items():
         payload = Path("third_party/rlmf", name).read_bytes()
         assert hashlib.sha256(payload).hexdigest() == digest
+    license_payload = Path("third_party/rlmf", upstream["license_path"]).read_bytes()
+    assert hashlib.sha256(license_payload).hexdigest() == upstream["license_sha256"]
     assert upstream["commit"] == "a087e7a1e49f52aaa701add19cd80699b709fdef"
 
 

@@ -1,0 +1,3 @@
+/third_party/rlmf/rlmf_trainer.py whitespace=-blank-at-eol
+/third_party/rlmf/rewards.py whitespace=-blank-at-eol
+/third_party/rlmf/sample_config.py whitespace=-blank-at-eol,-blank-at-eof
