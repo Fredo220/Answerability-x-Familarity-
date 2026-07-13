@@ -136,6 +136,72 @@ def test_advantages_preserve_dtype_and_device_and_detach_from_rewards():
     assert torch.isfinite(policy_log_prob.grad).all()
 
 
+@pytest.mark.parametrize(
+    ("other", "faith"),
+    [
+        pytest.param(["max", "max"], ["max", "max"], id="total-overflow"),
+        pytest.param(["max", 0.0], [0.0, "max"], id="mean-overflow"),
+        pytest.param(["max", "-max", "-max"], [0.0, 0.0, 0.0], id="centering-overflow"),
+    ],
+)
+def test_standard_rejects_finite_inputs_that_overflow_derived_values(other, faith):
+    maximum = torch.finfo(torch.float32).max
+    other = tensor(
+        [maximum if value == "max" else -maximum if value == "-max" else value for value in other],
+        dtype=torch.float32,
+    )
+    faith = tensor(
+        [maximum if value == "max" else -maximum if value == "-max" else value for value in faith],
+        dtype=torch.float32,
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        standard_grpo_advantage(other, faith)
+
+
+@pytest.mark.parametrize(
+    ("other", "faith", "metascore", "k"),
+    [
+        pytest.param(["max", "max"], [0.0, 0.0], [0.0, 0.0], 1.0, id="mean-overflow"),
+        pytest.param(
+            ["max", "-max", "-max"],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            1.0,
+            id="centering-overflow",
+        ),
+        pytest.param([0.0, 0.0], [0.0, "max"], ["max", "max"], 1.0, id="scaling-overflow"),
+        pytest.param(["max", "-max"], ["max", 0.0], [0.0, 0.0], 1.0, id="final-addition-overflow"),
+        pytest.param([0.0, 0.0], [0.0, 1.0], [0.0, 0.0], 1e308, id="unrepresentable-k"),
+    ],
+)
+def test_rlmf_rejects_finite_inputs_that_overflow_derived_values(other, faith, metascore, k):
+    maximum = torch.finfo(torch.float32).max
+
+    def make(values):
+        return tensor(
+            [maximum if value == "max" else -maximum if value == "-max" else value for value in values],
+            dtype=torch.float32,
+        )
+
+    with pytest.raises(ValueError, match="finite"):
+        rlmf_advantage(make(other), make(faith), make(metascore), k=k)
+
+
+@pytest.mark.parametrize("arm", ["standard", "rlmf"])
+def test_group_advantages_reject_finite_inputs_that_overflow_derived_values(arm):
+    maximum = torch.finfo(torch.float32).max
+    batch = RewardBatch(
+        other_reward=tensor([maximum, maximum], dtype=torch.float32),
+        faith_reward=tensor([0.0, 0.0], dtype=torch.float32),
+        metacognitive_reward=tensor([0.0, 0.0], dtype=torch.float32),
+        group_size=2,
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        compute_group_advantages(batch, arm)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_advantages_preserve_cuda_device():
     device = torch.device("cuda")

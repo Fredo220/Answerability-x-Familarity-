@@ -33,8 +33,10 @@ def standard_grpo_advantage(other_reward: Tensor, faith_reward: Tensor) -> Tenso
     _validate_rewards(other_reward, faith_reward)
     other_reward = other_reward.detach()
     faith_reward = faith_reward.detach()
-    total_reward = other_reward + faith_reward
-    return (total_reward - total_reward.mean()).detach()
+    total_reward = _require_finite(other_reward + faith_reward, "total reward")
+    total_mean = _require_finite(total_reward.mean(), "total reward mean")
+    advantage = _require_finite(total_reward - total_mean, "standard advantage")
+    return advantage.detach()
 
 
 def rlmf_advantage(
@@ -52,14 +54,37 @@ def rlmf_advantage(
     other_reward = other_reward.detach()
     faith_reward = faith_reward.detach()
     metacognitive_reward = metacognitive_reward.detach()
-    other_delta = other_reward - other_reward.mean()
-    faith_mean = faith_reward.mean()
-    faith_delta = faith_reward - faith_mean
-    scaled_faith_delta = faith_delta * torch.clamp(k + metacognitive_reward, min=0.0)
-    return (
-        other_delta
-        + torch.where(faith_reward > faith_mean, scaled_faith_delta, faith_delta)
-    ).detach()
+    try:
+        k_tensor = torch.as_tensor(
+            k,
+            dtype=metacognitive_reward.dtype,
+            device=metacognitive_reward.device,
+        )
+    except (OverflowError, RuntimeError, TypeError) as error:
+        raise ValueError("k must be finite and representable in reward dtype") from error
+    _require_finite(k_tensor, "k")
+
+    other_mean = _require_finite(other_reward.mean(), "other reward mean")
+    other_delta = _require_finite(other_reward - other_mean, "other reward centering")
+    faith_mean = _require_finite(faith_reward.mean(), "faith reward mean")
+    faith_delta = _require_finite(faith_reward - faith_mean, "faith reward centering")
+    scale = _require_finite(
+        torch.clamp(k_tensor + metacognitive_reward, min=0.0),
+        "metacognitive scale",
+    )
+    scaled_faith_delta = _require_finite(
+        faith_delta * scale,
+        "scaled faith advantage",
+    )
+    faith_advantage = _require_finite(
+        torch.where(faith_reward > faith_mean, scaled_faith_delta, faith_delta),
+        "faith advantage",
+    )
+    advantage = _require_finite(
+        other_delta + faith_advantage,
+        "RLMF advantage",
+    )
+    return advantage.detach()
 
 
 def compute_group_advantages(
@@ -114,3 +139,9 @@ def _validate_rewards(*rewards: Tensor) -> None:
             raise ValueError("rewards must have matching shape, dtype, and device")
         if not torch.isfinite(reward).all().item():
             raise ValueError("rewards must be finite")
+
+
+def _require_finite(value: Tensor, name: str) -> Tensor:
+    if not torch.isfinite(value).all().item():
+        raise ValueError(f"{name} must remain finite")
+    return value
