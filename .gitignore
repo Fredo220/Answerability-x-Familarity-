@@ -11,3 +11,8 @@ data/external/
 *.tmp
 .superpowers/
 .worktrees/
+
+# Local RLMF/Colab state. Sealed study artifacts are written under runs/rlmf/.
+.rlmf-cache/
+.rlmf-colab/
+*.rlmf.tmp

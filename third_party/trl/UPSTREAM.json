@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/huggingface/trl",
+  "tag": "v0.23.0",
+  "commit": "6adfd138d895b7ac257c4079eab7d519a0472aaa",
+  "source_url": "https://github.com/huggingface/trl/blob/v0.23.0/trl/trainer/grpo_trainer.py",
+  "source_path": "trl/trainer/grpo_trainer.py",
+  "retrieved_at": "2026-07-13",
+  "sha256": "4658c3920040f256bc909a3c49263409441f4425c8ba6273585370cf6b025777"
+}
