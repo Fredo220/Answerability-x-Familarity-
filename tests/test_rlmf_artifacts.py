@@ -232,6 +232,21 @@ def test_public_binary_and_directory_artifact_apis_publish_durably(tmp_path):
         )
 
 
+def test_append_jsonl_is_durable_append_only_and_restartable(tmp_path):
+    store = RLMFArtifactStore(tmp_path / "store")
+    first = store.append_jsonl(
+        "rlmf-qwen06b-v1", "training_audit", "raw-standard-11", {"sequence": 0}
+    )
+    second = RLMFArtifactStore(tmp_path / "store").append_jsonl(
+        "rlmf-qwen06b-v1", "training_audit", "raw-standard-11", {"sequence": 1}
+    )
+
+    assert first == second
+    assert [json.loads(line) for line in first.read_text().splitlines()] == [
+        {"sequence": 0}, {"sequence": 1}
+    ]
+
+
 def test_directory_publish_rejects_symlinks_and_hardlinks(tmp_path):
     store = RLMFArtifactStore(tmp_path / "store")
     source = tmp_path / "source"

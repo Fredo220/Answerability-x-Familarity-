@@ -38,6 +38,29 @@ class RLMFArtifactStore:
         _exclusive_write_bytes(destination, payload)
         return destination
 
+    def append_jsonl(
+        self, study_id: str, section: str, name: str, row: Mapping[str, Any]
+    ) -> Path:
+        if not isinstance(row, Mapping):
+            raise ValueError("append-only JSONL rows must be mappings")
+        destination = self._path(study_id, section, name, ".jsonl")
+        if destination.is_symlink():
+            raise ValueError("append-only artifacts must not be symlinks")
+        if destination.exists() and not destination.is_file():
+            raise ValueError("append-only artifact destination must be a regular file")
+        payload = json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+        flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(destination, flags, 0o644)
+        try:
+            _write_all(descriptor, payload)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        _fsync_directory(destination.parent)
+        return destination
+
     def write_json(self, study_id: str, section: str, name: str, value: Any) -> Path:
         destination = self._path(study_id, section, name, ".json")
         _exclusive_write_bytes(
@@ -66,6 +89,20 @@ class RLMFArtifactStore:
         self, study_id: str, section: str, name: str, *, create_parent: bool = False
     ) -> Path:
         return self._section(study_id, section, create=create_parent) / _safe_id(name, "name")
+
+    def owns_path(self, study_id: str, path: str | Path) -> bool:
+        try:
+            namespace = self._namespace(study_id, create=False)
+        except (FileNotFoundError, NotADirectoryError, ValueError):
+            return False
+        candidate = Path(path)
+        if candidate.is_symlink() or not candidate.exists():
+            return False
+        try:
+            candidate.resolve().relative_to(namespace)
+        except ValueError:
+            return False
+        return True
 
     def publish_directory(
         self, study_id: str, section: str, name: str, source: str | Path

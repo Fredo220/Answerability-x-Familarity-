@@ -234,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_train.add_argument("--seed", type=int)
     rlmf_train.add_argument("--resume", action="store_true")
     rlmf_train.add_argument("--stop-after-step", type=int)
+    rlmf_train.add_argument("--infrastructure-pilot", action="store_true")
 
     rlmf_export = subparsers.add_parser("rlmf-export-checkpoint")
     rlmf_export.add_argument("--artifact-root", required=True)
@@ -243,6 +244,11 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_import = subparsers.add_parser("rlmf-import-checkpoint")
     rlmf_import.add_argument("--artifact-root", required=True)
     rlmf_import.add_argument("--archive", required=True)
+    rlmf_import.add_argument("--config", required=True)
+    rlmf_import.add_argument("--stage", choices=("pre-sft", "rl"), required=True)
+    rlmf_import.add_argument("--arm", choices=("standard", "rlmf"))
+    rlmf_import.add_argument("--seed", type=int)
+    rlmf_import.add_argument("--pre-sft-parent-hash")
 
     rlmf_build_audit = subparsers.add_parser("rlmf-build-judge-audit")
     rlmf_build_audit.add_argument("--config", required=True)
@@ -745,16 +751,30 @@ def main(argv: list[str] | None = None) -> int:
         config = RLMFConfig.from_json(args.config)
         store = RLMFArtifactStore(args.artifact_root)
         if args.stage == "pre-sft":
-            if args.arm is not None or args.seed is not None or args.stop_after_step is not None:
-                raise ValueError("pre-sft does not accept arm, seed, or stop-after-step")
+            if (
+                args.arm is not None
+                or args.seed is not None
+                or args.stop_after_step is not None
+                or args.infrastructure_pilot
+            ):
+                raise ValueError(
+                    "pre-sft does not accept arm, seed, stop-after-step, or infrastructure-pilot"
+                )
             examples = load_training_examples(config, store)
             record = run_pre_sft(config, examples, store, resume=args.resume)
             arm = None
         else:
             if args.arm is None or args.seed is None:
                 raise ValueError("RL training requires --arm and --seed")
-            if args.stop_after_step is not None and config.profile != "smoke":
-                raise ValueError("--stop-after-step is limited to the smoke profile")
+            if (
+                args.stop_after_step is not None
+                and config.profile != "smoke"
+                and not args.infrastructure_pilot
+            ):
+                raise ValueError(
+                    "confirmatory --stop-after-step requires infrastructure pilot mode "
+                    "(--infrastructure-pilot)"
+                )
             arm = "standard_grpo" if args.arm == "standard" else "rlmf"
             examples = load_training_examples(config, store)
             record = run_rl_arm(
@@ -765,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
                 store,
                 resume=args.resume,
                 stop_after_step=args.stop_after_step,
+                infrastructure_pilot=args.infrastructure_pilot,
             )
         print(
             json.dumps(
@@ -774,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
                     "arm": arm,
                     "checkpoint": record.path,
                     "checkpoint_hash": record.checkpoint_hash,
+                    "completed": getattr(record, "completed", None),
+                    "infrastructure_pilot": args.infrastructure_pilot,
                 }
             )
         )
@@ -785,8 +808,29 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"archive": str(output)}))
         return 0
     if args.command == "rlmf-import-checkpoint":
+        config = RLMFConfig.from_json(args.config)
+        if args.stage == "pre-sft":
+            if args.arm is not None or args.seed is not None or args.pre_sft_parent_hash is not None:
+                raise ValueError("pre-sft import does not accept arm, seed, or pre-SFT parent")
+            expected_arm = None
+            expected_seed = None
+            expected_parent = None
+            expected_stage = "pre_sft"
+        else:
+            if args.arm is None or args.seed is None or args.pre_sft_parent_hash is None:
+                raise ValueError("RL import requires arm, seed, and pre-SFT parent hash")
+            expected_arm = "standard_grpo" if args.arm == "standard" else "rlmf"
+            expected_seed = args.seed
+            expected_parent = args.pre_sft_parent_hash
+            expected_stage = "rl"
         record = import_checkpoint(
-            RLMFArtifactStore(args.artifact_root), args.archive
+            RLMFArtifactStore(args.artifact_root),
+            args.archive,
+            config=config,
+            expected_stage=expected_stage,
+            expected_arm=expected_arm,
+            expected_seed=expected_seed,
+            expected_pre_sft_hash=expected_parent,
         )
         print(
             json.dumps(

@@ -775,10 +775,14 @@ def test_rlmf_train_cli_canonicalizes_only_the_advantage_arm(
 ):
     captured = {}
 
-    def run_rl_arm(config, arm, seed, examples, store, *, resume, stop_after_step=None):
+    def run_rl_arm(
+        config, arm, seed, examples, store, *, resume, stop_after_step=None,
+        infrastructure_pilot=False,
+    ):
         captured.update(
             config=config, arm=arm, seed=seed, examples=examples, store=store,
             resume=resume, stop_after_step=stop_after_step,
+            infrastructure_pilot=infrastructure_pilot,
         )
         return type(
             "Record", (),
@@ -804,8 +808,8 @@ def test_rlmf_train_cli_canonicalizes_only_the_advantage_arm(
     assert payload["arm"] == stored_arm
 
 
-def test_stop_after_step_is_rejected_for_confirmatory_training(tmp_path):
-    with pytest.raises(ValueError, match="smoke profile"):
+def test_stop_after_step_is_rejected_for_ordinary_confirmatory_training(tmp_path):
+    with pytest.raises(ValueError, match="infrastructure pilot"):
         cli.main(
             [
                 "rlmf-train", "--config", str(CONFIG_PATH),
@@ -813,3 +817,66 @@ def test_stop_after_step_is_rejected_for_confirmatory_training(tmp_path):
                 "--arm", "standard", "--seed", "11", "--stop-after-step", "25",
             ]
         )
+
+
+def test_explicit_confirmatory_infrastructure_pilot_is_forwarded(tmp_path, monkeypatch):
+    captured = {}
+
+    def run_rl_arm(
+        config, arm, seed, examples, store, *, resume, stop_after_step=None,
+        infrastructure_pilot=False,
+    ):
+        captured.update(
+            arm=arm, seed=seed, stop_after_step=stop_after_step,
+            infrastructure_pilot=infrastructure_pilot,
+        )
+        return type(
+            "Record", (),
+            {"checkpoint_hash": "a" * 64, "path": str(tmp_path / "checkpoint")},
+        )()
+
+    monkeypatch.setattr(cli, "run_rl_arm", run_rl_arm)
+    monkeypatch.setattr(cli, "load_training_examples", lambda *_: ("example",))
+
+    exit_code = cli.main(
+        [
+            "rlmf-train", "--config", str(CONFIG_PATH),
+            "--artifact-root", str(tmp_path), "--stage", "rl",
+            "--arm", "standard", "--seed", "11", "--stop-after-step", "25",
+            "--infrastructure-pilot",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured == {
+        "arm": "standard_grpo", "seed": 11, "stop_after_step": 25,
+        "infrastructure_pilot": True,
+    }
+
+
+def test_checkpoint_import_cli_requires_and_forwards_active_binding(tmp_path, monkeypatch):
+    captured = {}
+
+    def import_checkpoint(store, archive, **kwargs):
+        captured.update(store=store, archive=archive, **kwargs)
+        return type(
+            "Record", (),
+            {"checkpoint_hash": "a" * 64, "path": str(tmp_path / "checkpoint")},
+        )()
+
+    monkeypatch.setattr(cli, "import_checkpoint", import_checkpoint)
+    exit_code = cli.main(
+        [
+            "rlmf-import-checkpoint", "--artifact-root", str(tmp_path),
+            "--archive", str(tmp_path / "checkpoint.tar"),
+            "--config", str(CONFIG_PATH), "--stage", "rl", "--arm", "standard",
+            "--seed", "11", "--pre-sft-parent-hash", "b" * 64,
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["config"].study_id == "rlmf-qwen06b-v1"
+    assert captured["expected_stage"] == "rl"
+    assert captured["expected_arm"] == "standard_grpo"
+    assert captured["expected_seed"] == 11
+    assert captured["expected_pre_sft_hash"] == "b" * 64
