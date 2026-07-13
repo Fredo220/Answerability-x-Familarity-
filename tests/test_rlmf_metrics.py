@@ -22,7 +22,7 @@ from trajectory_extractor.rlmf_metrics import (
     strict_format_reward,
     training_leave_one_out_confidence,
 )
-from trajectory_extractor.rlmf_types import ParsedRLMFOutput
+from trajectory_extractor.rlmf_types import BehavioralEvaluationRecord, ParsedRLMFOutput
 
 
 def test_training_confidence_is_leave_one_out_for_unanimous_split_and_unique_groups():
@@ -95,20 +95,32 @@ def test_quadratic_rewards_and_tau_boundary_match_upstream_behavior():
     )
 
 
-def test_strict_and_soft_format_rewards_match_pinned_upstream_fixtures():
-    parsed = [
-        ParsedRLMFOutput(answer="A", confidence=0.8, valid_format=True),
-        ParsedRLMFOutput(answer=""),
+def test_strict_and_soft_format_rewards_match_frozen_pinned_upstream_edge_fixtures():
+    fixtures = [
+        ("<sentence>A</sentence><confidence>0.8</confidence>", True, 0.0),
+        ("<sentence>A <sentence>B</sentence></sentence><confidence>0.8</confidence>", False, -0.125),
+        ("<sentence>A</sentence><sentence>B</sentence><confidence>0.5</confidence>", False, -0.125),
+        ("<sentence>A</sentence><confidence>0.8", False, -0.5),
+        ("<sentence></sentence><confidence>0.5</confidence>", False, -0.05),
+        ("prefix <sentence>A</sentence><confidence>0.8</confidence> suffix", False, 0.0),
+        ("<sentence>A</sentence><confidence>1.1</confidence>", False, -0.25),
+        ("<sentence>A</sentence><confidence>0.81</confidence>", False, 0.0),
     ]
-    texts = [
-        "<sentence>A</sentence><confidence>0.8</confidence>",
-        "plain text",
-        "<sentence>A</sentence><sentence>B</sentence><confidence>0.5</confidence>",
-        "<sentence></sentence><confidence>0.5</confidence>",
+    parsed = [
+        ParsedRLMFOutput(answer="A", confidence=0.8, valid_format=True)
+        if valid
+        else ParsedRLMFOutput(answer="")
+        for _text, valid, _soft in fixtures
     ]
 
-    assert np.array_equal(strict_format_reward(parsed), np.array([1.0, -1.0]))
-    assert np.array_equal(soft_format_reward(texts), np.array([0.0, -1.0, -0.125, -0.05]))
+    assert np.array_equal(
+        strict_format_reward(parsed),
+        np.asarray([1.0 if valid else -1.0 for _text, valid, _soft in fixtures]),
+    )
+    assert np.array_equal(
+        soft_format_reward([text for text, _valid, _soft in fixtures]),
+        np.asarray([soft for _text, _valid, soft in fixtures]),
+    )
 
 
 def test_cmfg_star_uses_nonempty_equal_mass_bins_and_confidence_axis_widths():
@@ -165,22 +177,45 @@ def test_common_support_reports_both_sensitivities_on_the_shared_axis_only():
 
 def test_calibration_metrics_emit_primary_and_sensitivities_without_dropping_rows():
     records = [
-        _behavior_row("standard_grpo", 11, "p1", 0.8, 0.75, correctness=1.0),
-        _behavior_row("standard_grpo", 11, "p2", 0.2, 0.25, correctness=0.0),
+        _behavior_record("standard_grpo", 11, "p1", 0.8, positives=15, correctness=True),
+        _behavior_record("standard_grpo", 11, "p2", 0.2, positives=5, correctness=False),
+        _behavior_record("standard_grpo", 11, "broken", None, positives=0, correctness=None),
     ]
 
-    metrics = calibration_metrics(records)
+    result = calibration_metrics(records)
 
-    assert metrics["cmfg_star"] == pytest.approx(0.95)
-    assert metrics["cmfg_tie_preserving"] == pytest.approx(0.95)
-    assert metrics["faithfulness_accuracy"] == pytest.approx(0.95)
-    assert metrics["accuracy"] == 0.5
-    assert metrics["format_validity"] == 1.0
-    assert all(np.isfinite(value) for value in metrics.values())
+    assert result.status == "evaluable"
+    assert result.reason is None
+    assert result.total_records == 3
+    assert result.complete_case_records == 2
+    assert result.retained_record_ids == (
+        ("standard_grpo", 11, "p1"),
+        ("standard_grpo", 11, "p2"),
+        ("standard_grpo", 11, "broken"),
+    )
+    assert result.complete_case_record_ids == (
+        ("standard_grpo", 11, "p1"),
+        ("standard_grpo", 11, "p2"),
+    )
+    assert result.format_validity == pytest.approx(2 / 3)
+    assert result.metrics["cmfg_star"] == pytest.approx(0.95)
+    assert result.metrics["cmfg_tie_preserving"] == pytest.approx(0.95)
+    assert result.metrics["faithfulness_accuracy"] == pytest.approx(0.95)
+    assert result.metrics["accuracy"] == 0.5
+    assert all(np.isfinite(value) for value in result.metrics.values())
 
-    malformed = records + [{**records[0], "example_id": "broken", "intrinsic": np.nan}]
-    with pytest.raises(ValueError, match="finite"):
-        calibration_metrics(malformed)
+
+def test_calibration_metrics_returns_machine_readable_not_evaluable_without_complete_cases():
+    result = calibration_metrics(
+        [_behavior_record("standard_grpo", 11, "broken", None, positives=0, correctness=None)]
+    )
+
+    assert result.status == "not_evaluable"
+    assert result.reason == "no_valid_complete_cases"
+    assert result.total_records == 1
+    assert result.complete_case_records == 0
+    assert result.retained_record_ids == (("standard_grpo", 11, "broken"),)
+    assert result.metrics == {}
 
 
 def test_fixed_seed_bootstrap_resamples_paired_prompts_within_seed_and_is_reproducible():
@@ -213,8 +248,54 @@ def test_fixed_seed_bootstrap_resamples_paired_prompts_within_seed_and_is_reprod
             unpaired, paired_delta, seeds=(11, 22, 33), replicates=20, rng_seed=7
         )
 
+    for seed in (11, 22, 33):
+        interval = paired_fixed_seed_prompt_bootstrap(
+            [row for row in records if row["seed"] == seed],
+            paired_delta,
+            seeds=(seed,),
+            replicates=20,
+            rng_seed=7,
+        )
+        assert interval.to_record() == {"lower": 0.0, "estimate": 0.0, "upper": 0.0}
 
-def test_judge_bias_adjustment_consumes_schema_v2_arm_specific_uncertainty():
+    with pytest.raises(ValueError, match="one registered seed or exactly"):
+        paired_fixed_seed_prompt_bootstrap(
+            [row for row in records if row["seed"] in (11, 22)],
+            paired_delta,
+            seeds=(11, 22),
+            replicates=20,
+            rng_seed=7,
+        )
+    with pytest.raises(ValueError, match="one registered seed or exactly"):
+        paired_fixed_seed_prompt_bootstrap(
+            records,
+            paired_delta,
+            seeds=(11, 22, 44),
+            replicates=20,
+            rng_seed=7,
+        )
+
+
+def test_fixed_seed_bootstrap_preserves_duplicate_cluster_multiplicity():
+    records = [
+        {"arm": arm, "seed": 11, "example_id": prompt, "value": value}
+        for prompt, value in (("p1", 0.0), ("p2", 1.0))
+        for arm in ("standard_grpo", "rlmf")
+    ]
+    sampled_ids = []
+
+    def capture(rows):
+        sampled_ids.append(tuple(row["example_id"] for row in rows if row["arm"] == "rlmf"))
+        return 0.0
+
+    paired_fixed_seed_prompt_bootstrap(
+        records, capture, seeds=(11,), replicates=20, rng_seed=7
+    )
+
+    assert any(len(set(ids)) < len(ids) for ids in sampled_ids[1:])
+
+
+def test_judge_bias_adjustment_consumes_whole_joint_draws_and_returns_registered_bias_quantity():
     records = []
     for seed in (11, 22, 33):
         for prompt in ("p1", "p2", "p3"):
@@ -222,28 +303,40 @@ def test_judge_bias_adjustment_consumes_schema_v2_arm_specific_uncertainty():
             records.append(_judge_row("rlmf", seed, prompt, 0.6, positives=10))
     audit = _confusion_uncertainty()
     audit["estimates"]["rlmf:equivalence"] = {
-        "sensitivity": {"lower": 0.75, "estimate": 0.8, "upper": 0.85},
+        "sensitivity": {"lower": 0.8, "estimate": 0.8, "upper": 0.8},
         "specificity": {"lower": 0.95, "estimate": 1.0, "upper": 1.0},
     }
+    for draw in audit["joint_draws"]:
+        draw["rlmf:equivalence"] = {"sensitivity": 0.8, "specificity": 1.0}
 
-    first = judge_bias_adjusted_delta(records, audit, replicates=300, rng_seed=19)
-    second = judge_bias_adjusted_delta(records, audit, replicates=300, rng_seed=19)
+    first = judge_bias_adjusted_delta(records, audit, rng_seed=19)
+    second = judge_bias_adjusted_delta(records, audit, rng_seed=19)
 
     assert first == second
-    assert first.estimate == pytest.approx(-0.025, abs=1e-10)
-    assert first.lower <= first.estimate <= first.upper
+    assert first.proxy_delta_cmfg_star.estimate == pytest.approx(-0.1, abs=1e-10)
+    assert first.adjusted_delta_cmfg_star.estimate == pytest.approx(-0.025, abs=1e-10)
+    assert first.absolute_differential_bias.estimate == pytest.approx(0.075, abs=1e-10)
+    assert first.absolute_differential_bias.upper >= first.absolute_differential_bias.estimate
 
     legacy = deepcopy(audit)
     legacy["schema_version"] = 1
     with pytest.raises(ValueError, match="schema-v2"):
-        judge_bias_adjusted_delta(records, legacy, replicates=20, rng_seed=19)
+        judge_bias_adjusted_delta(records, legacy, rng_seed=19)
     with pytest.raises(ValueError, match="confusion uncertainty"):
-        judge_bias_adjusted_delta(records, [], replicates=20, rng_seed=19)
+        judge_bias_adjusted_delta(records, [], rng_seed=19)
+    missing_joint = deepcopy(audit)
+    del missing_joint["joint_draws"]
+    with pytest.raises(ValueError, match="joint draws"):
+        judge_bias_adjusted_delta(records, missing_joint, rng_seed=19)
     malformed_design = deepcopy(audit)
     first_stratum = next(iter(malformed_design["sampling_design"]["strata"].values()))
     first_stratum["population_count"] = 0
     with pytest.raises(ValueError, match="sampling design"):
-        judge_bias_adjusted_delta(records, malformed_design, replicates=20, rng_seed=19)
+        judge_bias_adjusted_delta(records, malformed_design, rng_seed=19)
+
+    missing_seed = [row for row in records if row["seed"] != 33]
+    with pytest.raises(ValueError, match="exactly the requested fixed seeds"):
+        judge_bias_adjusted_delta(missing_seed, audit, rng_seed=19)
 
 
 def test_all_metric_interfaces_fail_closed_on_nonfinite_or_malformed_input():
@@ -260,17 +353,24 @@ def test_all_metric_interfaces_fail_closed_on_nonfinite_or_malformed_input():
         )
 
 
-def _behavior_row(arm, seed, example_id, confidence, intrinsic, *, correctness):
-    return {
-        "arm": arm,
-        "seed": seed,
-        "example_id": example_id,
-        "answer": "answer",
-        "confidence": confidence,
-        "intrinsic": intrinsic,
-        "correctness": correctness,
-        "valid_format": True,
-    }
+def _behavior_record(arm, seed, example_id, confidence, *, positives, correctness):
+    parsed = (
+        ParsedRLMFOutput(answer="answer", confidence=confidence, valid_format=True)
+        if confidence is not None
+        else ParsedRLMFOutput(answer="")
+    )
+    return BehavioralEvaluationRecord(
+        arm=arm,
+        seed=seed,
+        example_id=example_id,
+        designated_member_id=f"{example_id}-designated",
+        designated_raw_output="raw",
+        designated=parsed,
+        auxiliary_member_ids=tuple(f"{example_id}-aux-{index}" for index in range(20)),
+        auxiliary_proxy_labels=(True,) * positives + (False,) * (20 - positives),
+        correctness=correctness,
+        provenance={"bundle_hash": "a" * 64},
+    )
 
 
 def _judge_row(arm, seed, example_id, confidence, *, positives):
@@ -288,17 +388,23 @@ def _confusion_uncertainty():
         "sensitivity": {"lower": 1.0, "estimate": 1.0, "upper": 1.0},
         "specificity": {"lower": 1.0, "estimate": 1.0, "upper": 1.0},
     }
+    estimates = {
+        f"{arm}:{judgment_type}": deepcopy(perfect)
+        for arm in ("standard_grpo", "rlmf")
+        for judgment_type in ("correctness", "equivalence")
+    }
+    joint_draw = {
+        key: {"sensitivity": 1.0, "specificity": 1.0}
+        for key in estimates
+    }
     return {
         "schema_version": 2,
         "method": "deterministic_stratified_bootstrap",
         "replicates": 2000,
         "rng_seed": 20260713,
         "sampling_design": _sampling_design(),
-        "estimates": {
-            f"{arm}:{judgment_type}": deepcopy(perfect)
-            for arm in ("standard_grpo", "rlmf")
-            for judgment_type in ("correctness", "equivalence")
-        },
+        "estimates": estimates,
+        "joint_draws": [deepcopy(joint_draw) for _ in range(2000)],
     }
 
 

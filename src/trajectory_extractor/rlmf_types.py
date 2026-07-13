@@ -504,6 +504,99 @@ class RLMFCompletion:
 
 
 @dataclass(frozen=True)
+class BehavioralEvaluationRecord:
+    """One retained designated response and its 20 auxiliary judgments."""
+
+    arm: str
+    seed: int
+    example_id: str
+    designated_member_id: str
+    designated_raw_output: str
+    designated: ParsedRLMFOutput
+    auxiliary_member_ids: tuple[str, ...]
+    auxiliary_proxy_labels: tuple[bool, ...]
+    correctness: bool | None
+    provenance: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if self.arm not in _ARMS:
+            raise ValueError("arm must be registered")
+        if not _is_int(self.seed) or self.seed < 1:
+            raise ValueError("seed must be positive")
+        _validate_id(self.example_id, "example_id")
+        _validate_id(self.designated_member_id, "designated_member_id")
+        if not isinstance(self.designated_raw_output, str):
+            raise ValueError("designated_raw_output must be a string")
+        if not isinstance(self.designated, ParsedRLMFOutput):
+            raise ValueError("designated must be a ParsedRLMFOutput")
+        member_ids = tuple(self.auxiliary_member_ids)
+        labels = tuple(self.auxiliary_proxy_labels)
+        if len(member_ids) != 20 or len(labels) != 20:
+            raise ValueError("behavioral evaluation requires exactly 20 auxiliaries")
+        for member_id in member_ids:
+            _validate_id(member_id, "auxiliary_member_id")
+        if len(set(member_ids)) != 20 or self.designated_member_id in member_ids:
+            raise ValueError("designated and auxiliary member IDs must be distinct")
+        if any(type(label) is not bool for label in labels):
+            raise ValueError("auxiliary_proxy_labels must be boolean")
+        if self.correctness is not None and type(self.correctness) is not bool:
+            raise ValueError("correctness must be boolean or None")
+        if not isinstance(self.provenance, Mapping) or not self.provenance:
+            raise ValueError("provenance must be a non-empty mapping")
+        provenance = dict(self.provenance)
+        if any(
+            not isinstance(key, str)
+            or not key
+            or not isinstance(value, str)
+            or not value
+            for key, value in provenance.items()
+        ):
+            raise ValueError("provenance keys and values must be non-empty strings")
+        object.__setattr__(self, "auxiliary_member_ids", member_ids)
+        object.__setattr__(self, "auxiliary_proxy_labels", labels)
+        object.__setattr__(self, "provenance", MappingProxyType(provenance))
+
+    @property
+    def confidence(self) -> float | None:
+        return self.designated.confidence
+
+    @property
+    def intrinsic(self) -> float:
+        return sum(self.auxiliary_proxy_labels) / 20.0
+
+    @property
+    def valid_format(self) -> bool:
+        return self.designated.valid_format
+
+    @property
+    def valid_complete_case(self) -> bool:
+        return self.designated.valid_format and type(self.correctness) is bool
+
+    @property
+    def record_id(self) -> tuple[str, int, str]:
+        return (self.arm, self.seed, self.example_id)
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "arm": self.arm,
+            "seed": self.seed,
+            "example_id": self.example_id,
+            "designated_member_id": self.designated_member_id,
+            "designated_raw_output": self.designated_raw_output,
+            "designated": {
+                "answer": self.designated.answer,
+                "confidence": self.designated.confidence,
+                "metascore": self.designated.metascore,
+                "valid_format": self.designated.valid_format,
+            },
+            "auxiliary_member_ids": list(self.auxiliary_member_ids),
+            "auxiliary_proxy_labels": list(self.auxiliary_proxy_labels),
+            "correctness": self.correctness,
+            "provenance": dict(self.provenance),
+        }
+
+
+@dataclass(frozen=True)
 class ClaimDecision:
     study_id: str
     endpoint: str

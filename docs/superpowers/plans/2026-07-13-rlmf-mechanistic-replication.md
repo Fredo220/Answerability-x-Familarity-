@@ -663,7 +663,10 @@ sample count, and reduced rational inclusion probability. Sensitivity and
 specificity are inverse-inclusion/post-stratification weighted against those
 eligible populations. Task 4 seals a schema-v2 deterministic stratified-bootstrap
 object containing the complete sampling design, method, replicate count, RNG
-seed, and arm/judgment intervals, but does not
+seed, arm/judgment intervals, and every aligned joint bootstrap draw for all
+arm-by-judgment sensitivity and specificity values. The joint draws are mandatory
+and preserve within-replicate dependence; marginal quantile interpolation is not
+permitted. Task 4 does not
 call that uncertainty the preregistered `delta_cMFG_star` bias bound. Task 5/10
 must propagate it through the sealed behavioral records and `delta_cMFG_star`.
 Only that endpoint-specific propagation may finalize the test audit or request a
@@ -732,14 +735,14 @@ soft_format_reward(texts: Sequence[str]) -> np.ndarray
 cmfg_star(confidence, intrinsic, *, bins: int = 10) -> float
 cmfg_tie_preserving(confidence, intrinsic) -> float
 common_support_sensitivity(standard_records, rlmf_records) -> Mapping[str, float]
-calibration_metrics(records: Sequence[RLMFCompletion]) -> dict[str, float]
+calibration_metrics(records: Sequence[BehavioralEvaluationRecord]) -> CalibrationMetricsResult
 paired_fixed_seed_prompt_bootstrap(records, metric, *, seeds, replicates, rng_seed) -> Interval
-judge_bias_adjusted_delta(records, audit, *, replicates, rng_seed) -> Interval
+judge_bias_adjusted_delta(records, audit, *, rng_seed) -> JudgeBiasAdjustedDeltaResult
 ```
 
 - [ ] **Step 1: Write failing metric tests from hand-computable fixtures**
 
-Include unanimous, split, and all-different training groups; prove that leave-one-out excludes the designated member; verify a designated response plus exactly 20 auxiliaries and the `1 - abs(confidence - g)` golden fixture; test faithful and factual quadratic reward endpoints; strict and soft format parity fixtures from the pinned upstream source; tau-boundary behavior; equal-mass confidence bins; empty-bin avoidance; confidence-axis-width weighting; tie-preserving bins; common support; identical-arm bootstrap centered at zero; fixed seeds with prompts resampled only within seed; per-seed intervals; and propagation of Task 4's sealed arm-specific confusion uncertainty through behavioral `delta_cMFG_star` records. Proxy-balanced raw label disagreement is not the registered estimand and must not drive the `<0.015` gate.
+Include unanimous, split, and all-different training groups; prove that leave-one-out excludes the designated member; verify a designated response plus exactly 20 auxiliaries and the `1 - abs(confidence - g)` golden fixture; test faithful and factual quadratic reward endpoints; frozen strict and soft format parity fixtures from the exact pinned upstream source for nested, duplicate, unmatched, empty, extra-text, out-of-range, and nonregistered-confidence cases; tau-boundary behavior; equal-mass confidence bins; empty-bin avoidance; confidence-axis-width weighting; tie-preserving bins; common support; identical-arm bootstrap centered at zero; prompts resampled only within seed with duplicate-cluster multiplicity preserved; all three per-seed intervals; rejection of two-seed and wrong-three-seed aggregates; and propagation of Task 4's aligned joint confusion draws through behavioral `delta_cMFG_star` records. Proxy-balanced raw label disagreement is not the registered estimand and must not drive the `<0.015` gate.
 
 - [ ] **Step 2: Run and observe failure**
 
@@ -749,7 +752,7 @@ Include unanimous, split, and all-different training groups; prove that leave-on
 
 - [ ] **Step 3: Implement metrics without model dependencies**
 
-Keep this module NumPy/pandas-only so all behavioral analyses run on the Mac. Mirror the official cMFG* equal-mass/axis-width procedure and document the corresponding upstream file hash in the module docstring. Treat the official score as primary, but always emit tie-preserving and common-support sensitivities. Confidence intervals condition on the three registered seeds and therefore support no inference to unseen seeds. Return finite metrics or an explicit `not_evaluable` reason; never silently drop malformed rows.
+Keep this module NumPy/pandas-only so all behavioral analyses run on the Mac. Mirror the official cMFG* equal-mass/axis-width procedure and document the corresponding upstream file hash in the module docstring. Treat the official score as primary, but always emit tie-preserving and common-support sensitivities. The primary malformed policy is fixed before training: retain every row and `(arm, seed, example_id)` for format-validity denominators and reporting; compute calibration endpoints only on rows explicitly marked format-valid with complete designated confidence, intrinsic target, and correctness; return `not_evaluable` with machine reason `no_valid_complete_cases` when none remain. Store evaluation inputs as immutable `BehavioralEvaluationRecord` values with designated-plus-20 member IDs, raw designated output, parsed validity, labels, and provenance. Aggregate confidence intervals require exactly seeds `(11, 22, 33)`; explicit one-registered-seed calls are descriptive/per-seed only, and judge-bias propagation requires all three. For each aligned joint confusion draw, use one shared paired prompt resample to calculate proxy `delta_cMFG_star`, confusion-adjusted `delta_cMFG_star`, and `abs(adjusted_delta - proxy_delta)`. Return intervals for all three under distinct names; only `absolute_differential_bias.upper < 0.015` is the registered judge-bias gate. A corrected effect is not a bias bound. Confidence intervals condition on the three registered seeds and therefore support no inference to unseen seeds.
 
 - [ ] **Step 4: Verify tests**
 
@@ -1030,7 +1033,7 @@ Test missing-seed rejection, paired-ID equality, duplicate completion rejection,
 
 Generate and seal development rollouts from pre-SFT/RL-train without using test IDs, freeze the proxy, then generate validation bundles for all paired seeds. Every evaluation bundle contains one designated answer/confidence response and 20 independently seeded answer-only auxiliaries. Run the locked 400-item validation audit and verify its completion marker. The test-rollout command must refuse to run before that marker exists and passes.
 
-Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit and collect two independent ratings plus later disagreement-only adjudication through the sealed-source manifest. Task 4 publishes schema-v2, population-weighted arm-specific confusion uncertainty with the full stratified sampling design and deterministic bootstrap provenance, not a `delta_cMFG_star` gate. This task must verify and consume that design unchanged, join the weighted uncertainty to the sealed behavioral records, propagate it through `delta_cMFG_star`, and exclusively decide whether the `<0.015` upper-limit gate passes, a 250-row append is required, or the study is `not_evaluable` at 2,000. An extension-required command exits nonzero and writes a sealed request binding the current size-specific evidence endpoint; the next Task 4 audit appends only the requested 250 stable IDs. A final `test_judge_audit` endpoint is published only after reliability gates pass and endpoint-specific propagation yields a final evaluable result. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, unadjusted, and judge-bias-adjusted tables.
+Only then generate and seal test bundles once. Before aggregate test metrics are calculated, create the blinded 1,000-row test audit and collect two independent ratings plus later disagreement-only adjudication through the sealed-source manifest. Task 4 publishes schema-v2, population-weighted arm-specific confusion uncertainty with the full stratified sampling design, deterministic bootstrap provenance, and mandatory aligned joint draws, not a `delta_cMFG_star` gate. This task must verify and consume that design and every joint draw unchanged, join the weighted uncertainty to the sealed behavioral records, and use the same paired prompt resample within each replicate to compute proxy `delta_cMFG_star`, confusion-adjusted `delta_cMFG_star`, and absolute differential bias. It exclusively decides whether `absolute_differential_bias.upper < 0.015`, a 250-row append is required, or the study is `not_evaluable` at 2,000. An extension-required command exits nonzero and writes a sealed request binding the current size-specific evidence endpoint; the next Task 4 audit appends only the requested 250 stable IDs. A final `test_judge_audit` endpoint is published only after reliability gates pass and endpoint-specific propagation yields a final evaluable result. Evaluation joins arms by `(seed, example_id)` for designated responses and validates auxiliary member IDs within each bundle. Emit retained-row format reporting, valid-complete-case calibration, per-example, per-seed, fixed-seed aggregate, tie-preserving sensitivity, common-support sensitivity, proxy, adjusted, and absolute-differential-bias tables.
 
 Only after the machine-derived Study 1 decision is `supported`, generate and seal one designated-plus-20 `mechanism_train` bundle for every final arm/seed checkpoint. Task 11 adds the corresponding pre-SFT bundles and teacher-forced activation artifacts. These sealed bundles are the only legal probe-training targets in Study 2.
 
@@ -1043,7 +1046,7 @@ The report object must include every gate value and a machine-derived decision s
 .venv/bin/feature-dynamics rlmf-evaluate-behavior --config configs/rlmf_qwen06b_confirmatory.json
 ```
 
-Expected command output contains `decision`, `delta_cMFG_star`, fixed-seed prompt-cluster interval, all three seed effects and intervals, judge-bias-adjusted interval, format validity, accuracy difference, both cMFG sensitivities, and completion-marker path.
+Expected command output contains `decision`, `delta_cMFG_star`, fixed-seed prompt-cluster interval, all three seed effects and intervals, proxy and judge-bias-adjusted intervals, `absolute_differential_bias` and its `<0.015` gate, format validity over all retained rows, valid-complete-case counts, accuracy difference, both cMFG sensitivities, and completion-marker path.
 
 - [ ] **Step 5: Commit analysis code, not generated runs**
 

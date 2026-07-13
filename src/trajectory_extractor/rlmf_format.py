@@ -369,6 +369,7 @@ def estimate_arm_confusion_uncertainty(
     sampled_metrics = {
         key: {"sensitivity": [], "specificity": []} for key in sensitivity
     }
+    joint_draws = []
     for _ in range(replicates):
         bootstrap_rows = tuple(
             row
@@ -380,6 +381,15 @@ def estimate_arm_confusion_uncertainty(
         )
         sampled_sensitivity, sampled_specificity = _classification_metrics(
             bootstrap_rows, "test"
+        )
+        joint_draws.append(
+            {
+                key: {
+                    "sensitivity": sampled_sensitivity[key],
+                    "specificity": sampled_specificity[key],
+                }
+                for key in sampled_metrics
+            }
         )
         for key in sampled_metrics:
             sampled_metrics[key]["sensitivity"].append(sampled_sensitivity[key])
@@ -402,6 +412,7 @@ def estimate_arm_confusion_uncertainty(
         "rng_seed": REGISTERED_AUDIT_SEED,
         "sampling_design": design,
         "estimates": estimates,
+        "joint_draws": joint_draws,
     }
 
 

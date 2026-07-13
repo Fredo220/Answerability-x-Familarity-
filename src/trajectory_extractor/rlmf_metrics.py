@@ -5,9 +5,9 @@ The official cMFG* implementation is ``get_cmfg_star`` in
 ``a087e7a1e49f52aaa701add19cd80699b709fdef``. The complete upstream file has
 SHA-256 ``b3c6a38e3acf64d8b91c8fba08b71dc171d26458f6e6a5b7aefc1faa1f31c8cf``.
 This module preserves its equal-mass bins and confidence-axis-width weighting,
-while failing closed instead of silently filtering malformed observations.
-Task 4 seals only marginal 2.5%, 50%, and 97.5% confusion quantiles, so
-uncertainty propagation uses their piecewise-linear quantile interpolation.
+while retaining malformed observations for explicit format reporting. Task 4
+seals aligned joint confusion draws; Task 5 consumes each draw exactly once
+alongside the corresponding paired prompt-cluster bootstrap replicate.
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
@@ -24,11 +26,12 @@ from trajectory_extractor.rlmf_format import (
     completion_equivalent,
     normalized_answer,
 )
-from trajectory_extractor.rlmf_types import ParsedRLMFOutput
+from trajectory_extractor.rlmf_types import BehavioralEvaluationRecord, ParsedRLMFOutput
 
 
 _ARMS = ("standard_grpo", "rlmf")
 _JUDGMENT_TYPES = ("correctness", "equivalence")
+_CONFIRMATORY_SEEDS = (11, 22, 33)
 _PAIR_PATTERN = re.compile(
     r"<sentence>.*?</sentence>\s*"
     r"<confidence>\s*([01](?:\.\d+)?|0?\.\d+)\s*</confidence>",
@@ -37,6 +40,55 @@ _PAIR_PATTERN = re.compile(
 _CONFIDENCE_PATTERN = re.compile(
     r"<confidence>\s*(0(\.\d*)?|1(\.0*)?)\s*</confidence>"
 )
+
+
+@dataclass(frozen=True)
+class CalibrationMetricsResult:
+    status: str
+    reason: str | None
+    total_records: int
+    valid_format_records: int
+    complete_case_records: int
+    retained_record_ids: tuple[tuple[str, int, str], ...]
+    complete_case_record_ids: tuple[tuple[str, int, str], ...]
+    format_validity: float
+    answer_coverage: float
+    metrics: Mapping[str, float]
+
+    def __post_init__(self) -> None:
+        if self.status not in {"evaluable", "not_evaluable"}:
+            raise ValueError("calibration status is invalid")
+        object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "total_records": self.total_records,
+            "valid_format_records": self.valid_format_records,
+            "complete_case_records": self.complete_case_records,
+            "retained_record_ids": [list(value) for value in self.retained_record_ids],
+            "complete_case_record_ids": [
+                list(value) for value in self.complete_case_record_ids
+            ],
+            "format_validity": self.format_validity,
+            "answer_coverage": self.answer_coverage,
+            "metrics": dict(self.metrics),
+        }
+
+
+@dataclass(frozen=True)
+class JudgeBiasAdjustedDeltaResult:
+    proxy_delta_cmfg_star: Interval
+    adjusted_delta_cmfg_star: Interval
+    absolute_differential_bias: Interval
+
+    def to_record(self) -> dict[str, dict[str, float]]:
+        return {
+            "proxy_delta_cmfg_star": self.proxy_delta_cmfg_star.to_record(),
+            "adjusted_delta_cmfg_star": self.adjusted_delta_cmfg_star.to_record(),
+            "absolute_differential_bias": self.absolute_differential_bias.to_record(),
+        }
 
 
 def training_leave_one_out_confidence(
@@ -234,11 +286,34 @@ def common_support_sensitivity(
     }
 
 
-def calibration_metrics(records: Sequence[Any]) -> dict[str, float]:
-    rows = _metric_rows(records, require_outcomes=True)
-    confidence = rows["confidence"]
-    intrinsic = rows["intrinsic"]
-    correctness = rows["correctness"]
+def calibration_metrics(
+    records: Sequence[BehavioralEvaluationRecord],
+) -> CalibrationMetricsResult:
+    retained = _behavioral_evaluation_records(records)
+    complete = tuple(row for row in retained if row.valid_complete_case)
+    retained_ids = tuple(row.record_id for row in retained)
+    complete_ids = tuple(row.record_id for row in complete)
+    valid_format_records = sum(row.valid_format for row in retained)
+    format_validity = valid_format_records / len(retained)
+    answer_coverage = sum(
+        bool(normalized_answer(row.designated.answer)) for row in retained
+    ) / len(retained)
+    if not complete:
+        return CalibrationMetricsResult(
+            status="not_evaluable",
+            reason="no_valid_complete_cases",
+            total_records=len(retained),
+            valid_format_records=valid_format_records,
+            complete_case_records=0,
+            retained_record_ids=retained_ids,
+            complete_case_record_ids=(),
+            format_validity=format_validity,
+            answer_coverage=answer_coverage,
+            metrics={},
+        )
+    confidence = np.asarray([row.confidence for row in complete], dtype=float)
+    intrinsic = np.asarray([row.intrinsic for row in complete], dtype=float)
+    correctness = np.asarray([float(row.correctness) for row in complete])
     faithfulness = 1.0 - np.abs(confidence - intrinsic)
     metrics = {
         "cmfg_star": cmfg_star(confidence, intrinsic),
@@ -249,12 +324,21 @@ def calibration_metrics(records: Sequence[Any]) -> dict[str, float]:
         "expressed_brier": float(np.mean(np.square(confidence - correctness))),
         "ece": _ece(confidence, correctness),
         "absolute_expression_gap": float(np.mean(np.abs(confidence - intrinsic))),
-        "answer_coverage": float(np.mean(rows["answer_coverage"])),
-        "format_validity": float(np.mean(rows["valid_format"])),
     }
     for name, value in metrics.items():
         _finite_result(value, name)
-    return metrics
+    return CalibrationMetricsResult(
+        status="evaluable",
+        reason=None,
+        total_records=len(retained),
+        valid_format_records=valid_format_records,
+        complete_case_records=len(complete),
+        retained_record_ids=retained_ids,
+        complete_case_record_ids=complete_ids,
+        format_validity=format_validity,
+        answer_coverage=answer_coverage,
+        metrics=metrics,
+    )
 
 
 def paired_fixed_seed_prompt_bootstrap(
@@ -287,42 +371,52 @@ def judge_bias_adjusted_delta(
     records: Sequence[Any],
     audit: Mapping[str, Any],
     *,
-    replicates: int,
     rng_seed: int,
-) -> Interval:
-    """Propagate sealed schema-v2 arm confusion uncertainty through delta cMFG*."""
+) -> JudgeBiasAdjustedDeltaResult:
+    """Propagate every aligned confusion draw through paired delta cMFG*."""
     confusion = _validate_confusion_uncertainty(audit)
     rows = _judge_rows(records)
-    seeds = tuple(dict.fromkeys(row["seed"] for row in rows))
-    _, groups = _paired_prompt_groups(rows, seeds)
-    replicates = _positive_int(replicates, "replicates")
+    _, groups = _paired_prompt_groups(rows, _CONFIRMATORY_SEEDS)
     rng_seed = _integer(rng_seed, "rng_seed")
     estimates = {
         arm: (
-            confusion[f"{arm}:equivalence"]["sensitivity"]["estimate"],
-            confusion[f"{arm}:equivalence"]["specificity"]["estimate"],
+            confusion["estimates"][f"{arm}:equivalence"]["sensitivity"]["estimate"],
+            confusion["estimates"][f"{arm}:equivalence"]["specificity"]["estimate"],
         )
         for arm in _ARMS
     }
-    estimate = _adjusted_delta(rows, estimates)
+    proxy_estimate = _proxy_delta(rows)
+    adjusted_estimate = _adjusted_delta(rows, estimates)
     rng = np.random.default_rng(rng_seed)
-    values = []
-    for _ in range(replicates):
+    proxy_values = []
+    adjusted_values = []
+    absolute_bias_values = []
+    for draw in confusion["joint_draws"]:
         sampled: list[Mapping[str, Any]] = []
-        for seed in seeds:
+        for seed in _CONFIRMATORY_SEEDS:
             prompt_groups = groups[seed]
             selected = rng.integers(0, len(prompt_groups), size=len(prompt_groups))
             for index in selected:
                 sampled.extend(prompt_groups[int(index)])
-        sampled_confusion = {
+        draw_confusion = {
             arm: (
-                _sample_interval(confusion[f"{arm}:equivalence"]["sensitivity"], rng),
-                _sample_interval(confusion[f"{arm}:equivalence"]["specificity"], rng),
+                draw[f"{arm}:equivalence"]["sensitivity"],
+                draw[f"{arm}:equivalence"]["specificity"],
             )
             for arm in _ARMS
         }
-        values.append(_adjusted_delta(sampled, sampled_confusion))
-    return _percentile_interval(estimate, values)
+        proxy_delta = _proxy_delta(sampled)
+        adjusted_delta = _adjusted_delta(sampled, draw_confusion)
+        proxy_values.append(proxy_delta)
+        adjusted_values.append(adjusted_delta)
+        absolute_bias_values.append(abs(adjusted_delta - proxy_delta))
+    return JudgeBiasAdjustedDeltaResult(
+        proxy_delta_cmfg_star=_percentile_interval(proxy_estimate, proxy_values),
+        adjusted_delta_cmfg_star=_percentile_interval(adjusted_estimate, adjusted_values),
+        absolute_differential_bias=_percentile_interval(
+            abs(adjusted_estimate - proxy_estimate), absolute_bias_values
+        ),
+    )
 
 
 def _soft_format_one(text: str) -> float:
@@ -438,17 +532,29 @@ def _metric_rows(
     return result
 
 
+def _behavioral_evaluation_records(
+    records: Sequence[BehavioralEvaluationRecord],
+) -> tuple[BehavioralEvaluationRecord, ...]:
+    values = _nonempty_records(records)
+    if any(not isinstance(value, BehavioralEvaluationRecord) for value in values):
+        raise ValueError(
+            "calibration metrics require BehavioralEvaluationRecord values"
+        )
+    return values
+
+
 def _paired_prompt_groups(
     records: Sequence[Any], seeds: Sequence[int]
 ) -> tuple[tuple[Any, ...], dict[int, tuple[tuple[Any, Any], ...]]]:
     rows = _nonempty_records(records)
     seeds = tuple(seeds)
-    if (
-        not seeds
-        or len(set(seeds)) != len(seeds)
-        or any(type(seed) is not int for seed in seeds)
+    if not (
+        seeds == _CONFIRMATORY_SEEDS
+        or (len(seeds) == 1 and seeds[0] in _CONFIRMATORY_SEEDS)
     ):
-        raise ValueError("seeds must be a non-empty sequence of unique integers")
+        raise ValueError(
+            "seeds must contain one registered seed or exactly (11, 22, 33)"
+        )
     if {_record_value(row, "seed") for row in rows} != set(seeds):
         raise ValueError("records must contain exactly the requested fixed seeds")
     indexed: dict[tuple[int, str, str], Any] = {}
@@ -538,6 +644,19 @@ def _adjusted_delta(
     return _finite_result(rlmf - standard, "judge-bias-adjusted delta cMFG*")
 
 
+def _proxy_delta(rows: Sequence[Mapping[str, Any]]) -> float:
+    arm_values: dict[str, tuple[list[float], list[float]]] = {
+        arm: ([], []) for arm in _ARMS
+    }
+    for row in rows:
+        arm = row["arm"]
+        arm_values[arm][0].append(row["confidence"])
+        arm_values[arm][1].append(float(np.mean(row["auxiliary_proxy_labels"])))
+    standard = cmfg_star(*arm_values["standard_grpo"])
+    rlmf = cmfg_star(*arm_values["rlmf"])
+    return _finite_result(rlmf - standard, "proxy delta cMFG*")
+
+
 def _validate_confusion_uncertainty(audit: Any) -> dict[str, Any]:
     if not isinstance(audit, Mapping):
         raise ValueError("judge adjustment requires sealed confusion uncertainty")
@@ -569,7 +688,32 @@ def _validate_confusion_uncertainty(audit: Any) -> dict[str, Any]:
             name: _interval_record(value[name], f"{key} {name}")
             for name in ("sensitivity", "specificity")
         }
-    return validated
+    draws = audit.get("joint_draws")
+    if (
+        isinstance(draws, (str, bytes))
+        or not isinstance(draws, Sequence)
+        or len(draws) != audit["replicates"]
+    ):
+        raise ValueError(
+            "confusion uncertainty joint draws must match the registered replicates"
+        )
+    validated_draws = []
+    for draw in draws:
+        if not isinstance(draw, Mapping) or set(draw) != expected:
+            raise ValueError("confusion uncertainty joint draw is malformed")
+        validated_draw = {}
+        for key, value in draw.items():
+            if not isinstance(value, Mapping) or set(value) != {
+                "sensitivity",
+                "specificity",
+            }:
+                raise ValueError("confusion uncertainty joint draw is malformed")
+            validated_draw[key] = {
+                name: _unit_scalar(value[name], f"{key} joint {name}")
+                for name in ("sensitivity", "specificity")
+            }
+        validated_draws.append(validated_draw)
+    return {"estimates": validated, "joint_draws": tuple(validated_draws)}
 
 
 def _validate_sampling_design(design: Mapping[str, Any]) -> None:
@@ -639,24 +783,14 @@ def _interval_record(value: Any, name: str) -> dict[str, float]:
     return result
 
 
-def _sample_interval(interval: Mapping[str, float], rng: np.random.Generator) -> float:
-    probability = float(rng.random())
-    if probability <= 0.025:
-        return interval["lower"]
-    if probability < 0.5:
-        fraction = (probability - 0.025) / 0.475
-        return interval["lower"] * (1.0 - fraction) + interval["estimate"] * fraction
-    if probability < 0.975:
-        fraction = (probability - 0.5) / 0.475
-        return interval["estimate"] * (1.0 - fraction) + interval["upper"] * fraction
-    return interval["upper"]
-
-
 def _metric_value(
     metric: Callable[[Sequence[Any]], float] | str, rows: Sequence[Any]
 ) -> float:
     if isinstance(metric, str):
-        value = calibration_metrics(rows).get(metric)
+        result = calibration_metrics(rows)
+        if result.status != "evaluable":
+            raise ValueError(f"calibration metric is not evaluable: {result.reason}")
+        value = result.metrics.get(metric)
         if value is None:
             raise ValueError(f"unknown calibration metric: {metric}")
     elif callable(metric):

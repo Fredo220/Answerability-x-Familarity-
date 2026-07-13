@@ -262,11 +262,18 @@ def test_task4_emits_confusion_uncertainty_but_defers_endpoint_bias_propagation(
     assert uncertainty["schema_version"] == 2
     assert uncertainty["method"] == "deterministic_stratified_bootstrap"
     assert uncertainty["sampling_design"]["schema_version"] == 1
+    assert len(uncertainty["joint_draws"]) == uncertainty["replicates"] == 2000
     assert set(uncertainty["estimates"]) == {
         f"{arm}:{judgment_type}"
         for arm in ("standard_grpo", "rlmf")
         for judgment_type in ("correctness", "equivalence")
     }
+    for draw in uncertainty["joint_draws"]:
+        assert set(draw) == set(uncertainty["estimates"])
+        assert all(
+            set(confusion) == {"sensitivity", "specificity"}
+            for confusion in draw.values()
+        )
     for value in uncertainty["estimates"].values():
         assert value["sensitivity"]["estimate"] == 1.0
         assert 0.0 <= value["sensitivity"]["lower"] <= value["sensitivity"]["upper"] <= 1.0
