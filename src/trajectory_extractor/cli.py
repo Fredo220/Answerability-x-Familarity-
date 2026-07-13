@@ -40,6 +40,9 @@ from trajectory_extractor.intervention_study import (
 from trajectory_extractor.model_loader import load_hf_model, unload_model
 from trajectory_extractor.labels import is_refusal, safety_rates
 from trajectory_extractor.report_builder import write_study_report
+from trajectory_extractor.rlmf_artifacts import RLMFArtifactStore
+from trajectory_extractor.rlmf_data import write_popqa_snapshot
+from trajectory_extractor.rlmf_types import RLMFConfig
 from trajectory_extractor.secondary_artifacts import (
     SecondaryArtifactStore,
     build_analysis_provenance,
@@ -200,6 +203,10 @@ def main(argv: list[str] | None = None) -> int:
         "--endpoint", choices=("exact_error", "binding_error"), default="exact_error"
     )
     circuit_followup.add_argument("--per-stratum", type=int, default=5)
+
+    rlmf_prepare_data = subparsers.add_parser("rlmf-prepare-data")
+    rlmf_prepare_data.add_argument("--config", required=True)
+    rlmf_prepare_data.add_argument("--root", default=".")
 
     args = parser.parse_args(argv)
     if args.command == "generate-concept-data":
@@ -639,6 +646,21 @@ def main(argv: list[str] | None = None) -> int:
             per_stratum=args.per_stratum,
         )
         print(json.dumps({"selected": len(result["cases"]), "counts": result["counts"]}))
+        return 0
+    if args.command == "rlmf-prepare-data":
+        config = RLMFConfig.from_json(args.config)
+        paths = write_popqa_snapshot(config, RLMFArtifactStore(args.root))
+        print(
+            json.dumps(
+                {
+                    "study_id": config.study_id,
+                    "count": sum(config.split_counts.values()),
+                    "split_counts": dict(config.split_counts),
+                    "dataset_revision": config.dataset_revision,
+                    "artifacts": {name: str(path) for name, path in paths.items()},
+                }
+            )
+        )
         return 0
     return 1
 
