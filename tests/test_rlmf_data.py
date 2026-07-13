@@ -101,6 +101,24 @@ def test_select_splits_deduplicates_subjects_and_answer_components_deterministic
     assert len([example for split in first.values() for example in split if example.subject == "Q-3"]) == 1
 
 
+def test_select_splits_uses_aliases_from_discarded_duplicate_subject_rows():
+    rows = [
+        _row(1, aliases=["Alpha"], subject="Q-A"),
+        _row(2, aliases=["Bridge"], subject="Q-A"),
+        _row(3, aliases=["Bridge"], subject="Q-B"),
+        *[_row(index, subject=f"Q-{index}") for index in range(4, 9)],
+    ]
+    examples = [normalize_popqa_row(row) for row in rows]
+    counts = {"pre_sft": 2, "rl_train": 2, "validation": 1, "test": 1}
+
+    splits = select_subject_and_answer_disjoint_splits(examples, counts, split_seed=17)
+
+    selected_subjects = {
+        example.subject for split in splits.values() for example in split
+    }
+    assert len({"Q-A", "Q-B"} & selected_subjects) == 1
+
+
 def test_select_splits_uses_hash_order_and_rejects_insufficient_components():
     examples = [normalize_popqa_row(_row(index, subject=f"Q-{index}")) for index in range(1, 9)]
     counts = {"pre_sft": 2, "rl_train": 2, "validation": 1, "test": 2}
@@ -122,6 +140,8 @@ def test_write_snapshot_is_pinned_auditable_and_marks_completion(tmp_path, monke
     import trajectory_extractor.rlmf_data as rlmf_data
 
     rows = [_row(index, subject=f"Q-{index}") for index in range(1, 901)]
+    rows[1] = _row(2, aliases=["Bridge"], subject="Q-2")
+    rows.append(_row(901, aliases=["Bridge"], subject="Q-1"))
 
     def load_dataset(dataset_id, *, revision, split):
         assert dataset_id == "akariasai/PopQA"
@@ -143,6 +163,8 @@ def test_write_snapshot_is_pinned_auditable_and_marks_completion(tmp_path, monke
     }
     snapshot = [json.loads(line) for line in paths["normalized_rows"].read_text().splitlines()]
     aliases = [json.loads(line) for line in paths["aliases"].read_text().splitlines()]
+    source_rows = [json.loads(line) for line in paths["source_rows"].read_text().splitlines()]
+    discarded_rows = [json.loads(line) for line in paths["discarded_rows"].read_text().splitlines()]
     manifest = json.loads(paths["split_manifest"].read_text())
     assert len(snapshot) == 896
     assert len(aliases) == 896
@@ -153,4 +175,6 @@ def test_write_snapshot_is_pinned_auditable_and_marks_completion(tmp_path, monke
     }
     assert manifest["counts"] == {"pre_sft": 256, "rl_train": 256, "test": 256, "validation": 128}
     assert all("relation_counts" in row and "popularity" in row for row in [manifest])
+    assert all(row["alias_component_id"] is not None for row in source_rows)
+    assert all(row["alias_component_id"] is not None for row in discarded_rows)
     assert store.verify_endpoint(_confirmatory_config().study_id, "prepare-data")

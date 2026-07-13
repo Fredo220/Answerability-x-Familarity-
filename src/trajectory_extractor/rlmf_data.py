@@ -95,14 +95,23 @@ def write_popqa_snapshot(config: RLMFConfig, store: RLMFArtifactStore) -> dict[s
         for normalized in normalized_rows
     ]
     source_rows = [
-        {"source_index": index, "row": dict(row)} for index, row in enumerate(rows)
+        {
+            "source_index": index,
+            "row": dict(row),
+            "example_id": examples[index].example_id,
+            "subject_id": examples[index].subject,
+            "aliases": list(examples[index].answers),
+            "alias_component_id": component_ids[index],
+        }
+        for index, row in enumerate(rows)
     ]
     discarded_rows = [
         {
             "source_index": index,
             "example_id": examples[index].example_id,
             "subject_id": examples[index].subject,
-            "alias_component_id": component_ids.get(index),
+            "aliases": list(examples[index].answers),
+            "alias_component_id": component_ids[index],
             "reason": reason,
         }
         for index, reason in sorted(discarded.items())
@@ -159,6 +168,20 @@ def _select_indexes(
         if not isinstance(example, PopQAExample):
             raise ValueError("examples must contain PopQAExample records")
         by_subject[example.subject].append(index)
+
+    # All source aliases participate in connectivity, including aliases that
+    # belong to rows later discarded as duplicate subjects.
+    parents = list(range(len(examples)))
+    aliases_to_index: dict[str, int] = {}
+    for subject_rows in by_subject.values():
+        first_index = subject_rows[0]
+        for index in subject_rows[1:]:
+            _union(parents, first_index, index)
+    for index, example in enumerate(examples):
+        for alias in example.answers:
+            previous = aliases_to_index.setdefault(alias, index)
+            _union(parents, index, previous)
+
     subject_indexes: list[int] = []
     discarded: dict[int, str] = {}
     for subject, subject_rows in by_subject.items():
@@ -168,37 +191,30 @@ def _select_indexes(
             if index != chosen:
                 discarded[index] = "duplicate_subject"
 
-    parents = list(range(len(subject_indexes)))
-    aliases_to_position: dict[str, int] = {}
-    for position, index in enumerate(subject_indexes):
-        for alias in {_normalize_alias(answer) for answer in examples[index].answers}:
-            previous = aliases_to_position.setdefault(alias, position)
-            _union(parents, position, previous)
-
     components: dict[int, list[int]] = defaultdict(list)
-    for position, index in enumerate(subject_indexes):
-        components[_find(parents, position)].append(index)
+    for index in range(len(examples)):
+        components[_find(parents, index)].append(index)
     component_ids: dict[int, str] = {}
     retained: list[int] = []
+    chosen_subject_indexes = set(subject_indexes)
     for members in components.values():
         aliases = sorted(
-            {_normalize_alias(answer) for index in members for answer in examples[index].answers}
+            {alias for index in members for alias in examples[index].answers}
         )
         component_id = "component-" + hashlib.sha256(
             "\x00".join(aliases).encode("utf-8")
         ).hexdigest()[:16]
+        for index in members:
+            component_ids[index] = component_id
+        candidates = [index for index in members if index in chosen_subject_indexes]
         selected = min(
-            members,
+            candidates,
             key=lambda index: (_selection_hash(split_seed, examples[index].subject), _example_tie_key(examples[index])),
         )
         retained.append(selected)
-        for index in members:
-            component_ids[index] = component_id
+        for index in candidates:
             if index != selected:
                 discarded[index] = "answer_component_overlap"
-    for index, reason in discarded.items():
-        if reason == "duplicate_subject":
-            component_ids[index] = component_ids.get(index)
 
     retained.sort(
         key=lambda index: (_selection_hash(split_seed, examples[index].subject), _example_tie_key(examples[index]))
