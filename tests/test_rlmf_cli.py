@@ -131,6 +131,15 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     )
     assert locked_metadata["normalization_version"]
     assert locked_metadata["alias_artifact_hash"]
+    alias_marker = (
+        tmp_path
+        / "runs"
+        / "rlmf"
+        / _config().study_id
+        / "endpoints"
+        / "prepare-data.complete.json"
+    )
+    assert locked_metadata["alias_endpoint_marker_hash"] == sha256_file(alias_marker)
     assert locked_metadata["candidate_endpoint"] == "audit_candidates_locked"
     assert locked_metadata["candidate_marker_hash"]
     assert locked_metadata["parent_sample_hash"] is None
@@ -168,6 +177,9 @@ def test_cli_seals_independent_rating_sources_and_appends_test_extensions(
     )
     assert locked_endpoint["parent_hashes"]["development_judge_audit"] == sha256_file(
         development_marker
+    )
+    assert locked_endpoint["parent_hashes"]["alias_endpoint_marker"] == sha256_file(
+        alias_marker
     )
     for role in ("rater_a", "rater_b", "adjudication"):
         assert locked_endpoint["parent_hashes"][f"{role}_endpoint"]
@@ -444,6 +456,64 @@ def test_final_record_rejects_missing_development_endpoint_and_fabricated_manife
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="endpoint schema"):
         cli.main(args)
+
+
+def test_locked_record_rejects_changed_frozen_alias_endpoint_marker(
+    tmp_path, capsys
+):
+    development = _audit_candidates(per_stratum=25, phase="development")
+    locked = _audit_candidates(per_stratum=50, phase="locked")
+    _seal_aliases(tmp_path, [*development, *locked])
+    development_marker = _complete_development_audit(tmp_path, capsys, development)
+    _seal_candidates(
+        tmp_path,
+        locked,
+        phase="locked",
+        development_hash=sha256_file(development_marker),
+    )
+    build = _run_build(tmp_path, capsys, phase="locked", size=400)
+    manifest_path = _sealed_rating_manifest(
+        tmp_path,
+        capsys,
+        Path(build["ledger"]),
+        "locked-alias-marker-adversarial",
+        phase="locked",
+        size=400,
+    )
+    aliases = (
+        tmp_path
+        / "runs"
+        / "rlmf"
+        / _config().study_id
+        / "data"
+        / "aliases.jsonl"
+    )
+    alias_bytes = aliases.read_bytes()
+    alias_marker = aliases.parent.parent / "endpoints" / "prepare-data.complete.json"
+    original_alias_marker_hash = sha256_file(alias_marker)
+    marker_payload = json.loads(alias_marker.read_text())
+    marker_payload["created_at"] = "2099-01-01T00:00:00+00:00"
+    alias_marker.write_text(json.dumps(marker_payload, indent=2, sort_keys=True))
+
+    assert aliases.read_bytes() == alias_bytes
+    assert RLMFArtifactStore(tmp_path).verify_endpoint(
+        _config().study_id, "prepare-data"
+    )
+    assert sha256_file(alias_marker) != original_alias_marker_hash
+
+    with pytest.raises(ValueError, match="alias endpoint marker"):
+        cli.main(
+            [
+                "rlmf-record-judge-audit",
+                str(manifest_path),
+                "--config",
+                str(CONFIG_PATH),
+                "--phase",
+                "locked",
+                "--root",
+                str(tmp_path),
+            ]
+        )
 
 
 def test_cli_help_documents_staged_human_input_commands(capsys):

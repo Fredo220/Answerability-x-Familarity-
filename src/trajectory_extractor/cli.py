@@ -936,6 +936,7 @@ def _build_rlmf_judge_audit(args, config: RLMFConfig, store: RLMFArtifactStore) 
     parents = {
         "candidate_marker": sha256_file(candidate_marker),
         "alias_artifact": sha256_file(aliases_path),
+        "alias_endpoint_marker": sha256_file(aliases_marker),
         "parser_source": parser_hash,
     }
     if development_marker is not None:
@@ -991,11 +992,15 @@ def _record_rlmf_judge_audit(
         or metadata.get("parser_source_hash") != parser_hash
     ):
         raise ValueError("audit parser and normalization freeze no longer verifies")
-    aliases_path, _alias_marker, _alias_record = _verified_endpoint_artifact(
+    aliases_path, alias_marker, _alias_record = _verified_endpoint_artifact(
         store, config.study_id, "prepare-data", "data/aliases.jsonl"
     )
-    if metadata.get("alias_artifact_hash") != sha256_file(aliases_path):
+    alias_artifact_hash = sha256_file(aliases_path)
+    alias_endpoint_marker_hash = sha256_file(alias_marker)
+    if metadata.get("alias_artifact_hash") != alias_artifact_hash:
         raise ValueError("audit alias artifact no longer verifies")
+    if metadata.get("alias_endpoint_marker_hash") != alias_endpoint_marker_hash:
+        raise ValueError("audit alias endpoint marker no longer verifies")
     ledger_rows = tuple(
         AuditRow.from_ledger_record(row) for row in _read_jsonl(ledger_path)
     )
@@ -1013,7 +1018,14 @@ def _record_rlmf_judge_audit(
             != development_hash
         ):
             raise ValueError("locked audit sample does not bind development_judge_audit")
-        if metadata.get("proxy_freeze") != development_metadata.get("proxy_freeze"):
+        development_proxy_freeze = development_metadata.get("proxy_freeze")
+        if (
+            not isinstance(development_proxy_freeze, dict)
+            or development_proxy_freeze.get("alias_endpoint_marker_hash")
+            != alias_endpoint_marker_hash
+        ):
+            raise ValueError("locked audit alias endpoint marker changed from development")
+        if metadata.get("proxy_freeze") != development_proxy_freeze:
             raise ValueError("locked audit changed the development proxy freeze")
     if args.phase == "test":
         _verified_locked_audit(store, config.study_id)
@@ -1081,6 +1093,7 @@ def _record_rlmf_judge_audit(
         "audit_sample": sha256_file(sample_marker),
         "parser_source": parser_hash,
         "alias_artifact": sha256_file(aliases_path),
+        "alias_endpoint_marker": alias_endpoint_marker_hash,
         "rating_manifest": sha256_file(Path(args.path)),
         **{
             f"{name}_endpoint": source_metadata[name]["marker_sha256"]
