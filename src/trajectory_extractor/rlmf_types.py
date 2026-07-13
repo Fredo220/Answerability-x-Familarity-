@@ -14,6 +14,15 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _CONFIDENCE_VALUES = tuple(index / 10 for index in range(11))
 _ARMS = ("standard_grpo", "rlmf")
 _SPLIT_NAMES = {"pre_sft", "rl_train", "validation", "test"}
+_BEHAVIORAL_PROVENANCE_KEYS = frozenset(
+    {
+        "designated_bundle_hash",
+        "auxiliary_bundle_hash",
+        "alias_evidence_hash",
+        "judge_evidence_hash",
+        "config_hash",
+    }
+)
 
 _COMMON_CONFIG = {
     "schema_version": 1,
@@ -541,17 +550,17 @@ class BehavioralEvaluationRecord:
             raise ValueError("auxiliary_proxy_labels must be boolean")
         if self.correctness is not None and type(self.correctness) is not bool:
             raise ValueError("correctness must be boolean or None")
-        if not isinstance(self.provenance, Mapping) or not self.provenance:
-            raise ValueError("provenance must be a non-empty mapping")
+        from trajectory_extractor.rlmf_format import parse_rlmf_output
+
+        if parse_rlmf_output(self.designated_raw_output) != self.designated:
+            raise ValueError("designated_raw_output must reparse exactly to designated")
+        if not isinstance(self.provenance, Mapping):
+            raise ValueError("provenance must be a mapping")
         provenance = dict(self.provenance)
-        if any(
-            not isinstance(key, str)
-            or not key
-            or not isinstance(value, str)
-            or not value
-            for key, value in provenance.items()
-        ):
-            raise ValueError("provenance keys and values must be non-empty strings")
+        if set(provenance) != _BEHAVIORAL_PROVENANCE_KEYS:
+            raise ValueError("provenance schema is invalid")
+        for key, value in provenance.items():
+            _validate_sha256(value, f"provenance {key}")
         object.__setattr__(self, "auxiliary_member_ids", member_ids)
         object.__setattr__(self, "auxiliary_proxy_labels", labels)
         object.__setattr__(self, "provenance", MappingProxyType(provenance))

@@ -22,6 +22,7 @@ from trajectory_extractor.rlmf_metrics import (
     strict_format_reward,
     training_leave_one_out_confidence,
 )
+import trajectory_extractor.rlmf_metrics as rlmf_metrics
 from trajectory_extractor.rlmf_types import BehavioralEvaluationRecord, ParsedRLMFOutput
 
 
@@ -95,7 +96,7 @@ def test_quadratic_rewards_and_tau_boundary_match_upstream_behavior():
     )
 
 
-def test_strict_and_soft_format_rewards_match_frozen_pinned_upstream_edge_fixtures():
+def test_local_strict_schema_reward_rejects_prose_while_upstream_soft_format_fixtures_stay_frozen():
     fixtures = [
         ("<sentence>A</sentence><confidence>0.8</confidence>", True, 0.0),
         ("<sentence>A <sentence>B</sentence></sentence><confidence>0.8</confidence>", False, -0.125),
@@ -299,8 +300,8 @@ def test_judge_bias_adjustment_consumes_whole_joint_draws_and_returns_registered
     records = []
     for seed in (11, 22, 33):
         for prompt in ("p1", "p2", "p3"):
-            records.append(_judge_row("standard_grpo", seed, prompt, 0.5, positives=10))
-            records.append(_judge_row("rlmf", seed, prompt, 0.6, positives=10))
+            records.append(_behavior_record("standard_grpo", seed, prompt, 0.5, positives=10, correctness=True))
+            records.append(_behavior_record("rlmf", seed, prompt, 0.6, positives=10, correctness=True))
     audit = _confusion_uncertainty()
     audit["estimates"]["rlmf:equivalence"] = {
         "sensitivity": {"lower": 0.8, "estimate": 0.8, "upper": 0.8},
@@ -313,6 +314,9 @@ def test_judge_bias_adjustment_consumes_whole_joint_draws_and_returns_registered
     second = judge_bias_adjusted_delta(records, audit, rng_seed=19)
 
     assert first == second
+    assert first.status == "evaluable"
+    assert first.total_pairs == first.complete_pairs == 9
+    assert first.excluded_pair_count == 0
     assert first.proxy_delta_cmfg_star.estimate == pytest.approx(-0.1, abs=1e-10)
     assert first.adjusted_delta_cmfg_star.estimate == pytest.approx(-0.025, abs=1e-10)
     assert first.absolute_differential_bias.estimate == pytest.approx(0.075, abs=1e-10)
@@ -334,9 +338,65 @@ def test_judge_bias_adjustment_consumes_whole_joint_draws_and_returns_registered
     with pytest.raises(ValueError, match="sampling design"):
         judge_bias_adjusted_delta(records, malformed_design, rng_seed=19)
 
-    missing_seed = [row for row in records if row["seed"] != 33]
-    with pytest.raises(ValueError, match="exactly the requested fixed seeds"):
+    missing_seed = [row for row in records if row.seed != 33]
+    with pytest.raises(ValueError, match="exactly the registered fixed seeds"):
         judge_bias_adjusted_delta(missing_seed, audit, rng_seed=19)
+
+    with pytest.raises(ValueError, match="BehavioralEvaluationRecord"):
+        judge_bias_adjusted_delta([_judge_row("standard_grpo", 11, "p1", 0.5, positives=10)], audit, rng_seed=19)
+
+
+def test_judge_bias_adjustment_excludes_only_malformed_complete_pairs_and_reports_not_evaluable():
+    records = []
+    for seed in (11, 22, 33):
+        records.extend(
+            (
+                _behavior_record("standard_grpo", seed, "good", 0.5, positives=10, correctness=True),
+                _behavior_record("rlmf", seed, "good", 0.6, positives=10, correctness=True),
+                _behavior_record("standard_grpo", seed, "bad", None, positives=10, correctness=None),
+                _behavior_record("rlmf", seed, "bad", 0.6, positives=10, correctness=True),
+            )
+        )
+
+    result = judge_bias_adjusted_delta(records, _confusion_uncertainty(), rng_seed=19)
+
+    assert result.status == "evaluable"
+    assert result.total_pairs == 6
+    assert result.complete_pairs == 3
+    assert result.excluded_pair_count == 3
+    assert result.excluded_pair_ids == ((11, "bad"), (22, "bad"), (33, "bad"))
+
+    no_complete = [
+        _behavior_record(row.arm, row.seed, row.example_id, None, positives=10, correctness=None)
+        for row in records
+    ]
+    not_evaluable = judge_bias_adjusted_delta(no_complete, _confusion_uncertainty(), rng_seed=19)
+    assert not_evaluable.status == "not_evaluable"
+    assert not_evaluable.reason == "no_complete_pairs"
+    assert not_evaluable.proxy_delta_cmfg_star is None
+
+    seedless = [
+        _behavior_record(
+            row.arm,
+            row.seed,
+            row.example_id,
+            None if row.seed == 33 else row.confidence,
+            positives=10,
+            correctness=None if row.seed == 33 else True,
+        )
+        for row in records
+    ]
+    missing_complete_seed = judge_bias_adjusted_delta(
+        seedless, _confusion_uncertainty(), rng_seed=19
+    )
+    assert missing_complete_seed.status == "not_evaluable"
+    assert missing_complete_seed.reason == "registered_seed_has_no_complete_pairs"
+
+
+def test_task5_percentile_interval_does_not_widen_to_include_point_estimate():
+    interval = rlmf_metrics._percentile_interval(1.0, (0.0, 0.0, 0.0, 0.0))
+
+    assert interval.to_record() == {"lower": 0.0, "estimate": 1.0, "upper": 0.0}
 
 
 def test_all_metric_interfaces_fail_closed_on_nonfinite_or_malformed_input():
@@ -364,12 +424,22 @@ def _behavior_record(arm, seed, example_id, confidence, *, positives, correctnes
         seed=seed,
         example_id=example_id,
         designated_member_id=f"{example_id}-designated",
-        designated_raw_output="raw",
+        designated_raw_output=(
+            f"<sentence>answer</sentence><confidence>{confidence:.1f}</confidence>"
+            if confidence is not None
+            else "malformed output"
+        ),
         designated=parsed,
         auxiliary_member_ids=tuple(f"{example_id}-aux-{index}" for index in range(20)),
         auxiliary_proxy_labels=(True,) * positives + (False,) * (20 - positives),
         correctness=correctness,
-        provenance={"bundle_hash": "a" * 64},
+        provenance={
+            "designated_bundle_hash": "a" * 64,
+            "auxiliary_bundle_hash": "b" * 64,
+            "alias_evidence_hash": "c" * 64,
+            "judge_evidence_hash": "d" * 64,
+            "config_hash": "e" * 64,
+        },
     )
 
 

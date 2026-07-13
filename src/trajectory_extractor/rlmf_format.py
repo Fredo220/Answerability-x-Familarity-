@@ -12,6 +12,8 @@ from typing import Any, Mapping, Sequence
 from trajectory_extractor.rlmf_types import ParsedRLMFOutput
 
 
+# This exact two-tag parser is a local shared-arm safety/reproducibility rule.
+# It is intentionally stricter than the pinned upstream formatter.
 PARSER_VERSION = "rlmf-output-parser-v1"
 NORMALIZATION_VERSION = "rlmf-answer-normalization-v1"
 REGISTERED_AUDIT_SEED = 20260713
@@ -159,7 +161,7 @@ class Interval:
             math.isfinite(value) for value in (self.lower, self.estimate, self.upper)
         ):
             raise ValueError("interval values must be finite")
-        if not self.lower <= self.estimate <= self.upper:
+        if not self.lower <= self.upper:
             raise ValueError("interval bounds are invalid")
 
     def to_record(self) -> dict[str, float]:
@@ -355,7 +357,7 @@ def score_blinded_judge_audit(rows: Sequence[AuditRow]) -> JudgeAuditDecision:
 def estimate_arm_confusion_uncertainty(
     rows: Sequence[AuditRow],
 ) -> dict[str, Any]:
-    rows = tuple(rows)
+    rows = tuple(sorted(rows, key=_audit_row_sort_key))
     if not rows or any(row.phase != "test" for row in rows):
         raise ValueError("arm confusion uncertainty requires a completed test audit")
     decision = score_blinded_judge_audit(rows)
@@ -373,7 +375,8 @@ def estimate_arm_confusion_uncertainty(
     for _ in range(replicates):
         bootstrap_rows = tuple(
             row
-            for stratum_rows in strata.values()
+            for stratum in sorted(strata, key=_stratum_sort_key)
+            for stratum_rows in (strata[stratum],)
             for row in (
                 stratum_rows[rng.randrange(len(stratum_rows))]
                 for _ in range(len(stratum_rows))
@@ -572,7 +575,19 @@ def _rows_by_stratum(
     result: dict[tuple[Any, str, bool], list[AuditRow]] = {}
     for row in rows:
         result.setdefault(_stratum(row), []).append(row)
-    return {stratum: tuple(values) for stratum, values in result.items()}
+    return {
+        stratum: tuple(sorted(values, key=_audit_row_sort_key))
+        for stratum, values in sorted(result.items(), key=lambda item: _stratum_sort_key(item[0]))
+    }
+
+
+def _stratum_sort_key(stratum: tuple[Any, str, bool]) -> tuple[str, str, bool]:
+    group, judgment_type, proxy_label = stratum
+    return ("" if group is None else str(group), judgment_type, proxy_label)
+
+
+def _audit_row_sort_key(row: AuditRow) -> tuple[str, str, bool, str, str]:
+    return (*_stratum_sort_key(_stratum(row)), row.audit_id, row.source_id)
 
 
 def _rank(seed: int, value: str) -> str:
@@ -664,9 +679,9 @@ def _wilson_interval(successes: int, total: int) -> Interval:
 def _bootstrap_interval(estimate: float, values: Sequence[float]) -> Interval:
     ordered = sorted(values)
     return Interval(
-        lower=min(estimate, _quantile(ordered, 0.025)),
+        lower=_quantile(ordered, 0.025),
         estimate=estimate,
-        upper=max(estimate, _quantile(ordered, 0.975)),
+        upper=_quantile(ordered, 0.975),
     )
 
 

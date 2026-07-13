@@ -253,11 +253,7 @@ def test_record_constructor_deep_freezes_mapping_inputs():
 
 
 def test_behavioral_evaluation_record_is_immutable_provenanced_and_allows_malformed_designated():
-    provenance = {
-        "bundle_hash": "a" * 64,
-        "checkpoint_hash": "b" * 64,
-        "config_hash": "c" * 64,
-    }
+    provenance = _behavioral_provenance()
     record = BehavioralEvaluationRecord(
         arm="rlmf",
         seed=11,
@@ -271,11 +267,11 @@ def test_behavioral_evaluation_record_is_immutable_provenanced_and_allows_malfor
         provenance=provenance,
     )
 
-    provenance["bundle_hash"] = "d" * 64
+    provenance["designated_bundle_hash"] = "d" * 64
 
     assert record.designated.valid_format is False
     assert record.valid_complete_case is False
-    assert record.provenance["bundle_hash"] == "a" * 64
+    assert record.provenance["designated_bundle_hash"] == "a" * 64
     assert len(record.auxiliary_member_ids) == 20
     with pytest.raises(FrozenInstanceError):
         record.correctness = True
@@ -292,7 +288,7 @@ def test_behavioral_evaluation_record_requires_designated_plus_twenty_distinct_a
         "auxiliary_member_ids": tuple(f"aux-{index}" for index in range(20)),
         "auxiliary_proxy_labels": (True,) * 20,
         "correctness": True,
-        "provenance": {"bundle_hash": "a" * 64},
+        "provenance": _behavioral_provenance(),
     }
 
     with pytest.raises(ValueError, match="exactly 20"):
@@ -302,6 +298,47 @@ def test_behavioral_evaluation_record_requires_designated_plus_twenty_distinct_a
                 "auxiliary_member_ids": fields["auxiliary_member_ids"][:-1],
             }
         )
+
+
+def test_behavioral_evaluation_record_requires_exact_hash_provenance_and_raw_parse_binding():
+    fields = {
+        "arm": "rlmf",
+        "seed": 11,
+        "example_id": "popqa-001",
+        "designated_member_id": "designated-0",
+        "designated_raw_output": "<sentence>A</sentence><confidence>0.8</confidence>",
+        "designated": ParsedRLMFOutput(answer="A", confidence=0.8, valid_format=True),
+        "auxiliary_member_ids": tuple(f"aux-{index}" for index in range(20)),
+        "auxiliary_proxy_labels": (True,) * 20,
+        "correctness": True,
+        "provenance": _behavioral_provenance(),
+    }
+
+    with pytest.raises(ValueError, match="provenance schema"):
+        BehavioralEvaluationRecord(
+            **{**fields, "provenance": {"bundle_hash": "a" * 64}}
+        )
+    with pytest.raises(ValueError, match="SHA-256"):
+        BehavioralEvaluationRecord(
+            **{
+                **fields,
+                "provenance": {**fields["provenance"], "config_hash": "not-a-hash"},
+            }
+        )
+    with pytest.raises(ValueError, match="reparse"):
+        BehavioralEvaluationRecord(
+            **{**fields, "designated_raw_output": "malformed output"}
+        )
+
+
+def _behavioral_provenance():
+    return {
+        "designated_bundle_hash": "a" * 64,
+        "auxiliary_bundle_hash": "b" * 64,
+        "alias_evidence_hash": "c" * 64,
+        "judge_evidence_hash": "d" * 64,
+        "config_hash": "e" * 64,
+    }
     with pytest.raises(ValueError, match="distinct"):
         BehavioralEvaluationRecord(
             **{

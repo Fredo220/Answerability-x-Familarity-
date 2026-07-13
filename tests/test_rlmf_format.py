@@ -14,6 +14,7 @@ from trajectory_extractor.rlmf_format import (
     parse_rlmf_output,
     score_blinded_judge_audit,
 )
+import trajectory_extractor.rlmf_format as rlmf_format
 
 
 def test_strict_answer_and_metascore_schemas_accept_only_the_registered_form():
@@ -281,6 +282,27 @@ def test_task4_emits_confusion_uncertainty_but_defers_endpoint_bias_propagation(
 
     with pytest.raises(ValueError, match="Task 5/10"):
         bound_differential_judge_bias(rows, replicates=200)
+
+
+def test_task4_confusion_bootstrap_is_invariant_to_audit_row_permutations():
+    rows = _rated(
+        build_judge_audit_sample(
+            _candidates(per_stratum=125, phase="test"),
+            phase="test",
+            size=1000,
+            seed=20260713,
+        )
+    )
+
+    assert estimate_arm_confusion_uncertainty(rows) == estimate_arm_confusion_uncertainty(
+        tuple(reversed(rows))
+    )
+
+
+def test_task4_bootstrap_interval_keeps_exact_percentiles_when_estimate_is_outside():
+    interval = rlmf_format._bootstrap_interval(1.0, (0.0, 0.0, 0.0, 0.0))
+
+    assert interval.to_record() == {"lower": 0.0, "estimate": 1.0, "upper": 0.0}
 
 
 def test_proxy_stratified_confusion_uses_population_weights_not_raw_audit_ratios():

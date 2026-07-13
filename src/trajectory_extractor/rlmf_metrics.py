@@ -79,15 +79,66 @@ class CalibrationMetricsResult:
 
 @dataclass(frozen=True)
 class JudgeBiasAdjustedDeltaResult:
-    proxy_delta_cmfg_star: Interval
-    adjusted_delta_cmfg_star: Interval
-    absolute_differential_bias: Interval
+    status: str
+    reason: str | None
+    total_pairs: int
+    complete_pairs: int
+    excluded_pair_count: int
+    excluded_pair_ids: tuple[tuple[int, str], ...]
+    proxy_delta_cmfg_star: Interval | None
+    adjusted_delta_cmfg_star: Interval | None
+    absolute_differential_bias: Interval | None
 
-    def to_record(self) -> dict[str, dict[str, float]]:
+    def __post_init__(self) -> None:
+        if self.status not in {"evaluable", "not_evaluable"}:
+            raise ValueError("judge-bias status is invalid")
+        if self.total_pairs < 0 or self.complete_pairs < 0:
+            raise ValueError("judge-bias pair counts must be non-negative")
+        if self.complete_pairs + self.excluded_pair_count != self.total_pairs:
+            raise ValueError("judge-bias pair counts are inconsistent")
+        if self.status == "evaluable":
+            if self.reason is not None or any(
+                interval is None
+                for interval in (
+                    self.proxy_delta_cmfg_star,
+                    self.adjusted_delta_cmfg_star,
+                    self.absolute_differential_bias,
+                )
+            ):
+                raise ValueError("evaluable judge-bias result requires all intervals")
+        elif self.reason is None or any(
+            interval is not None
+            for interval in (
+                self.proxy_delta_cmfg_star,
+                self.adjusted_delta_cmfg_star,
+                self.absolute_differential_bias,
+            )
+        ):
+            raise ValueError("not-evaluable judge-bias result must contain only a reason")
+
+    def to_record(self) -> dict[str, Any]:
         return {
-            "proxy_delta_cmfg_star": self.proxy_delta_cmfg_star.to_record(),
-            "adjusted_delta_cmfg_star": self.adjusted_delta_cmfg_star.to_record(),
-            "absolute_differential_bias": self.absolute_differential_bias.to_record(),
+            "status": self.status,
+            "reason": self.reason,
+            "total_pairs": self.total_pairs,
+            "complete_pairs": self.complete_pairs,
+            "excluded_pair_count": self.excluded_pair_count,
+            "excluded_pair_ids": [list(value) for value in self.excluded_pair_ids],
+            "proxy_delta_cmfg_star": (
+                None
+                if self.proxy_delta_cmfg_star is None
+                else self.proxy_delta_cmfg_star.to_record()
+            ),
+            "adjusted_delta_cmfg_star": (
+                None
+                if self.adjusted_delta_cmfg_star is None
+                else self.adjusted_delta_cmfg_star.to_record()
+            ),
+            "absolute_differential_bias": (
+                None
+                if self.absolute_differential_bias is None
+                else self.absolute_differential_bias.to_record()
+            ),
         }
 
 
@@ -176,6 +227,7 @@ def metacognitive_reward(metascore: Any, gold_level: Any) -> np.ndarray:
 
 
 def strict_format_reward(parsed: Sequence[ParsedRLMFOutput]) -> np.ndarray:
+    """Score the project's local exact-two-tag schema, not upstream parity."""
     if isinstance(parsed, (str, bytes)) or not isinstance(parsed, Sequence):
         raise ValueError("parsed outputs must be a sequence")
     values = tuple(parsed)
@@ -187,7 +239,7 @@ def strict_format_reward(parsed: Sequence[ParsedRLMFOutput]) -> np.ndarray:
 
 
 def soft_format_reward(texts: Sequence[str]) -> np.ndarray:
-    """Mirror upstream approximate format rewards without prompt-length options."""
+    """Keep upstream-derived approximate-format fixtures frozen locally."""
     texts = _string_sequence(texts, "texts", allow_empty=True)
     return np.asarray([_soft_format_one(text) for text in texts], dtype=float)
 
@@ -368,14 +420,26 @@ def paired_fixed_seed_prompt_bootstrap(
 
 
 def judge_bias_adjusted_delta(
-    records: Sequence[Any],
+    records: Sequence[BehavioralEvaluationRecord],
     audit: Mapping[str, Any],
     *,
     rng_seed: int,
 ) -> JudgeBiasAdjustedDeltaResult:
     """Propagate every aligned confusion draw through paired delta cMFG*."""
+    records = _behavioral_evaluation_records(records)
     confusion = _validate_confusion_uncertainty(audit)
-    rows = _judge_rows(records)
+    complete_records, total_pairs, excluded_pair_ids, complete_by_seed = (
+        _paired_behavioral_complete_cases(records)
+    )
+    if not complete_records:
+        return _not_evaluable_judge_bias_result(
+            "no_complete_pairs", total_pairs, excluded_pair_ids
+        )
+    if any(not complete_by_seed[seed] for seed in _CONFIRMATORY_SEEDS):
+        return _not_evaluable_judge_bias_result(
+            "registered_seed_has_no_complete_pairs", total_pairs, excluded_pair_ids
+        )
+    rows = _judge_rows(complete_records)
     _, groups = _paired_prompt_groups(rows, _CONFIRMATORY_SEEDS)
     rng_seed = _integer(rng_seed, "rng_seed")
     estimates = {
@@ -411,6 +475,12 @@ def judge_bias_adjusted_delta(
         adjusted_values.append(adjusted_delta)
         absolute_bias_values.append(abs(adjusted_delta - proxy_delta))
     return JudgeBiasAdjustedDeltaResult(
+        status="evaluable",
+        reason=None,
+        total_pairs=total_pairs,
+        complete_pairs=total_pairs - len(excluded_pair_ids),
+        excluded_pair_count=len(excluded_pair_ids),
+        excluded_pair_ids=excluded_pair_ids,
         proxy_delta_cmfg_star=_percentile_interval(proxy_estimate, proxy_values),
         adjusted_delta_cmfg_star=_percentile_interval(adjusted_estimate, adjusted_values),
         absolute_differential_bias=_percentile_interval(
@@ -594,28 +664,88 @@ def _paired_prompt_groups(
 
 def _judge_rows(records: Sequence[Any]) -> tuple[dict[str, Any], ...]:
     result = []
-    for row in _nonempty_records(records):
-        labels = _record_value(row, "auxiliary_proxy_labels")
-        if (
-            isinstance(labels, (str, bytes))
-            or not isinstance(labels, Sequence)
-            or len(labels) != 20
-        ):
-            raise ValueError(
-                "judge adjustment requires exactly 20 auxiliary proxy labels per row"
-            )
-        if any(type(value) is not bool for value in labels):
-            raise ValueError("auxiliary proxy labels must be boolean")
+    for row in _behavioral_evaluation_records(records):
+        if not row.valid_complete_case:
+            raise ValueError("judge adjustment requires valid complete-case records")
         result.append(
             {
-                "arm": _record_value(row, "arm"),
-                "seed": _record_value(row, "seed"),
-                "example_id": _record_value(row, "example_id"),
-                "confidence": _record_unit(row, "confidence"),
-                "auxiliary_proxy_labels": tuple(labels),
+                "arm": row.arm,
+                "seed": row.seed,
+                "example_id": row.example_id,
+                "confidence": _unit_scalar(row.confidence, "confidence"),
+                "auxiliary_proxy_labels": row.auxiliary_proxy_labels,
             }
         )
     return tuple(result)
+
+
+def _paired_behavioral_complete_cases(
+    records: Sequence[BehavioralEvaluationRecord],
+) -> tuple[
+    tuple[BehavioralEvaluationRecord, ...],
+    int,
+    tuple[tuple[int, str], ...],
+    dict[int, tuple[tuple[BehavioralEvaluationRecord, BehavioralEvaluationRecord], ...]],
+]:
+    rows = _behavioral_evaluation_records(records)
+    if {row.seed for row in rows} != set(_CONFIRMATORY_SEEDS):
+        raise ValueError("records must contain exactly the registered fixed seeds")
+    indexed: dict[tuple[int, str, str], BehavioralEvaluationRecord] = {}
+    for row in rows:
+        key = (row.seed, row.example_id, row.arm)
+        if key in indexed:
+            raise ValueError("behavioral records must be unique by seed, example_id, and arm")
+        indexed[key] = row
+    all_pairs: list[tuple[BehavioralEvaluationRecord, BehavioralEvaluationRecord]] = []
+    for seed in _CONFIRMATORY_SEEDS:
+        prompt_ids = sorted({example_id for current_seed, example_id, _arm in indexed if current_seed == seed})
+        for example_id in prompt_ids:
+            try:
+                all_pairs.append(
+                    tuple(indexed[(seed, example_id, arm)] for arm in _ARMS)
+                )
+            except KeyError as error:
+                raise ValueError(
+                    "judge adjustment requires raw paired arm records within every seed"
+                ) from error
+    complete_by_seed: dict[
+        int, list[tuple[BehavioralEvaluationRecord, BehavioralEvaluationRecord]]
+    ] = {seed: [] for seed in _CONFIRMATORY_SEEDS}
+    excluded_pair_ids = []
+    for pair in all_pairs:
+        seed, example_id = pair[0].seed, pair[0].example_id
+        if all(row.valid_complete_case for row in pair):
+            complete_by_seed[seed].append(pair)
+        else:
+            excluded_pair_ids.append((seed, example_id))
+    frozen_complete_by_seed = {
+        seed: tuple(pairs) for seed, pairs in complete_by_seed.items()
+    }
+    complete_records = tuple(
+        row for seed in _CONFIRMATORY_SEEDS for pair in frozen_complete_by_seed[seed] for row in pair
+    )
+    return (
+        complete_records,
+        len(all_pairs),
+        tuple(excluded_pair_ids),
+        frozen_complete_by_seed,
+    )
+
+
+def _not_evaluable_judge_bias_result(
+    reason: str, total_pairs: int, excluded_pair_ids: tuple[tuple[int, str], ...]
+) -> JudgeBiasAdjustedDeltaResult:
+    return JudgeBiasAdjustedDeltaResult(
+        status="not_evaluable",
+        reason=reason,
+        total_pairs=total_pairs,
+        complete_pairs=total_pairs - len(excluded_pair_ids),
+        excluded_pair_count=len(excluded_pair_ids),
+        excluded_pair_ids=excluded_pair_ids,
+        proxy_delta_cmfg_star=None,
+        adjusted_delta_cmfg_star=None,
+        absolute_differential_bias=None,
+    )
 
 
 def _adjusted_delta(
@@ -778,7 +908,7 @@ def _interval_record(value: Any, name: str) -> dict[str, float]:
     if not isinstance(value, Mapping) or set(value) != {"lower", "estimate", "upper"}:
         raise ValueError(f"{name} interval is malformed")
     result = {key: _unit_scalar(value[key], f"{name} {key}") for key in value}
-    if not result["lower"] <= result["estimate"] <= result["upper"]:
+    if not result["lower"] <= result["upper"]:
         raise ValueError(f"{name} interval bounds are invalid")
     return result
 
@@ -803,9 +933,9 @@ def _metric_value(
 def _percentile_interval(estimate: float, values: Sequence[float]) -> Interval:
     lower, upper = np.quantile(np.asarray(values, dtype=float), [0.025, 0.975])
     return Interval(
-        lower=min(estimate, float(lower)),
+        lower=float(lower),
         estimate=estimate,
-        upper=max(estimate, float(upper)),
+        upper=float(upper),
     )
 
 
