@@ -11,7 +11,7 @@
     "sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
   },
   "gemma_scope": {
-    "repository": "google/gemma-scope-2b-pt",
+    "repository": "google/gemma-scope-2b-pt-res",
     "revision": "fd571b47c1c64851e9b1989792367b9babb4af63"
   },
   "circuit_tracer": {

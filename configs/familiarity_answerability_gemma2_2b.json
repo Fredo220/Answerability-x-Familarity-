@@ -27,11 +27,19 @@
     "h1_min_interaction": 0.05,
     "h2_noninferiority_margin": 0.05,
     "h5_relative_log_loss_min": 0.02,
+    "h6_relative_log_loss_min": 0.01,
+    "h7_average_effect_min": 0.05,
+    "h7_control_margin_min": 0.02,
     "intervention_accuracy_drop_max": 0.05,
     "intervention_control_rate_change_max": 0.03,
     "probe_auroc_min": 0.65,
     "probe_balanced_accuracy_min": 0.55,
-    "sae_loss_recovery_min": 0.70
+    "sae_loss_recovery_min": 0.70,
+    "sae_finite_fraction_min": 0.95,
+    "circuit_proxy_spearman_min": 0.80,
+    "circuit_distribution_spearman_min": 0.80,
+    "circuit_perturbation_spearman_min": 0.60,
+    "circuit_sign_concordance_min": 0.75
   },
   "anchors": [
     "target_intro_end",

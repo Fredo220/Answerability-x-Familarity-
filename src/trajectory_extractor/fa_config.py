@@ -4,9 +4,10 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+from types import MappingProxyType
 
 
 CONFIRMATORY_SPLIT_COUNTS = {
@@ -22,9 +23,40 @@ REGISTERED_ANCHORS = (
     "user_prompt_end",
     "assistant_prefix_end",
 )
+CONFIRMATORY_MODEL_ID = "google/gemma-2-2b-it"
+CONFIRMATORY_MODEL_REVISION = "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+CONFIRMATORY_CHAT_TEMPLATE_SHA256 = (
+    "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+)
+CONFIRMATORY_SPLIT_SEED = 20260722
+CONFIRMATORY_BOOTSTRAP_REPLICATES = 10000
+CONFIRMATORY_BOOTSTRAP_SEED = 20260722
+CONFIRMATORY_GENERATION = {
+    "do_sample": False,
+    "max_new_tokens": 16,
+    "temperature": 0.0,
+}
+CONFIRMATORY_THRESHOLDS = {
+    "format_validity_min": 0.95,
+    "h1_min_interaction": 0.05,
+    "h2_noninferiority_margin": 0.05,
+    "h5_relative_log_loss_min": 0.02,
+    "h6_relative_log_loss_min": 0.01,
+    "h7_average_effect_min": 0.05,
+    "h7_control_margin_min": 0.02,
+    "intervention_accuracy_drop_max": 0.05,
+    "intervention_control_rate_change_max": 0.03,
+    "probe_auroc_min": 0.65,
+    "probe_balanced_accuracy_min": 0.55,
+    "sae_loss_recovery_min": 0.70,
+    "sae_finite_fraction_min": 0.95,
+    "circuit_proxy_spearman_min": 0.80,
+    "circuit_distribution_spearman_min": 0.80,
+    "circuit_perturbation_spearman_min": 0.60,
+    "circuit_sign_concordance_min": 0.75,
+}
 
 _IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}\Z")
-_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 
 
@@ -46,6 +78,12 @@ class FAConfig:
     thresholds: Mapping[str, float]
     anchors: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "split_counts", _freeze_json_value(self.split_counts))
+        object.__setattr__(self, "generation", _freeze_json_value(self.generation))
+        object.__setattr__(self, "thresholds", _freeze_json_value(self.thresholds))
+        object.__setattr__(self, "anchors", tuple(self.anchors))
+
     @classmethod
     def from_json(cls, path: str | Path) -> "FAConfig":
         value = json.loads(
@@ -57,10 +95,10 @@ class FAConfig:
             config = cls(
                 **{
                     **value,
-                    "split_counts": dict(value["split_counts"]),
-                    "generation": dict(value["generation"]),
-                    "thresholds": dict(value["thresholds"]),
-                    "anchors": tuple(value["anchors"]),
+                    "split_counts": value["split_counts"],
+                    "generation": value["generation"],
+                    "thresholds": value["thresholds"],
+                    "anchors": value["anchors"],
                 }
             )
         except (KeyError, TypeError) as error:
@@ -70,7 +108,27 @@ class FAConfig:
 
     @property
     def canonical_bytes(self) -> bytes:
-        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return json.dumps(
+            {
+                "schema_version": self.schema_version,
+                "profile": self.profile,
+                "study_id": self.study_id,
+                "run_id": self.run_id,
+                "model_id": self.model_id,
+                "model_revision": self.model_revision,
+                "tokenizer_revision": self.tokenizer_revision,
+                "chat_template_sha256": self.chat_template_sha256,
+                "split_seed": self.split_seed,
+                "split_counts": _thaw_json_value(self.split_counts),
+                "generation": _thaw_json_value(self.generation),
+                "bootstrap_replicates": self.bootstrap_replicates,
+                "bootstrap_seed": self.bootstrap_seed,
+                "thresholds": _thaw_json_value(self.thresholds),
+                "anchors": _thaw_json_value(self.anchors),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
     @property
     def config_hash(self) -> str:
@@ -88,10 +146,14 @@ class FAConfig:
         _validate_revision(self.model_revision, "model_revision")
         _validate_revision(self.tokenizer_revision, "tokenizer_revision")
         if self.profile == "confirmatory":
-            if self.model_id != "google/gemma-2-2b-it":
+            if self.model_id != CONFIRMATORY_MODEL_ID:
                 raise ValueError("Qwen is smoke-only; confirmatory profile requires Gemma")
-            if not _SHA256.fullmatch(self.chat_template_sha256):
-                raise ValueError("chat_template_sha256 must be a SHA-256 hash")
+            if self.model_revision != CONFIRMATORY_MODEL_REVISION:
+                raise ValueError("confirmatory model_revision must match the official pin")
+            if self.tokenizer_revision != CONFIRMATORY_MODEL_REVISION:
+                raise ValueError("confirmatory tokenizer_revision must match the official pin")
+            if self.chat_template_sha256 != CONFIRMATORY_CHAT_TEMPLATE_SHA256:
+                raise ValueError("confirmatory chat_template_sha256 must match the official pin")
             if dict(self.split_counts) != CONFIRMATORY_SPLIT_COUNTS:
                 unknown = set(self.split_counts) - set(CONFIRMATORY_SPLIT_COUNTS)
                 if unknown:
@@ -120,10 +182,18 @@ class FAConfig:
             if not isinstance(name, str) or type(value) not in {int, float} or not math.isfinite(value):
                 raise ValueError("thresholds must contain finite numeric values")
         if self.profile == "confirmatory":
-            if not self.anchors or len(set(self.anchors)) != len(self.anchors):
-                raise ValueError("anchors must be a non-duplicate registered sequence")
-            if any(anchor not in REGISTERED_ANCHORS for anchor in self.anchors):
-                raise ValueError("anchors contains a nonregistered anchor")
+            if self.split_seed != CONFIRMATORY_SPLIT_SEED:
+                raise ValueError("confirmatory split_seed must match the preregistration")
+            if self.bootstrap_replicates != CONFIRMATORY_BOOTSTRAP_REPLICATES:
+                raise ValueError("confirmatory bootstrap_replicates must match the preregistration")
+            if self.bootstrap_seed != CONFIRMATORY_BOOTSTRAP_SEED:
+                raise ValueError("confirmatory bootstrap_seed must match the preregistration")
+            if self.anchors != REGISTERED_ANCHORS:
+                raise ValueError("confirmatory anchors must match the preregistration order")
+            if dict(self.generation) != CONFIRMATORY_GENERATION:
+                raise ValueError("confirmatory generation must match the registered greedy object")
+            if dict(self.thresholds) != CONFIRMATORY_THRESHOLDS:
+                raise ValueError("confirmatory thresholds must match the preregistration")
         elif self.thresholds or self.anchors:
             raise ValueError("smoke configurations cannot select confirmatory thresholds or anchors")
 
@@ -140,3 +210,19 @@ def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _validate_revision(value: object, field: str) -> None:
     if not isinstance(value, str) or not _IMMUTABLE_REVISION.fullmatch(value):
         raise ValueError(f"{field} must be an immutable revision")
+
+
+def _freeze_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_json_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json_value(item) for item in value)
+    return value
+
+
+def _thaw_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json_value(item) for item in value]
+    return value
