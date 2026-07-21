@@ -136,7 +136,7 @@ class FAConfig:
         return hashlib.sha256(self.canonical_bytes).hexdigest()
 
     def validate(self) -> None:
-        if self.schema_version != 1:
+        if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("schema_version must be 1")
         if self.profile not in {"smoke", "confirmatory"}:
             raise ValueError("profile must be smoke or confirmatory")

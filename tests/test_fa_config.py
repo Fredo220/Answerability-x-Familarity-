@@ -94,6 +94,21 @@ def test_direct_construction_rejects_invalid_confirmatory_pin():
         FAConfig(**payload)
 
 
+@pytest.mark.parametrize("schema_version", [True, 1.0])
+def test_config_rejects_schema_version_alias_types(tmp_path, schema_version):
+    payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
+    payload["schema_version"] = schema_version
+
+    with pytest.raises(ValueError, match="schema_version"):
+        FAConfig(**payload)
+
+    path = tmp_path / "schema-version-alias.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="schema_version"):
+        FAConfig.from_json(path)
+
+
 def test_direct_construction_rejects_non_exact_generation_types():
     class IntAlias(int):
         pass
