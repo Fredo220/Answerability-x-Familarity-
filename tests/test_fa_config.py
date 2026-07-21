@@ -86,6 +86,25 @@ def test_config_rejects_mutable_revision_and_unknown_split(tmp_path):
         FAConfig.from_json(path)
 
 
+def test_direct_construction_rejects_invalid_confirmatory_pin():
+    payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
+    payload["model_revision"] = "a" * 40
+
+    with pytest.raises(ValueError, match="official pin"):
+        FAConfig(**payload)
+
+
+def test_direct_construction_rejects_non_exact_generation_types():
+    class IntAlias(int):
+        pass
+
+    payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
+    payload["generation"]["max_new_tokens"] = IntAlias(16)
+
+    with pytest.raises(ValueError, match="generation"):
+        FAConfig(**payload)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -106,6 +125,35 @@ def test_confirmatory_config_rejects_mutated_registered_values(tmp_path, field, 
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ValueError, match="confirmatory"):
+        FAConfig.from_json(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("do_sample", 0),
+        ("max_new_tokens", True),
+        ("temperature", False),
+    ],
+)
+def test_confirmatory_config_rejects_generation_alias_types(tmp_path, field, value):
+    payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
+    payload["generation"][field] = value
+    path = tmp_path / "generation-alias.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="generation"):
+        FAConfig.from_json(path)
+
+
+@pytest.mark.parametrize("field", ["model_revision", "tokenizer_revision"])
+def test_smoke_config_rejects_unregistered_qwen_revision(tmp_path, field):
+    payload = json.loads(SMOKE_CONFIG.read_text(encoding="utf-8"))
+    payload[field] = "a" * 40
+    path = tmp_path / "smoke-revision.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="smoke .*revision"):
         FAConfig.from_json(path)
 
 

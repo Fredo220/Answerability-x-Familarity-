@@ -36,6 +36,8 @@ CONFIRMATORY_GENERATION = {
     "max_new_tokens": 16,
     "temperature": 0.0,
 }
+SMOKE_MODEL_ID = "Qwen/Qwen3-0.6B"
+SMOKE_MODEL_REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"
 CONFIRMATORY_THRESHOLDS = {
     "format_validity_min": 0.95,
     "h1_min_interaction": 0.05,
@@ -83,6 +85,7 @@ class FAConfig:
         object.__setattr__(self, "generation", _freeze_json_value(self.generation))
         object.__setattr__(self, "thresholds", _freeze_json_value(self.thresholds))
         object.__setattr__(self, "anchors", tuple(self.anchors))
+        self.validate()
 
     @classmethod
     def from_json(cls, path: str | Path) -> "FAConfig":
@@ -92,7 +95,7 @@ class FAConfig:
         if not isinstance(value, dict):
             raise ValueError("FA config must be a JSON object")
         try:
-            config = cls(
+            return cls(
                 **{
                     **value,
                     "split_counts": value["split_counts"],
@@ -103,8 +106,6 @@ class FAConfig:
             )
         except (KeyError, TypeError) as error:
             raise ValueError("FA config has invalid fields") from error
-        config.validate()
-        return config
 
     @property
     def canonical_bytes(self) -> bytes:
@@ -159,12 +160,17 @@ class FAConfig:
                 if unknown:
                     raise ValueError("split_counts contains an unregistered split")
                 raise ValueError("confirmatory split_counts must match the preregistration")
-        elif self.model_id != "Qwen/Qwen3-0.6B":
-            raise ValueError("smoke profile must use the registered Qwen model")
-        elif set(self.split_counts) - NON_CONFIRMATORY_NAMESPACES:
-            raise ValueError("smoke split_counts contains an unregistered split")
-        elif set(self.split_counts) != NON_CONFIRMATORY_NAMESPACES:
-            raise ValueError("smoke split_counts must use pilot and circuit_dev only")
+        else:
+            if self.model_id != SMOKE_MODEL_ID:
+                raise ValueError("smoke profile must use the registered Qwen model")
+            if self.model_revision != SMOKE_MODEL_REVISION:
+                raise ValueError("smoke model_revision must match the registered Qwen pin")
+            if self.tokenizer_revision != SMOKE_MODEL_REVISION:
+                raise ValueError("smoke tokenizer_revision must match the registered Qwen pin")
+            if set(self.split_counts) - NON_CONFIRMATORY_NAMESPACES:
+                raise ValueError("smoke split_counts contains an unregistered split")
+            if set(self.split_counts) != NON_CONFIRMATORY_NAMESPACES:
+                raise ValueError("smoke split_counts must use pilot and circuit_dev only")
 
         if any(type(count) is not int or count <= 0 for count in self.split_counts.values()):
             raise ValueError("split_counts must contain positive registered split counts")
@@ -190,6 +196,12 @@ class FAConfig:
                 raise ValueError("confirmatory bootstrap_seed must match the preregistration")
             if self.anchors != REGISTERED_ANCHORS:
                 raise ValueError("confirmatory anchors must match the preregistration order")
+            if (
+                type(self.generation.get("do_sample")) is not bool
+                or type(self.generation.get("max_new_tokens")) is not int
+                or type(self.generation.get("temperature")) is not float
+            ):
+                raise ValueError("confirmatory generation must use exact registered field types")
             if dict(self.generation) != CONFIRMATORY_GENERATION:
                 raise ValueError("confirmatory generation must match the registered greedy object")
             if dict(self.thresholds) != CONFIRMATORY_THRESHOLDS:
