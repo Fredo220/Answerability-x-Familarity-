@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-import tempfile
+import stat
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -27,6 +27,14 @@ _NAMESPACES = frozenset(
 _ENDPOINTS = frozenset({"behavior_test", "probe_test", "intervention_test"})
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _before_final_open(path: Path) -> None:
+    """Test seam invoked after secure parent traversal and before a leaf open."""
+
+    del path
 
 
 @dataclass(frozen=True)
@@ -75,8 +83,6 @@ class FAArtifactStore:
         payload = b"".join(payload_rows)
         data_path = self._shard_path(run, namespace, shard)
         manifest_path = data_path.with_name(f"{data_path.name}.manifest.json")
-        self._reject_existing(data_path)
-        self._reject_existing(manifest_path)
         digest = _sha256_bytes(payload)
         manifest = {
             "schema_version": 1,
@@ -103,10 +109,9 @@ class FAArtifactStore:
     def verify_shard(self, manifest_path: str | Path) -> SealedShard:
         manifest_path = Path(manifest_path).absolute()
         self._require_under_root(manifest_path)
-        self._require_regular_file(manifest_path, "shard manifest")
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            manifest = json.loads(self._read_regular_bytes(manifest_path, "shard manifest"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("shard manifest is unreadable") from error
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             raise ValueError("shard manifest has an invalid schema")
@@ -126,8 +131,7 @@ class FAArtifactStore:
             raise ValueError("shard manifest row_count is invalid")
         if not isinstance(manifest.get("lineage"), dict):
             raise ValueError("shard manifest lineage is invalid")
-        self._require_regular_file(data_path, "shard data")
-        data = data_path.read_bytes()
+        data = self._read_regular_bytes(data_path, "shard data")
         if _sha256_bytes(data) != digest:
             raise ValueError("shard hash mismatch")
         if data.count(b"\n") != row_count:
@@ -140,10 +144,13 @@ class FAArtifactStore:
         namespace = _namespace(namespace)
         directory = self._base() / run / "shards" / namespace
         self._assert_existing_ancestors_are_real(directory)
-        if not directory.exists():
+        try:
+            entries = self._list_directory(directory)
+        except FileNotFoundError:
             return ()
-        self._require_directory(directory, "FA shard directory")
-        manifests = sorted(directory.glob("*.jsonl.manifest.json"))
+        manifests = sorted(
+            directory / name for name in entries if name.endswith(".jsonl.manifest.json")
+        )
         return tuple(self.verify_shard(path) for path in manifests)
 
     def seal_endpoint(
@@ -193,10 +200,10 @@ class FAArtifactStore:
         _sha256_value(preregistration_hash, "preregistration_hash")
         _sha256_value(selection_manifest_hash, "selection_manifest_hash")
         sealed_path = self._find_endpoint_path(endpoint, "sealed")
-        sealed = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
         self._verify_endpoint_artifacts(sealed)
         unlocked_path = self._endpoint_path(sealed["run_id"], endpoint, "unlocked_once")
-        if unlocked_path.exists() or unlocked_path.is_symlink():
+        if self._destination_exists(unlocked_path):
             raise ValueError(f"{endpoint} is already unlocked")
         if sealed["parents"]["preregistration"] != preregistration_hash:
             raise ValueError("preregistration hash does not match sealed endpoint")
@@ -236,14 +243,14 @@ class FAArtifactStore:
         if not isinstance(receipt.lease_id, str) or not re.fullmatch(r"[0-9a-f]{32}", receipt.lease_id):
             raise ValueError("receipt lease_id is invalid")
         sealed_path = self._find_endpoint_path(endpoint, "sealed")
-        sealed = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
         self._verify_endpoint_artifacts(sealed)
         run_id = sealed["run_id"]
         closed_path = self._endpoint_path(run_id, endpoint, "closed")
-        if closed_path.exists() or closed_path.is_symlink():
+        if self._destination_exists(closed_path):
             raise ValueError(f"{endpoint} is already closed")
         unlocked_path = self._endpoint_path(run_id, endpoint, "unlocked_once")
-        unlocked = self._read_endpoint_record(unlocked_path, endpoint, "unlocked_once")
+        unlocked, _ = self._read_endpoint_record(unlocked_path, endpoint, "unlocked_once")
         if (
             unlocked.get("lease_id") != receipt.lease_id
             or unlocked.get("preregistration_hash") != receipt.preregistration_hash
@@ -282,21 +289,35 @@ class FAArtifactStore:
     def close_endpoint(self, endpoint: str) -> Path:
         endpoint = _endpoint(endpoint)
         sealed_path = self._find_endpoint_path(endpoint, "sealed")
-        sealed = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        self._verify_endpoint_artifacts(sealed)
         run_id = sealed["run_id"]
         closed_path = self._endpoint_path(run_id, endpoint, "closed")
-        if closed_path.exists() or closed_path.is_symlink():
+        if self._destination_exists(closed_path):
             raise ValueError(f"{endpoint} is already closed")
         evaluated_path = self._endpoint_path(run_id, endpoint, "evaluated")
-        evaluated = self._read_endpoint_record(evaluated_path, endpoint, "evaluated")
+        evaluated, evaluated_bytes = self._read_endpoint_record(
+            evaluated_path, endpoint, "evaluated"
+        )
         if evaluated["run_id"] != run_id:
             raise ValueError("evaluated endpoint state belongs to another run")
+        unlocked_path = self._endpoint_path(run_id, endpoint, "unlocked_once")
+        unlocked, _ = self._read_endpoint_record(unlocked_path, endpoint, "unlocked_once")
+        if (
+            unlocked["preregistration_hash"] != sealed["parents"]["preregistration"]
+            or unlocked["selection_manifest_hash"] != sealed["parents"]["selection_manifest"]
+        ):
+            raise ValueError("active unlock lease no longer matches the sealed endpoint")
+        if unlocked["lease_id"] != evaluated["lease_id"]:
+            raise ValueError("evaluated endpoint lease does not match the active unlock lease")
         metrics_manifest = self._path_from_root_record(
             evaluated.get("metrics_manifest_path"), "metrics manifest"
         )
         metrics = self.verify_shard(metrics_manifest)
         if metrics.namespace != endpoint or metrics.sha256 != evaluated.get("metrics_sha256"):
             raise ValueError("evaluated endpoint metrics no longer verify")
+        if self._run_id_for_shard(metrics) != run_id:
+            raise ValueError("evaluated endpoint metrics must belong to the endpoint run")
         self._exclusive_write(
             closed_path,
             _canonical_json(
@@ -305,7 +326,7 @@ class FAArtifactStore:
                     "state": "closed",
                     "run_id": run_id,
                     "endpoint": endpoint,
-                    "evaluated_sha256": _sha256_bytes(evaluated_path.read_bytes()),
+                    "evaluated_sha256": _sha256_bytes(evaluated_bytes),
                 }
             ),
         )
@@ -333,18 +354,25 @@ class FAArtifactStore:
 
     def _find_endpoint_path(self, endpoint: str, state: str) -> Path:
         base = self._base()
-        if not base.exists() or base.is_symlink():
+        try:
+            entries = self._list_directory(base)
+        except (FileNotFoundError, ValueError):
             raise ValueError(f"{endpoint} is not sealed")
         matches = []
-        for candidate in base.iterdir():
-            if candidate.is_symlink() or not candidate.is_dir():
-                raise ValueError("FA artifact root contains an unsafe run entry")
+        for name in entries:
+            candidate = base / name
             try:
-                _safe_id(candidate.name, "run_id")
+                descriptor = self._open_directory_descriptor(candidate)
+            except ValueError:
+                raise ValueError("FA artifact root contains an unsafe run entry")
+            else:
+                os.close(descriptor)
+            try:
+                _safe_id(name, "run_id")
             except ValueError:
                 raise ValueError("FA artifact root contains an unsafe run entry") from None
-            path = self._endpoint_path(candidate.name, endpoint, state)
-            if path.exists() or path.is_symlink():
+            path = self._endpoint_path(name, endpoint, state)
+            if self._destination_exists(path):
                 matches.append(path)
         if not matches:
             raise ValueError(f"{endpoint} is not sealed")
@@ -352,14 +380,39 @@ class FAArtifactStore:
             raise ValueError(f"{endpoint} is ambiguous across runs")
         return matches[0]
 
-    def _read_endpoint_record(self, path: Path, endpoint: str, state: str) -> dict[str, Any]:
-        self._require_regular_file(path, "endpoint state")
+    def _read_endpoint_record(
+        self, path: Path, endpoint: str, state: str
+    ) -> tuple[dict[str, Any], bytes]:
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            payload = self._read_regular_bytes(path, "endpoint state")
+            record = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("endpoint state is unreadable") from error
+        required_keys = {
+            "sealed": {"schema_version", "state", "run_id", "endpoint", "parents", "artifacts"},
+            "unlocked_once": {
+                "schema_version",
+                "state",
+                "run_id",
+                "endpoint",
+                "lease_id",
+                "preregistration_hash",
+                "selection_manifest_hash",
+            },
+            "evaluated": {
+                "schema_version",
+                "state",
+                "run_id",
+                "endpoint",
+                "lease_id",
+                "metrics_manifest_path",
+                "metrics_sha256",
+            },
+            "closed": {"schema_version", "state", "run_id", "endpoint", "evaluated_sha256"},
+        }
         if (
             not isinstance(record, dict)
+            or set(record) != required_keys.get(state)
             or record.get("schema_version") != 1
             or record.get("state") != state
             or record.get("endpoint") != endpoint
@@ -367,10 +420,22 @@ class FAArtifactStore:
             raise ValueError("endpoint state has an invalid schema")
         run_id = _safe_id(record.get("run_id"), "endpoint run_id")
         if path != self._endpoint_path(run_id, endpoint, state):
+            if state == "evaluated":
+                raise ValueError("evaluated endpoint state belongs to another run")
             raise ValueError("endpoint state path does not match its identity")
         if state == "sealed":
             record["parents"] = _parents(record.get("parents"))
-        return record
+        elif state == "unlocked_once":
+            _lease_id(record.get("lease_id"), "unlock lease_id")
+            _sha256_value(record.get("preregistration_hash"), "unlock preregistration_hash")
+            _sha256_value(record.get("selection_manifest_hash"), "unlock selection_manifest_hash")
+        elif state == "evaluated":
+            _lease_id(record.get("lease_id"), "evaluated lease_id")
+            self._path_from_root_record(record.get("metrics_manifest_path"), "metrics manifest")
+            _sha256_value(record.get("metrics_sha256"), "evaluated metrics_sha256")
+        elif state == "closed":
+            _sha256_value(record.get("evaluated_sha256"), "closed evaluated_sha256")
+        return record, payload
 
     def _verify_endpoint_artifacts(self, sealed: Mapping[str, Any]) -> None:
         artifacts = sealed.get("artifacts")
@@ -403,50 +468,50 @@ class FAArtifactStore:
         return path
 
     def _exclusive_write(self, destination: Path, payload: bytes) -> None:
-        self._ensure_directory(destination.parent)
-        self._reject_existing(destination)
-        temporary: Path | None = None
+        parent_descriptor, name = self._open_parent_descriptor(destination, create=True)
+        temporary_name: str | None = None
         published = False
         try:
-            descriptor, name = tempfile.mkstemp(
-                prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+            self._reject_existing_at(parent_descriptor, name)
+            temporary_name = f".{name}.{uuid.uuid4().hex}.tmp"
+            descriptor = os.open(
+                temporary_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW,
+                0o600,
+                dir_fd=parent_descriptor,
             )
-            temporary = Path(name)
             try:
                 _write_all(descriptor, payload)
                 os.fchmod(descriptor, 0o644)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            os.link(temporary, destination)
+            os.link(
+                temporary_name,
+                name,
+                src_dir_fd=parent_descriptor,
+                dst_dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
             published = True
-            temporary.unlink()
-            temporary = None
-            _fsync_directory(destination.parent)
+            os.unlink(temporary_name, dir_fd=parent_descriptor)
+            temporary_name = None
+            _fsync_descriptor(parent_descriptor)
         except BaseException:
             if published:
-                self._remove_regular(destination)
+                self._remove_regular_at(parent_descriptor, name)
             raise
         finally:
-            if temporary is not None and temporary.exists():
-                temporary.unlink()
+            if temporary_name is not None:
+                try:
+                    os.unlink(temporary_name, dir_fd=parent_descriptor)
+                except FileNotFoundError:
+                    pass
+            os.close(parent_descriptor)
 
     def _ensure_directory(self, directory: Path) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        self._require_directory(self.root, "FA artifact root")
-        try:
-            relative = directory.relative_to(self.root)
-        except ValueError as error:
-            raise ValueError("artifact path escapes the FA artifact root") from error
-        current = self.root
-        for part in relative.parts:
-            current = current / part
-            try:
-                os.mkdir(current)
-            except FileExistsError:
-                pass
-            self._require_directory(current, "FA artifact directory")
-            _fsync_directory(current.parent)
+        descriptor = self._open_directory_descriptor(directory, create=True)
+        os.close(descriptor)
 
     def _base(self) -> Path:
         return self.root / "runs" / "familiarity_answerability"
@@ -458,45 +523,135 @@ class FAArtifactStore:
             raise ValueError("artifact path escapes the FA artifact root") from error
 
     def _assert_existing_ancestors_are_real(self, path: Path) -> None:
-        self._require_under_root(path)
-        current = self.root
-        if current.exists():
-            self._require_directory(current, "FA artifact root")
         try:
-            relative = path.relative_to(self.root)
-        except ValueError as error:
-            raise ValueError("artifact path escapes the FA artifact root") from error
-        for part in relative.parts:
-            current = current / part
-            if current.is_symlink():
-                raise ValueError("FA artifact directory must not be a symlink")
-            if not current.exists():
-                return
-            self._require_directory(current, "FA artifact directory")
-
-    @staticmethod
-    def _require_directory(path: Path, label: str) -> None:
-        if path.is_symlink() or not path.is_dir():
-            raise ValueError(f"{label} must be a real directory")
-
-    @staticmethod
-    def _require_regular_file(path: Path, label: str) -> None:
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f"{label} must be a regular file")
-
-    def _reject_existing(self, path: Path) -> None:
-        if path.is_symlink():
-            raise ValueError("artifact destination must not be a symlink")
-        if path.exists():
-            raise FileExistsError(path)
+            descriptor = self._open_directory_descriptor(path)
+        except FileNotFoundError:
+            return
+        os.close(descriptor)
 
     def _remove_regular(self, path: Path) -> None:
-        if path.is_symlink():
+        parent_descriptor, name = self._open_parent_descriptor(path)
+        try:
+            self._remove_regular_at(parent_descriptor, name)
+        finally:
+            os.close(parent_descriptor)
+
+    def _open_directory_descriptor(self, directory: Path, create: bool = False) -> int:
+        if os.name != "posix" or not _O_DIRECTORY or not _O_NOFOLLOW:
+            raise ValueError("descriptor-relative artifact access is unavailable")
+        absolute = directory.absolute()
+        if not absolute.is_absolute():
+            raise ValueError("artifact directory must be absolute")
+        descriptor = os.open("/", os.O_RDONLY | _O_DIRECTORY)
+        try:
+            for part in absolute.parts[1:]:
+                descriptor = self._open_child_directory(descriptor, part, create)
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _open_parent_descriptor(self, path: Path, create: bool = False) -> tuple[int, str]:
+        self._require_under_root(path)
+        relative = path.relative_to(self.root)
+        if not relative.parts:
+            raise ValueError("artifact path must name a file")
+        descriptor = self._open_directory_descriptor(self.root, create=create)
+        try:
+            for part in relative.parts[:-1]:
+                descriptor = self._open_child_directory(descriptor, part, create)
+            return descriptor, relative.parts[-1]
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _open_child_directory(parent_descriptor: int, name: str, create: bool) -> int:
+        flags = os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW
+        try:
+            child_descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+        except FileNotFoundError:
+            if not create:
+                raise
+            try:
+                os.mkdir(name, 0o755, dir_fd=parent_descriptor)
+            except FileExistsError:
+                pass
+            try:
+                child_descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+            except OSError as error:
+                raise ValueError("FA artifact directory must be a real directory") from error
+            _fsync_descriptor(parent_descriptor)
+        except OSError as error:
+            raise ValueError("FA artifact directory must be a real directory") from error
+        os.close(parent_descriptor)
+        return child_descriptor
+
+    def _read_regular_bytes(self, path: Path, label: str) -> bytes:
+        parent_descriptor, name = self._open_parent_descriptor(path)
+        try:
+            _before_final_open(path)
+            try:
+                descriptor = os.open(name, os.O_RDONLY | _O_NOFOLLOW, dir_fd=parent_descriptor)
+            except OSError as error:
+                raise ValueError(f"{label} must be a regular file") from error
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    raise ValueError(f"{label} must be a regular file")
+                chunks = []
+                while True:
+                    chunk = os.read(descriptor, 1 << 20)
+                    if not chunk:
+                        return b"".join(chunks)
+                    chunks.append(chunk)
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(parent_descriptor)
+
+    def _list_directory(self, directory: Path) -> list[str]:
+        descriptor = self._open_directory_descriptor(directory)
+        try:
+            return os.listdir(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _destination_exists(self, path: Path) -> bool:
+        try:
+            parent_descriptor, name = self._open_parent_descriptor(path)
+        except FileNotFoundError:
+            return False
+        try:
+            try:
+                os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            return True
+        finally:
+            os.close(parent_descriptor)
+
+    @staticmethod
+    def _reject_existing_at(parent_descriptor: int, name: str) -> None:
+        try:
+            mode = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(mode):
+            raise ValueError("artifact destination must not be a symlink")
+        raise FileExistsError(name)
+
+    @staticmethod
+    def _remove_regular_at(parent_descriptor: int, name: str) -> None:
+        try:
+            mode = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(mode):
             raise ValueError("refusing to remove symlinked artifact")
-        if path.exists():
-            self._require_regular_file(path, "artifact")
-            path.unlink()
-            _fsync_directory(path.parent)
+        if not stat.S_ISREG(mode):
+            raise ValueError("artifact must be a regular file")
+        os.unlink(name, dir_fd=parent_descriptor)
+        _fsync_descriptor(parent_descriptor)
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -531,6 +686,12 @@ def _sha256_value(value: object, field: str) -> str:
     return value
 
 
+def _lease_id(value: object, field: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value):
+        raise ValueError(f"{field} is invalid")
+    return value
+
+
 def _parents(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping) or set(value) != {"preregistration", "selection_manifest"}:
         raise ValueError("endpoint parents must bind preregistration and selection manifest")
@@ -551,19 +712,9 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         remaining = remaining[written:]
 
 
-def _fsync_directory(directory: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+def _fsync_descriptor(descriptor: int) -> None:
     try:
-        descriptor = os.open(directory, flags)
+        os.fsync(descriptor)
     except OSError as error:
-        if error.errno in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
-            return
-        raise
-    try:
-        try:
-            os.fsync(descriptor)
-        except OSError as error:
-            if error.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
-                raise
-    finally:
-        os.close(descriptor)
+        if error.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+            raise

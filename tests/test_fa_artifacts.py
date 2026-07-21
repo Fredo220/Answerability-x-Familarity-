@@ -109,17 +109,19 @@ def test_fsync_failure_removes_published_data_before_a_completion_marker(
 ):
     store = FAArtifactStore(tmp_path)
     shard_dir = tmp_path / "runs" / "familiarity_answerability" / config.run_id / "shards" / "pilot"
-    real_fsync_directory = fa_artifacts._fsync_directory
+    store._ensure_directory(shard_dir)
+    shard_directory_inode = os.stat(shard_dir).st_ino
+    real_fsync_descriptor = fa_artifacts._fsync_descriptor
     failed = False
 
-    def fail_once(path):
+    def fail_once(descriptor):
         nonlocal failed
-        if path == shard_dir and not failed:
+        if os.fstat(descriptor).st_ino == shard_directory_inode and not failed:
             failed = True
             raise OSError("injected directory fsync failure")
-        return real_fsync_directory(path)
+        return real_fsync_descriptor(descriptor)
 
-    monkeypatch.setattr(fa_artifacts, "_fsync_directory", fail_once)
+    monkeypatch.setattr(fa_artifacts, "_fsync_descriptor", fail_once)
     with pytest.raises(OSError, match="injected directory fsync failure"):
         store.write_completed_shard(
             config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
@@ -281,3 +283,129 @@ def test_mark_evaluated_rejects_reusing_a_sealed_input_as_metrics(tmp_path, conf
 
     with pytest.raises(ValueError, match="sealed input"):
         store.mark_evaluated(receipt, selection.data_path)
+
+
+def _evaluated_endpoint(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    selection = store.write_completed_shard(
+        config.run_id, "probe_test", "selection", [{"example_id": "probe"}], lineage(config)
+    )
+    store.seal_endpoint("probe_test", [selection], parents())
+    receipt = store.unlock_endpoint(
+        "probe_test", parents()["preregistration"], parents()["selection_manifest"]
+    )
+    metrics = store.write_completed_shard(
+        config.run_id, "probe_test", "metrics", [{"metric": "complete"}], lineage(config)
+    )
+    evaluated = store.mark_evaluated(receipt, metrics.data_path)
+    return store, selection, metrics, receipt, evaluated
+
+
+def test_close_revalidates_every_sealed_input(tmp_path, config):
+    store, selection, _, _, _ = _evaluated_endpoint(tmp_path, config)
+    selection.data_path.write_bytes(b'{"example_id":"tampered"}\n')
+
+    with pytest.raises(ValueError, match="hash mismatch"):
+        store.close_endpoint("probe_test")
+
+
+def test_close_requires_exact_evaluated_schema_and_active_matching_lease(tmp_path, config):
+    store, _, _, receipt, evaluated = _evaluated_endpoint(tmp_path, config)
+    record = json.loads(evaluated.read_text(encoding="utf-8"))
+    record["unexpected"] = True
+    evaluated.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid schema"):
+        store.close_endpoint("probe_test")
+
+    record.pop("unexpected")
+    record["lease_id"] = "0" * 32
+    evaluated.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="lease"):
+        store.close_endpoint("probe_test")
+
+    record["lease_id"] = receipt.lease_id
+    evaluated.write_text(json.dumps(record), encoding="utf-8")
+    unlocked = evaluated.with_name("unlocked_once.json")
+    lease = json.loads(unlocked.read_text(encoding="utf-8"))
+    lease["lease_id"] = "1" * 32
+    unlocked.write_text(json.dumps(lease), encoding="utf-8")
+    with pytest.raises(ValueError, match="lease"):
+        store.close_endpoint("probe_test")
+
+
+def test_close_rejects_evaluated_metrics_bound_to_another_run(tmp_path, config):
+    store, _, _, receipt, evaluated = _evaluated_endpoint(tmp_path, config)
+    other = store.write_completed_shard(
+        "other-run", "probe_test", "metrics", [{"metric": "other"}], lineage(config)
+    )
+    record = json.loads(evaluated.read_text(encoding="utf-8"))
+    record["metrics_manifest_path"] = str(other.manifest_path.relative_to(tmp_path))
+    record["metrics_sha256"] = other.sha256
+    record["lease_id"] = receipt.lease_id
+    evaluated.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="endpoint run"):
+        store.close_endpoint("probe_test")
+
+
+def test_close_rejects_an_active_lease_detached_from_sealed_parents(tmp_path, config):
+    store, _, _, _, evaluated = _evaluated_endpoint(tmp_path, config)
+    unlocked = evaluated.with_name("unlocked_once.json")
+    record = json.loads(unlocked.read_text(encoding="utf-8"))
+    record["preregistration_hash"] = digest("different preregistration")
+    unlocked.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sealed endpoint"):
+        store.close_endpoint("probe_test")
+
+
+def test_close_rejects_evaluated_marker_for_another_run(tmp_path, config):
+    store, _, _, _, evaluated = _evaluated_endpoint(tmp_path, config)
+    record = json.loads(evaluated.read_text(encoding="utf-8"))
+    record["run_id"] = "other-run"
+    evaluated.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="another run"):
+        store.close_endpoint("probe_test")
+
+
+def test_verify_rejects_an_intermediate_symlink(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    sealed = store.write_completed_shard(
+        config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
+    )
+    shard_root = sealed.manifest_path.parents[2]
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    shard_root.rename(tmp_path / "parked-shards")
+    shard_root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="real directory"):
+        store.verify_shard(sealed.manifest_path)
+
+
+def test_descriptor_read_fails_closed_when_an_intermediate_directory_is_replaced(
+    tmp_path, config, monkeypatch
+):
+    store = FAArtifactStore(tmp_path)
+    sealed = store.write_completed_shard(
+        config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
+    )
+    runs = tmp_path / "runs"
+    parked = tmp_path / "parked-runs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    replaced = False
+
+    def replace_after_safe_traversal(path):
+        nonlocal replaced
+        if path == sealed.manifest_path and not replaced:
+            replaced = True
+            runs.rename(parked)
+            runs.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(fa_artifacts, "_before_final_open", replace_after_safe_traversal)
+    with pytest.raises(ValueError, match="real directory"):
+        store.verify_shard(sealed.manifest_path)
+    assert replaced
