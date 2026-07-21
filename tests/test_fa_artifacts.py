@@ -133,6 +133,140 @@ def test_fsync_failure_removes_published_data_before_a_completion_marker(
     assert list(shard_dir.glob("*.tmp")) == []
 
 
+def test_completed_shard_fails_closed_when_a_temp_leaf_is_replaced_with_a_regular_file(
+    tmp_path, config, monkeypatch
+):
+    store = FAArtifactStore(tmp_path)
+    real_link = os.link
+    replaced = False
+
+    def replace_temp_then_link(source, destination, *, src_dir_fd=None, dst_dir_fd=None, **kwargs):
+        nonlocal replaced
+        if not replaced:
+            replaced = True
+            os.unlink(source, dir_fd=src_dir_fd)
+            descriptor = os.open(
+                source,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=src_dir_fd,
+            )
+            try:
+                os.write(descriptor, b"attacker-controlled")
+            finally:
+                os.close(descriptor)
+        return real_link(
+            source,
+            destination,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(fa_artifacts.os, "link", replace_temp_then_link)
+
+    with pytest.raises(ValueError, match="publication"):
+        store.write_completed_shard(
+            config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
+        )
+
+    assert replaced
+
+
+def test_completed_shard_fails_closed_when_a_temp_leaf_is_replaced_with_a_symlink(
+    tmp_path, config, monkeypatch
+):
+    store = FAArtifactStore(tmp_path)
+    outside = tmp_path / "attacker-controlled"
+    outside.write_bytes(b"attacker-controlled")
+    real_link = os.link
+    replaced = False
+
+    def replace_temp_then_link(source, destination, *, src_dir_fd=None, dst_dir_fd=None, **kwargs):
+        nonlocal replaced
+        if not replaced:
+            replaced = True
+            os.unlink(source, dir_fd=src_dir_fd)
+            os.symlink(outside, source, dir_fd=src_dir_fd)
+        return real_link(
+            source,
+            destination,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(fa_artifacts.os, "link", replace_temp_then_link)
+
+    with pytest.raises(ValueError, match="publication"):
+        store.write_completed_shard(
+            config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
+        )
+
+    assert replaced
+
+
+def test_interrupted_write_quarantines_a_temp_leaf_replaced_during_cleanup(
+    tmp_path, config, monkeypatch
+):
+    store = FAArtifactStore(tmp_path)
+    real_rename = os.rename
+    real_unlink = os.unlink
+    real_stat = os.stat
+    replacement_identity = None
+    replaced = False
+
+    def partial_then_fail(descriptor, payload):
+        os.write(descriptor, payload[:1])
+        raise OSError("injected write failure")
+
+    def replace_before_quarantine(source, destination, *, src_dir_fd=None, dst_dir_fd=None):
+        nonlocal replaced, replacement_identity
+        if not replaced and source.endswith(".tmp"):
+            replaced = True
+            real_unlink(source, dir_fd=src_dir_fd)
+            descriptor = os.open(
+                source,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=src_dir_fd,
+            )
+            try:
+                os.write(descriptor, b"replacement")
+            finally:
+                os.close(descriptor)
+            replacement_identity = real_stat(source, dir_fd=src_dir_fd, follow_symlinks=False)
+        return real_rename(source, destination, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+
+    def reject_replacement_unlink(path, *, dir_fd=None):
+        if replacement_identity is not None:
+            try:
+                candidate = real_stat(path, dir_fd=dir_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                candidate = None
+            if candidate is not None and (
+                candidate.st_dev,
+                candidate.st_ino,
+            ) == (
+                replacement_identity.st_dev,
+                replacement_identity.st_ino,
+            ):
+                raise AssertionError("cleanup attempted to unlink an unverified replacement")
+        return real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(fa_artifacts, "_write_all", partial_then_fail)
+    monkeypatch.setattr(fa_artifacts.os, "rename", replace_before_quarantine)
+    monkeypatch.setattr(fa_artifacts.os, "unlink", reject_replacement_unlink)
+
+    with pytest.raises(OSError, match="injected write failure"):
+        store.write_completed_shard(
+            config.run_id, "pilot", "0001", [{"example_id": "a"}], lineage(config)
+        )
+
+    assert replaced
+    assert replacement_identity is not None
+
+
 @pytest.mark.parametrize("unsafe_id", ["../escape", "a/b", ".", "..", "with space"])
 def test_shards_reject_path_traversal_and_lossy_identifiers(tmp_path, config, unsafe_id):
     store = FAArtifactStore(tmp_path)

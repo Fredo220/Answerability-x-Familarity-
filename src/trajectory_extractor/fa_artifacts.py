@@ -56,6 +56,12 @@ class UnlockReceipt:
     selection_manifest_hash: str
 
 
+@dataclass(frozen=True)
+class _FileIdentity:
+    device: int
+    inode: int
+
+
 class FAArtifactStore:
     """Immutable artifacts for the Familiarity-vs-Answerability study only."""
 
@@ -95,14 +101,13 @@ class FAArtifactStore:
             "lineage": dict(lineage),
         }
         _canonical_json(manifest)
-        data_published = False
+        data_identity: _FileIdentity | None = None
         try:
-            self._exclusive_write(data_path, payload)
-            data_published = True
+            data_identity = self._exclusive_write(data_path, payload)
             self._exclusive_write(manifest_path, _canonical_json(manifest))
         except BaseException:
-            if data_published:
-                self._remove_regular(data_path)
+            if data_identity is not None:
+                self._remove_regular(data_path, data_identity)
             raise
         return SealedShard(namespace, shard, data_path, manifest_path, digest, len(payload_rows))
 
@@ -467,25 +472,25 @@ class FAArtifactStore:
         self._require_under_root(path)
         return path
 
-    def _exclusive_write(self, destination: Path, payload: bytes) -> None:
+    def _exclusive_write(self, destination: Path, payload: bytes) -> _FileIdentity:
         parent_descriptor, name = self._open_parent_descriptor(destination, create=True)
         temporary_name: str | None = None
-        published = False
+        temporary_descriptor: int | None = None
+        temporary_identity: _FileIdentity | None = None
+        published_identity: _FileIdentity | None = None
         try:
             self._reject_existing_at(parent_descriptor, name)
             temporary_name = f".{name}.{uuid.uuid4().hex}.tmp"
-            descriptor = os.open(
+            temporary_descriptor = os.open(
                 temporary_name,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW,
                 0o600,
                 dir_fd=parent_descriptor,
             )
-            try:
-                _write_all(descriptor, payload)
-                os.fchmod(descriptor, 0o644)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            temporary_identity = _file_identity(os.fstat(temporary_descriptor))
+            _write_all(temporary_descriptor, payload)
+            os.fchmod(temporary_descriptor, 0o644)
+            os.fsync(temporary_descriptor)
             os.link(
                 temporary_name,
                 name,
@@ -493,20 +498,29 @@ class FAArtifactStore:
                 dst_dir_fd=parent_descriptor,
                 follow_symlinks=False,
             )
-            published = True
-            os.unlink(temporary_name, dir_fd=parent_descriptor)
+            self._verify_published_file(parent_descriptor, name, temporary_identity, payload)
+            published_identity = temporary_identity
+            temporary_cleaned = self._quarantine_regular_at(
+                parent_descriptor, temporary_name, temporary_identity
+            )
             temporary_name = None
+            if not temporary_cleaned:
+                raise ValueError("artifact temporary source was replaced during publication")
             _fsync_descriptor(parent_descriptor)
+            self._verify_published_file(parent_descriptor, name, published_identity, payload)
+            return published_identity
         except BaseException:
-            if published:
-                self._remove_regular_at(parent_descriptor, name)
+            if published_identity is not None:
+                self._quarantine_regular_at(parent_descriptor, name, published_identity)
             raise
         finally:
+            if temporary_descriptor is not None:
+                os.close(temporary_descriptor)
             if temporary_name is not None:
-                try:
-                    os.unlink(temporary_name, dir_fd=parent_descriptor)
-                except FileNotFoundError:
-                    pass
+                if temporary_identity is not None:
+                    self._quarantine_regular_at(
+                        parent_descriptor, temporary_name, temporary_identity
+                    )
             os.close(parent_descriptor)
 
     def _ensure_directory(self, directory: Path) -> None:
@@ -529,10 +543,10 @@ class FAArtifactStore:
             return
         os.close(descriptor)
 
-    def _remove_regular(self, path: Path) -> None:
+    def _remove_regular(self, path: Path, identity: _FileIdentity) -> None:
         parent_descriptor, name = self._open_parent_descriptor(path)
         try:
-            self._remove_regular_at(parent_descriptor, name)
+            self._quarantine_regular_at(parent_descriptor, name, identity)
         finally:
             os.close(parent_descriptor)
 
@@ -640,18 +654,69 @@ class FAArtifactStore:
             raise ValueError("artifact destination must not be a symlink")
         raise FileExistsError(name)
 
-    @staticmethod
-    def _remove_regular_at(parent_descriptor: int, name: str) -> None:
+    def _verify_published_file(
+        self,
+        parent_descriptor: int,
+        name: str,
+        expected_identity: _FileIdentity,
+        payload: bytes,
+    ) -> None:
         try:
-            mode = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False).st_mode
-        except FileNotFoundError:
-            return
-        if stat.S_ISLNK(mode):
-            raise ValueError("refusing to remove symlinked artifact")
-        if not stat.S_ISREG(mode):
-            raise ValueError("artifact must be a regular file")
-        os.unlink(name, dir_fd=parent_descriptor)
-        _fsync_descriptor(parent_descriptor)
+            descriptor = os.open(name, os.O_RDONLY | _O_NOFOLLOW, dir_fd=parent_descriptor)
+        except OSError as error:
+            raise ValueError("artifact publication does not name the written regular file") from error
+        try:
+            status = os.fstat(descriptor)
+            if not stat.S_ISREG(status.st_mode) or _file_identity(status) != expected_identity:
+                raise ValueError("artifact publication does not name the written regular file")
+            contents = bytearray()
+            while len(contents) < len(payload):
+                chunk = os.read(descriptor, len(payload) - len(contents))
+                if not chunk:
+                    break
+                contents.extend(chunk)
+            if bytes(contents) != payload or os.read(descriptor, 1):
+                raise ValueError("artifact publication content does not match the written payload")
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _quarantine_regular_at(
+        parent_descriptor: int, name: str, expected_identity: _FileIdentity
+    ) -> bool:
+        quarantine_name = f".{name}.{uuid.uuid4().hex}.quarantine"
+        os.mkdir(quarantine_name, 0o700, dir_fd=parent_descriptor)
+        quarantine_descriptor = os.open(
+            quarantine_name,
+            os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW,
+            dir_fd=parent_descriptor,
+        )
+        removed = False
+        try:
+            try:
+                os.rename(
+                    name,
+                    "entry",
+                    src_dir_fd=parent_descriptor,
+                    dst_dir_fd=quarantine_descriptor,
+                )
+            except FileNotFoundError:
+                return False
+            try:
+                status = os.stat("entry", dir_fd=quarantine_descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            if not stat.S_ISREG(status.st_mode) or _file_identity(status) != expected_identity:
+                return False
+            os.unlink("entry", dir_fd=quarantine_descriptor)
+            _fsync_descriptor(quarantine_descriptor)
+            removed = True
+            return True
+        finally:
+            os.close(quarantine_descriptor)
+            if removed:
+                os.rmdir(quarantine_name, dir_fd=parent_descriptor)
+                _fsync_descriptor(parent_descriptor)
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -660,6 +725,10 @@ def _canonical_json(value: Any) -> bytes:
 
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _file_identity(status: os.stat_result) -> _FileIdentity:
+    return _FileIdentity(status.st_dev, status.st_ino)
 
 
 def _safe_id(value: object, field: str) -> str:
