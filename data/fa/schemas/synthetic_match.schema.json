@@ -3,15 +3,27 @@
   "title": "Familiarity Answerability Synthetic Match",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "pair_id", "real_qid", "synthetic_candidate_id", "split", "generator_revision", "tokenizer_revision", "character_tolerance"],
+  "required": ["schema_version", "pair_id", "real_entity_id", "real_qid", "synthetic_candidate_id", "real_name", "synthetic_name", "coarse_type", "split", "generator_revision", "tokenizer_revision", "real_token_count", "synthetic_token_count", "real_word_count", "synthetic_word_count", "real_character_count", "synthetic_character_count", "character_length_delta", "character_tolerance", "capitalization_pattern_equal"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"type": "integer", "const": 1},
     "pair_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*--[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "real_entity_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
     "real_qid": {"type": "string", "pattern": "^Q[1-9][0-9]*$"},
     "synthetic_candidate_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "real_name": {"type": "string", "minLength": 1},
+    "synthetic_name": {"type": "string", "minLength": 1},
+    "coarse_type": {"type": "string", "minLength": 1},
     "split": {"enum": ["pilot", "mechanism_train", "locked_validation", "behavior_test", "probe_test", "intervention_test", "circuit_dev"]},
     "generator_revision": {"type": "string", "minLength": 1},
     "tokenizer_revision": {"type": "string", "minLength": 1},
-    "character_tolerance": {"const": 2}
+    "real_token_count": {"type": "integer", "minimum": 1},
+    "synthetic_token_count": {"type": "integer", "minimum": 1},
+    "real_word_count": {"type": "integer", "minimum": 1},
+    "synthetic_word_count": {"type": "integer", "minimum": 1},
+    "real_character_count": {"type": "integer", "minimum": 1},
+    "synthetic_character_count": {"type": "integer", "minimum": 1},
+    "character_length_delta": {"type": "integer"},
+    "character_tolerance": {"type": "integer", "const": 2},
+    "capitalization_pattern_equal": {"type": "boolean"}
   }
 }

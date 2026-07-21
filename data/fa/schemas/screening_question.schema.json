@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "question_id", "qid", "prompt", "accepted_aliases", "source_provenance"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"type": "integer", "const": 1},
     "question_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
     "qid": {"type": "string", "pattern": "^Q[1-9][0-9]*$"},
     "prompt": {"type": "string", "minLength": 1},

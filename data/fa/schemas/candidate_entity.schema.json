@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "entity_id", "qid", "name", "coarse_type", "split", "source_query", "source_provenance", "screening_aliases"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"type": "integer", "const": 1},
     "entity_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
     "qid": {"type": "string", "pattern": "^Q[1-9][0-9]*$"},
     "name": {"type": "string", "minLength": 1},

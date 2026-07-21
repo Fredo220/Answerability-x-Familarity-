@@ -15,10 +15,12 @@ from trajectory_extractor.fa_config import CONFIRMATORY_SPLIT_COUNTS, NON_CONFIR
 
 
 CHARACTER_TOLERANCE = 2
+SCHEMA_VERSION = 1
 REGISTERED_SPLITS = frozenset(CONFIRMATORY_SPLIT_COUNTS) | NON_CONFIRMATORY_NAMESPACES
 TOKENIZER_SENTENCE_FRAME = "In the Alder Registry, {name} has archive color amber."
 _QID = re.compile(r"Q[1-9][0-9]*\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+_PAIR_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*--[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 
 
 @dataclass(frozen=True)
@@ -33,8 +35,10 @@ class CandidateEntity:
     source_query: str
     source_provenance: str
     screening_aliases: tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]
+    schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        _schema_version(self.schema_version)
         _safe_id(self.entity_id, "entity_id")
         if not isinstance(self.qid, str) or not _QID.fullmatch(self.qid):
             raise ValueError("QID must be a canonical Wikidata QID")
@@ -103,6 +107,59 @@ class EntityMatch:
     character_length_delta: int
     character_tolerance: int
     capitalization_pattern_equal: bool
+    schema_version: int = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version)
+        _pair_id(self.pair_id, "pair_id")
+        _safe_id(self.real_entity_id, "real_entity_id")
+        _qid(self.real_qid, "real_qid")
+        _safe_id(self.synthetic_candidate_id, "synthetic_candidate_id")
+        if self.pair_id != f"{self.real_entity_id}--{self.synthetic_candidate_id}":
+            raise ValueError("pair_id must join the real and synthetic IDs")
+        _nonempty_text(self.real_name, "real_name")
+        _nonempty_text(self.synthetic_name, "synthetic_name")
+        if _normal_form(self.real_name) == _normal_form(self.synthetic_name):
+            raise ValueError("synthetic_name must differ from real_name")
+        if not _allowed_character_inventory(self.real_name, self.synthetic_name):
+            raise ValueError("synthetic_name has an incompatible character inventory")
+        _nonempty_text(self.coarse_type, "coarse_type")
+        _split(self.split)
+        _nonempty_text(self.generator_revision, "generator_revision")
+        _nonempty_text(self.tokenizer_revision, "tokenizer_revision")
+        _positive_int(self.real_token_count, "real_token_count")
+        _positive_int(self.synthetic_token_count, "synthetic_token_count")
+        if self.real_token_count != self.synthetic_token_count:
+            raise ValueError("token counts must match")
+        _positive_int(self.real_word_count, "real_word_count")
+        _positive_int(self.synthetic_word_count, "synthetic_word_count")
+        if self.real_word_count != len(self.real_name.split()):
+            raise ValueError("real_word_count must match real_name")
+        if self.synthetic_word_count != len(self.synthetic_name.split()):
+            raise ValueError("synthetic_word_count must match synthetic_name")
+        if self.real_word_count != self.synthetic_word_count:
+            raise ValueError("word counts must match")
+        _positive_int(self.real_character_count, "real_character_count")
+        _positive_int(self.synthetic_character_count, "synthetic_character_count")
+        if self.real_character_count != len(self.real_name):
+            raise ValueError("real_character_count must match real_name")
+        if self.synthetic_character_count != len(self.synthetic_name):
+            raise ValueError("synthetic_character_count must match synthetic_name")
+        _integer(self.character_length_delta, "character_length_delta")
+        if self.character_length_delta != self.synthetic_character_count - self.real_character_count:
+            raise ValueError("character_length_delta must match character counts")
+        if type(self.character_tolerance) is not int or self.character_tolerance != CHARACTER_TOLERANCE:
+            raise ValueError(f"character_tolerance must be {CHARACTER_TOLERANCE}")
+        if abs(self.character_length_delta) > self.character_tolerance:
+            raise ValueError("character_length_delta exceeds character_tolerance")
+        if type(self.capitalization_pattern_equal) is not bool:
+            raise ValueError("capitalization_pattern_equal must be boolean")
+        if self.capitalization_pattern_equal != (
+            _capitalization_pattern(self.real_name) == _capitalization_pattern(self.synthetic_name)
+        ):
+            raise ValueError("capitalization_pattern_equal must match the names")
+        if not self.capitalization_pattern_equal:
+            raise ValueError("capitalization_pattern_equal must be true")
 
 
 @dataclass(frozen=True)
@@ -116,9 +173,11 @@ class NaturalnessRating:
     synthetic_malformed: bool
     round: int = 1
     disagreement_registered: bool = False
+    schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        _safe_id(self.pair_id, "pair_id")
+        _schema_version(self.schema_version)
+        _pair_id(self.pair_id, "pair_id")
         _safe_id(self.rater_id, "rater_id")
         for name in ("real_naturalness", "synthetic_naturalness", "real_type_fit", "synthetic_type_fit"):
             value = getattr(self, name)
@@ -404,6 +463,32 @@ def _nonempty_text(value: object, field: str) -> None:
 def _safe_id(value: object, field: str) -> None:
     if not isinstance(value, str) or not _SAFE_ID.fullmatch(value):
         raise ValueError(f"{field} must be a safe identifier")
+
+
+def _qid(value: object, field: str) -> None:
+    if not isinstance(value, str) or not _QID.fullmatch(value):
+        raise ValueError(f"{field} must be a canonical Wikidata QID")
+
+
+def _pair_id(value: object, field: str) -> None:
+    if not isinstance(value, str) or not _PAIR_ID.fullmatch(value):
+        raise ValueError(f"{field} must join two safe identifiers")
+
+
+def _schema_version(value: object) -> None:
+    if type(value) is not int or value != SCHEMA_VERSION:
+        raise ValueError(f"schema_version must be {SCHEMA_VERSION}")
+
+
+def _integer(value: object, field: str) -> None:
+    if type(value) is not int:
+        raise ValueError(f"{field} must be an integer")
+
+
+def _positive_int(value: object, field: str) -> None:
+    _integer(value, field)
+    if value < 1:
+        raise ValueError(f"{field} must be a positive integer")
 
 
 def _split(value: object) -> None:

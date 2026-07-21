@@ -1,11 +1,13 @@
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator, validators
 
 from trajectory_extractor.fa_entities import (
     CandidateEntity,
+    EntityMatch,
     NaturalnessRating,
     SyntheticCandidate,
     audit_naturalness_manifest,
@@ -16,6 +18,12 @@ from trajectory_extractor.fa_entities import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "data" / "fa" / "schemas"
+STRICT_DRAFT202012_VALIDATOR = validators.extend(
+    Draft202012Validator,
+    type_checker=Draft202012Validator.TYPE_CHECKER.redefine(
+        "integer", lambda _checker, value: type(value) is int
+    ),
+)
 
 
 class FakeTokenizer:
@@ -41,6 +49,32 @@ def candidate(**changes):
     }
     payload.update(changes)
     return CandidateEntity(**payload)
+
+
+def entity_match(**changes):
+    payload = {
+        "pair_id": "Q90--syn-2",
+        "real_entity_id": "Q90",
+        "real_qid": "Q90",
+        "synthetic_candidate_id": "syn-2",
+        "real_name": "Old Vale",
+        "synthetic_name": "New Vale",
+        "coarse_type": "place",
+        "split": "mechanism_train",
+        "generator_revision": "names-v1",
+        "tokenizer_revision": "test-tokenizer-v1",
+        "real_token_count": 9,
+        "synthetic_token_count": 9,
+        "real_word_count": 2,
+        "synthetic_word_count": 2,
+        "real_character_count": 8,
+        "synthetic_character_count": 8,
+        "character_length_delta": 0,
+        "character_tolerance": 2,
+        "capitalization_pattern_equal": True,
+    }
+    payload.update(changes)
+    return EntityMatch(**payload)
 
 
 def synthetic_pool():
@@ -99,6 +133,42 @@ def test_matching_enforces_token_and_surface_constraints(fake_tokenizer):
     assert match.synthetic_name == "New Vale"
 
 
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"pair_id": "bad-pair"}, "pair_id"),
+        ({"pair_id": "Q91--syn-2"}, "pair_id"),
+        ({"real_entity_id": "bad id"}, "real_entity_id"),
+        ({"real_qid": "Q0"}, "real_qid"),
+        ({"synthetic_candidate_id": "bad id"}, "synthetic_candidate_id"),
+        ({"real_name": ""}, "real_name"),
+        ({"synthetic_name": "Old Vale"}, "synthetic_name"),
+        ({"coarse_type": ""}, "coarse_type"),
+        ({"split": "unregistered"}, "split"),
+        ({"generator_revision": ""}, "generator_revision"),
+        ({"tokenizer_revision": ""}, "tokenizer_revision"),
+        ({"real_token_count": 0}, "real_token_count"),
+        ({"synthetic_token_count": 8}, "token counts"),
+        ({"real_word_count": 1}, "real_word_count"),
+        ({"synthetic_word_count": 1}, "synthetic_word_count"),
+        ({"real_character_count": 7}, "real_character_count"),
+        ({"synthetic_character_count": 7}, "synthetic_character_count"),
+        ({"character_length_delta": 1}, "character_length_delta"),
+        ({"character_tolerance": 1}, "character_tolerance"),
+        ({"character_tolerance": True}, "character_tolerance"),
+        ({"real_token_count": True}, "real_token_count"),
+        ({"real_word_count": 2.0}, "real_word_count"),
+        ({"real_character_count": 8.0}, "real_character_count"),
+        ({"synthetic_name": "new Vale"}, "capitalization_pattern_equal"),
+        ({"capitalization_pattern_equal": False}, "capitalization_pattern_equal"),
+        ({"capitalization_pattern_equal": 1}, "capitalization_pattern_equal"),
+    ],
+)
+def test_entity_match_rejects_malformed_or_inconsistent_audit_inputs(changes, message):
+    with pytest.raises(ValueError, match=message):
+        entity_match(**changes)
+
+
 def test_matching_rejects_duplicate_names_reuse_and_split_crossing_reserves(fake_tokenizer):
     real = candidate(name="Old Vale")
     with pytest.raises(ValueError, match="duplicate"):
@@ -137,7 +207,7 @@ def test_matching_rejects_registered_character_tolerance_and_surface_mismatches(
         match_synthetic_entities([real], [wrong_case], fake_tokenizer)
 
 
-def rating(pair_id, rater_id, real=4, synthetic=4, malformed=False, round=1, disagreement_registered=False):
+def rating(pair_id, rater_id, real=4, synthetic=4, malformed=False, round=1, disagreement_registered=False, schema_version=1):
     return NaturalnessRating(
         pair_id=pair_id,
         rater_id=rater_id,
@@ -148,6 +218,7 @@ def rating(pair_id, rater_id, real=4, synthetic=4, malformed=False, round=1, dis
         synthetic_malformed=malformed,
         round=round,
         disagreement_registered=disagreement_registered,
+        schema_version=schema_version,
     )
 
 
@@ -178,6 +249,74 @@ def test_naturalness_audit_allows_registered_third_rater_only_for_disagreement(f
             [match],
             [rating(match.pair_id, "rater-a"), rating(match.pair_id, "rater-b"), rating(match.pair_id, "rater-c", round=2, disagreement_registered=True)],
         )
+
+
+@pytest.mark.parametrize(
+    ("factory", "changes"),
+    [
+        (candidate, {"schema_version": True}),
+        (candidate, {"schema_version": 1.0}),
+        (entity_match, {"schema_version": True}),
+        (entity_match, {"schema_version": 1.0}),
+        (lambda **changes: rating("Q90--syn-2", "rater-a", **changes), {"schema_version": True}),
+        (lambda **changes: rating("Q90--syn-2", "rater-a", **changes), {"schema_version": 1.0}),
+    ],
+)
+def test_runtime_audit_records_reject_schema_version_aliases(factory, changes):
+    with pytest.raises(ValueError, match="schema_version"):
+        factory(**changes)
+
+
+def test_naturalness_rating_requires_a_canonical_pair_id():
+    with pytest.raises(ValueError, match="pair_id"):
+        rating("not-a-pair", "rater-a")
+
+
+@pytest.mark.parametrize(
+    ("factory", "schema_name"),
+    [
+        (candidate, "candidate_entity.schema.json"),
+        (entity_match, "synthetic_match.schema.json"),
+        (lambda: rating("Q90--syn-2", "rater-a"), "naturalness_rating.schema.json"),
+    ],
+)
+def test_runtime_records_serialize_to_their_complete_schemas(factory, schema_name):
+    schema = json.loads((SCHEMA_DIR / schema_name).read_text(encoding="utf-8"))
+    payload = json.loads(json.dumps(asdict(factory())))
+
+    STRICT_DRAFT202012_VALIDATOR(schema).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "schema_name",
+    [
+        "candidate_entity.schema.json",
+        "screening_question.schema.json",
+        "synthetic_match.schema.json",
+        "naturalness_rating.schema.json",
+    ],
+)
+@pytest.mark.parametrize("schema_version", [True, 1.0, 2])
+def test_contract_schemas_require_exact_integer_schema_version(schema_name, schema_version):
+    schema = json.loads((SCHEMA_DIR / schema_name).read_text(encoding="utf-8"))
+    valid_payloads = {
+        "candidate_entity.schema.json": asdict(candidate()),
+        "screening_question.schema.json": {
+            "schema_version": 1,
+            "question_id": "Q90-1",
+            "qid": "Q90",
+            "prompt": "What country is Paris in?",
+            "accepted_aliases": ["France"],
+            "source_provenance": "CC0-1.0",
+        },
+        "synthetic_match.schema.json": asdict(entity_match()),
+        "naturalness_rating.schema.json": asdict(rating("Q90--syn-2", "rater-a")),
+    }
+    payload = json.loads(json.dumps(valid_payloads[schema_name]))
+    payload["schema_version"] = schema_version
+
+    with pytest.raises(Exception):
+        STRICT_DRAFT202012_VALIDATOR(schema).validate(payload)
 
 
 @pytest.mark.parametrize(
