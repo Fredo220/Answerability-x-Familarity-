@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "jsonschema>=4.23,<5"]
 rlmf-local = ["peft==0.18.0", "safetensors>=0.5,<1"]
 
 [project.scripts]
