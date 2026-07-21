@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Familiarity Answerability Synthetic Match",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pair_id", "real_qid", "synthetic_candidate_id", "split", "generator_revision", "tokenizer_revision", "character_tolerance"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "pair_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*--[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "real_qid": {"type": "string", "pattern": "^Q[1-9][0-9]*$"},
+    "synthetic_candidate_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "split": {"enum": ["pilot", "mechanism_train", "locked_validation", "behavior_test", "probe_test", "intervention_test", "circuit_dev"]},
+    "generator_revision": {"type": "string", "minLength": 1},
+    "tokenizer_revision": {"type": "string", "minLength": 1},
+    "character_tolerance": {"const": 2}
+  }
+}

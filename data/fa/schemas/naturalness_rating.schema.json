@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Familiarity Answerability Naturalness Rating",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pair_id", "rater_id", "real_naturalness", "synthetic_naturalness", "real_type_fit", "synthetic_type_fit", "synthetic_malformed", "round", "disagreement_registered"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "pair_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*--[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "rater_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "real_naturalness": {"type": "integer", "minimum": 1, "maximum": 5},
+    "synthetic_naturalness": {"type": "integer", "minimum": 1, "maximum": 5},
+    "real_type_fit": {"type": "integer", "minimum": 1, "maximum": 5},
+    "synthetic_type_fit": {"type": "integer", "minimum": 1, "maximum": 5},
+    "synthetic_malformed": {"type": "boolean"},
+    "round": {"enum": [1, 2]},
+    "disagreement_registered": {"type": "boolean"}
+  }
+}
