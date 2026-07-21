@@ -14,6 +14,7 @@ import torch
 
 from trajectory_extractor.artifacts import RunStore
 from trajectory_extractor.circuit_followup import prepare_circuit_followup
+from trajectory_extractor.fa_cli import dispatch_fa, register_fa_subcommands
 from trajectory_extractor.datasets.concept_mixing import (
     ConceptMixingExample,
     generate_concept_mixing_examples,
@@ -86,6 +87,7 @@ from trajectory_extractor.types import ExperimentConfig
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="feature-dynamics")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
 
     concept = subparsers.add_parser("generate-concept-data")
     concept.add_argument("--output", default="data/processed/concept_mixing.jsonl")
@@ -294,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     rlmf_seal_adjudication.add_argument("--size", type=int)
 
     args = parser.parse_args(argv)
+    if (fa_exit_code := dispatch_fa(args)) is not None:
+        return fa_exit_code
     if args.command == "generate-concept-data":
         examples = generate_concept_mixing_examples(total=args.total, seed=args.seed)
         write_examples_jsonl(examples, args.output, seed=args.seed)

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "api_retrieval_date": "2026-07-22",
+  "gated_model_access_tested": false,
+  "gemma_model_and_tokenizer": {
+    "repository": "google/gemma-2-2b-it",
+    "revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+  },
+  "gemma_chat_template": {
+    "repository": "google/gemma-2-2b-it",
+    "sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+  },
+  "gemma_scope": {
+    "repository": "google/gemma-scope-2b-pt",
+    "revision": "fd571b47c1c64851e9b1989792367b9babb4af63"
+  },
+  "circuit_tracer": {
+    "repository": "decoderesearch/circuit-tracer",
+    "revision": "4bb8c0ea10bde09727e14565ec8469656880da53",
+    "version": "v0.5.0"
+  }
+}

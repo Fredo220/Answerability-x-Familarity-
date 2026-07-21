@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "profile": "confirmatory",
+  "study_id": "familiarity-answerability-gemma2-2b-v1",
+  "run_id": "confirmatory-v1",
+  "model_id": "google/gemma-2-2b-it",
+  "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+  "split_seed": 20260722,
+  "split_counts": {
+    "mechanism_train": 64,
+    "locked_validation": 32,
+    "behavior_test": 48,
+    "probe_test": 24,
+    "intervention_test": 24
+  },
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 16,
+    "temperature": 0.0
+  },
+  "bootstrap_replicates": 10000,
+  "bootstrap_seed": 20260722,
+  "thresholds": {
+    "format_validity_min": 0.95,
+    "h1_min_interaction": 0.05,
+    "h2_noninferiority_margin": 0.05,
+    "h5_relative_log_loss_min": 0.02,
+    "intervention_accuracy_drop_max": 0.05,
+    "intervention_control_rate_change_max": 0.03,
+    "probe_auroc_min": 0.65,
+    "probe_balanced_accuracy_min": 0.55,
+    "sae_loss_recovery_min": 0.70
+  },
+  "anchors": [
+    "target_intro_end",
+    "user_prompt_end",
+    "assistant_prefix_end"
+  ]
+}
