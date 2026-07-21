@@ -8,19 +8,20 @@ without coupling it to generation or artifact I/O.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
 import unicodedata
+import re
 
 import numpy as np
 
 from trajectory_extractor.fa_config import CONFIRMATORY_THRESHOLDS
 
 
-Cell = tuple[str, str]
+Cell = tuple[str, str, str]
 _PRIMARY_TARGETS = ("screened_real", "matched_synthetic")
 _PRIMARY_ANSWERABILITY = ("target_bound", "distractor_bound", "code_absent")
 _H2B_EXPOSURES = ("high_exposure", "low_exposure")
@@ -30,6 +31,7 @@ _INFRASTRUCTURE_MARKERS = (
     "<|infrastructure",
     "generation backend unavailable",
 )
+_LOWERCASE_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class OutcomeClass(str, Enum):
@@ -267,6 +269,10 @@ class BehavioralGate:
     h1: GateDecision
     h2: GateDecision
     h2b: GateDecision
+    thresholds: Mapping[str, float]
+    same_string_sealed: bool
+    config_hash: str
+    manifest_hash: str
     h2b_cannot_rescue_h1: bool = True
 
     def __post_init__(self) -> None:
@@ -274,6 +280,13 @@ class BehavioralGate:
             raise ValueError("gate status is invalid")
         if self.h2b_cannot_rescue_h1 is not True:
             raise ValueError("H2b must not rescue H1")
+        if dict(self.thresholds) != CONFIRMATORY_THRESHOLDS:
+            raise ValueError("thresholds must match registered thresholds")
+        if type(self.same_string_sealed) is not bool:
+            raise ValueError("same_string_sealed must be boolean")
+        _lowercase_sha256(self.config_hash, "config_hash")
+        _lowercase_sha256(self.manifest_hash, "manifest_hash")
+        object.__setattr__(self, "thresholds", MappingProxyType(dict(self.thresholds)))
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -281,6 +294,10 @@ class BehavioralGate:
             "h1": self.h1.to_record(),
             "h2": self.h2.to_record(),
             "h2b": self.h2b.to_record(),
+            "thresholds": dict(self.thresholds),
+            "same_string_sealed": self.same_string_sealed,
+            "config_hash": self.config_hash,
+            "manifest_hash": self.manifest_hash,
             "h2b_cannot_rescue_h1": True,
         }
 
@@ -289,6 +306,7 @@ def score_response(
     example: Any,
     text: str | None,
     *,
+    registered_codes: Collection[str],
     truncated: bool = False,
     infrastructure_marked: bool = False,
 ) -> ScoredResponse:
@@ -298,6 +316,9 @@ def score_response(
     if text is not None and not isinstance(text, str):
         raise ValueError("text must be a string or None")
     fields = _example_fields(example)
+    vocabulary = _registered_code_vocabulary(registered_codes)
+    if fields["row"]["registry_code"] not in vocabulary:
+        raise ValueError("registered_codes must contain the example registry_code")
     normalized = "" if text is None else unicodedata.normalize("NFC", text).strip()
     marked = infrastructure_marked or _contains_infrastructure_marker(normalized)
     completed = text is not None and not marked
@@ -311,7 +332,7 @@ def score_response(
         outcome = OutcomeClass.EXACT_TARGET_CODE
     elif fields["distractor_code"] is not None and normalized == fields["distractor_code"]:
         outcome = OutcomeClass.DISTRACTOR_CODE_COPY
-    elif normalized in fields["registered_codes"]:
+    elif normalized in vocabulary:
         outcome = OutcomeClass.NOVEL_CODE_ASSERTION
     else:
         outcome = OutcomeClass.OTHER_NON_ABSTENTION
@@ -397,12 +418,20 @@ def behavioral_gate(
     metrics: BehavioralMetrics,
     bootstrap: BootstrapDistribution,
     *,
-    thresholds: Mapping[str, float] = CONFIRMATORY_THRESHOLDS,
-    same_string_sealed: bool = False,
+    thresholds: Mapping[str, float],
+    same_string_sealed: bool,
+    config_hash: str,
+    manifest_hash: str,
 ) -> BehavioralGate:
     """Apply registered H1/H2 gates while reporting H2b independently."""
     if not isinstance(thresholds, Mapping):
         raise ValueError("thresholds must be a mapping")
+    if dict(thresholds) != CONFIRMATORY_THRESHOLDS:
+        raise ValueError("thresholds must match registered thresholds")
+    if type(same_string_sealed) is not bool:
+        raise ValueError("same_string_sealed must be boolean")
+    _lowercase_sha256(config_hash, "config_hash")
+    _lowercase_sha256(manifest_hash, "manifest_hash")
     h1_min = _threshold(thresholds, "h1_min_interaction")
     h2_margin = _threshold(thresholds, "h2_noninferiority_margin")
     format_min = _threshold(thresholds, "format_validity_min")
@@ -410,7 +439,16 @@ def behavioral_gate(
     h1 = _h1_decision(metrics, bootstrap, h1_min, format_min, h2)
     h2b = _h2b_decision(metrics, bootstrap, h1_min, same_string_sealed)
     status = h1.status
-    return BehavioralGate(status=status, h1=h1, h2=h2, h2b=h2b)
+    return BehavioralGate(
+        status=status,
+        h1=h1,
+        h2=h2,
+        h2b=h2b,
+        thresholds=thresholds,
+        same_string_sealed=same_string_sealed,
+        config_hash=config_hash,
+        manifest_hash=manifest_hash,
+    )
 
 
 def _estimate(
@@ -420,20 +458,29 @@ def _estimate(
     require_completion: bool = True,
 ) -> BehavioralMetrics:
     factorial = tuple(row for row in rows if row.block == "factorial")
-    primary_cells = tuple((target, answerability) for target in _PRIMARY_TARGETS for answerability in _PRIMARY_ANSWERABILITY)
+    primary_cells = tuple(
+        (target, distractor, answerability)
+        for target in _PRIMARY_TARGETS
+        for distractor in _PRIMARY_TARGETS
+        for answerability in _PRIMARY_ANSWERABILITY
+    )
     rates, completion, format_validity, denominators, invalid = _cell_summaries(factorial, primary_cells)
     missing = [cell for cell in primary_cells if denominators[cell] == 0]
-    reasons = [f"missing_cell:{cell[0]}:{cell[1]}" for cell in missing]
+    reasons = [f"missing_cell:{cell[0]}:{cell[1]}:{cell[2]}" for cell in missing]
     if require_completion:
         reasons.extend(
-            f"completion<0.95:{target}:{answerability}"
-            for target, answerability in primary_cells
-            if denominators[(target, answerability)] and completion[(target, answerability)] < 0.95
+            f"completion<0.95:{target}:{distractor}:{answerability}"
+            for target, distractor, answerability in primary_cells
+            if denominators[(target, distractor, answerability)]
+            and completion[(target, distractor, answerability)] < 0.95
         )
     interaction = None if missing else _h1_interaction(rates)
     # Keep primary attempt rates separately from exact-target accuracy in one internal map.
-    attempt_rates = {cell: rates[(cell[0], cell[1], "attempt")] for cell in primary_cells}
-    h2_difference = None if missing else rates[("matched_synthetic", "target_bound", "exact_target")] - rates[("screened_real", "target_bound", "exact_target")]
+    attempt_rates = {cell: rates[(*cell, "attempt")] for cell in primary_cells}
+    h2_difference = None if missing else (
+        _equal_distractor_average(rates, "matched_synthetic", "target_bound", "exact_target")
+        - _equal_distractor_average(rates, "screened_real", "target_bound", "exact_target")
+    )
     h2b, _ = _same_string_interaction(rows)
     sensitivities: dict[str, SensitivityResult] = {}
     if include_sensitivities:
@@ -463,7 +510,7 @@ def _cell_summaries(
     valid_formats = defaultdict(int)
     invalid = defaultdict(int)
     for row in rows:
-        cell = (row.target_familiarity, row.answerability)
+        cell = (row.target_familiarity, row.distractor_familiarity, row.answerability)
         if cell not in cells:
             continue
         weight = row.sampling_weight
@@ -483,31 +530,40 @@ def _cell_summaries(
         denominators[cell] = denominator
         invalid_counts[cell] = invalid[cell]
         if denominator:
-            rates[(cell[0], cell[1], "attempt")] = attempts[cell] / denominator
-            rates[(cell[0], cell[1], "exact_target")] = exact_targets[cell] / denominator
+            rates[(*cell, "attempt")] = attempts[cell] / denominator
+            rates[(*cell, "exact_target")] = exact_targets[cell] / denominator
             completion[cell] = completions[cell] / denominator
             format_validity[cell] = valid_formats[cell] / denominator
         else:
-            rates[(cell[0], cell[1], "attempt")] = float("nan")
-            rates[(cell[0], cell[1], "exact_target")] = float("nan")
+            rates[(*cell, "attempt")] = float("nan")
+            rates[(*cell, "exact_target")] = float("nan")
             completion[cell] = float("nan")
             format_validity[cell] = float("nan")
     return rates, completion, format_validity, denominators, invalid_counts
 
 
-def _h1_interaction(rates: Mapping[tuple[str, str, str], float]) -> float:
+def _h1_interaction(rates: Mapping[tuple[str, str, str, str], float]) -> float:
     absent_real = 0.5 * (
-        rates[("screened_real", "distractor_bound", "attempt")]
-        + rates[("screened_real", "code_absent", "attempt")]
+        _equal_distractor_average(rates, "screened_real", "distractor_bound", "attempt")
+        + _equal_distractor_average(rates, "screened_real", "code_absent", "attempt")
     )
     absent_synthetic = 0.5 * (
-        rates[("matched_synthetic", "distractor_bound", "attempt")]
-        + rates[("matched_synthetic", "code_absent", "attempt")]
+        _equal_distractor_average(rates, "matched_synthetic", "distractor_bound", "attempt")
+        + _equal_distractor_average(rates, "matched_synthetic", "code_absent", "attempt")
     )
     return (absent_real - absent_synthetic) - (
-        rates[("screened_real", "target_bound", "attempt")]
-        - rates[("matched_synthetic", "target_bound", "attempt")]
+        _equal_distractor_average(rates, "screened_real", "target_bound", "attempt")
+        - _equal_distractor_average(rates, "matched_synthetic", "target_bound", "attempt")
     )
+
+
+def _equal_distractor_average(
+    rates: Mapping[tuple[str, str, str, str], float],
+    target: str,
+    answerability: str,
+    outcome: str,
+) -> float:
+    return 0.5 * sum(rates[(target, distractor, answerability, outcome)] for distractor in _PRIMARY_TARGETS)
 
 
 def _same_string_interaction(rows: Sequence[ScoredResponse]) -> tuple[float | None, tuple[str, ...]]:
@@ -622,23 +678,22 @@ def _example_fields(example: Any) -> dict[str, Any]:
     block = getattr(example, "block", "factorial")
     exposure = getattr(example, "exposure", None)
     answerability = row["answerability"]
-    target_code = getattr(example, "target_code", None)
-    distractor_code = getattr(example, "distractor_code", None)
-    if target_code is None and answerability == "target_bound":
-        target_code = row["registry_code"]
-    if distractor_code is None and answerability == "distractor_bound":
-        distractor_code = row["registry_code"]
-    codes = getattr(example, "registered_codes", (row["registry_code"],))
-    if isinstance(codes, str) or not isinstance(codes, Sequence):
-        raise ValueError("registered_codes must be a sequence of codes")
-    registered_codes = frozenset(_nonempty_text(code, "registered code") for code in codes)
-    registered_codes |= frozenset(code for code in (target_code, distractor_code) if code is not None)
+    target_code = row["registry_code"] if answerability == "target_bound" else None
+    distractor_code = row["registry_code"] if answerability == "distractor_bound" else None
     return {
         "row": {**row, "block": block, "exposure": exposure},
         "target_code": target_code,
         "distractor_code": distractor_code,
-        "registered_codes": registered_codes,
     }
+
+
+def _registered_code_vocabulary(codes: Collection[str]) -> frozenset[str]:
+    if isinstance(codes, str) or not isinstance(codes, Collection):
+        raise ValueError("registered_codes must be a collection of codes")
+    vocabulary = frozenset(_nonempty_text(code, "registered code") for code in codes)
+    if not vocabulary:
+        raise ValueError("registered_codes must not be empty")
+    return vocabulary
 
 
 def _scored_rows(rows: Sequence[ScoredResponse]) -> tuple[ScoredResponse, ...]:
@@ -680,14 +735,23 @@ def _contains_infrastructure_marker(value: str) -> bool:
     return any(marker in normalized for marker in _INFRASTRUCTURE_MARKERS)
 
 
+def _lowercase_sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not _LOWERCASE_SHA256.fullmatch(value):
+        raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+    return value
+
+
 def _freeze_cells(values: Mapping[Cell, Any]) -> Mapping[Cell, Any]:
     frozen = {}
     for cell, value in values.items():
-        if not isinstance(cell, tuple) or len(cell) != 2 or not all(isinstance(item, str) for item in cell):
-            raise ValueError("cell keys must be two text labels")
+        if not isinstance(cell, tuple) or len(cell) != 3 or not all(isinstance(item, str) for item in cell):
+            raise ValueError("cell keys must be three text labels")
         frozen[cell] = value
     return MappingProxyType(frozen)
 
 
 def _cell_record(values: Mapping[Cell, Any]) -> dict[str, Any]:
-    return {f"{target}:{answerability}": value for (target, answerability), value in sorted(values.items())}
+    return {
+        f"{target}:{distractor}:{answerability}": value
+        for (target, distractor, answerability), value in sorted(values.items())
+    }
