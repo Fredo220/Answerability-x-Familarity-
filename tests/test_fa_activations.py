@@ -15,6 +15,7 @@ import torch
 from trajectory_extractor.fa_activations import (
     HFSelectedPositionRunner,
     extract_registered_anchors,
+    load_activation_records,
     resolve_registered_anchors,
     resume_activation_shard,
     write_activation_shard,
@@ -420,6 +421,41 @@ def test_streaming_writer_is_memory_bounded_verified_and_records_activation_meta
     assert all(row["anchor_names"] == list(resolve_registered_anchors(examples[0], runner.tokenizer).anchor_names) for row in rows)
     assert all("rendered_utf8_hex" in row["anchors"] for row in rows)
     assert all("hidden_states" not in row for row in rows)
+
+
+def test_verified_loader_reconstructs_typed_activation_records_in_index_order(tmp_path):
+    runner = FakeRunner()
+    examples = (example(example_id="example-1"), example(example_id="example-2"))
+    shard = write_activation_shard(
+        runner,
+        examples,
+        registered_layers=(4, 12, 20),
+        destination=tmp_path / "typed.npz",
+    )
+
+    records = load_activation_records(shard.manifest_path)
+
+    assert tuple(record.example_id for record in records) == ("example-1", "example-2")
+    assert all(record.layer_ids == (4, 12, 20) for record in records)
+    assert all(record.shape == (3, 3, runner.hidden_size) for record in records)
+    assert all(record.activations.flags.writeable is False for record in records)
+    assert all(
+        record.activation_sha256
+        == hashlib.sha256(record.activation_hash_payload).hexdigest()
+        for record in records
+    )
+
+
+def test_verified_loader_requires_the_exact_sidecar_manifest_path(tmp_path):
+    shard = write_activation_shard(
+        FakeRunner(),
+        (example(example_id="example-1"),),
+        registered_layers=(4,),
+        destination=tmp_path / "typed.npz",
+    )
+
+    with pytest.raises(ValueError, match="manifest path"):
+        load_activation_records(shard.npz_path)
 
 
 def test_activation_shards_are_deterministic_resume_without_running_and_no_clobber(tmp_path):

@@ -816,6 +816,38 @@ def test_dedicated_protected_evaluation_commands_remain_not_implemented(
     }
 
 
+def test_standalone_unlock_command_is_fail_closed_and_cannot_create_a_lease(
+    tmp_path, capsys
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+
+    exit_code = cli.main(
+        [
+            "fa-unlock-endpoint",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["status"] == "error"
+    assert payload["error"]["message"] == (
+        "standalone endpoint unlock is disabled; a dedicated protected evaluation "
+        "command must acquire and close its lease atomically"
+    )
+    endpoint_root = (
+        tmp_path
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "endpoints"
+    )
+    assert not endpoint_root.exists()
+
+
 def exhaustive_power_audit(rows, *, power=0.8):
     cells = tuple(
         PowerCell(

@@ -60,7 +60,12 @@ FA_COMMANDS = (
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
 _IMPLEMENTED = frozenset(
-    (*FA_COMMANDS[:6], "fa-extract-activations", "fa-evaluate-behavior-test")
+    (
+        *FA_COMMANDS[:6],
+        "fa-extract-activations",
+        "fa-unlock-endpoint",
+        "fa-evaluate-behavior-test",
+    )
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
 _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
@@ -176,6 +181,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _extract_activations(config, root, args)
         elif command == "fa-evaluate-behavior-test":
             payload = _evaluate_behavior_test(config, root, args)
+        elif command == "fa-unlock-endpoint":
+            payload = _reject_standalone_unlock()
         else:
             payload = _score_behavior(config, root, args)
     except Exception as error:
@@ -192,6 +199,13 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
         return 3 if isinstance(error, (ImportError, OSError, RuntimeError)) else 2
     print(json.dumps(_json_safe({"command": command, **payload}), sort_keys=True, allow_nan=False))
     return 3 if payload.get("status") == "infrastructure_failure" else 0
+
+
+def _reject_standalone_unlock() -> dict[str, Any]:
+    raise ValueError(
+        "standalone endpoint unlock is disabled; a dedicated protected evaluation "
+        "command must acquire and close its lease atomically"
+    )
 
 
 def _argument_error(command: str, message: str) -> None:

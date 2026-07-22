@@ -592,6 +592,87 @@ def resume_activation_shard(destination: str | Path) -> ActivationShard:
     )
 
 
+def load_activation_records(manifest_path: str | Path) -> tuple[ActivationRecord, ...]:
+    """Verify an immutable activation shard and reconstruct its typed rows.
+
+    The manifest is the capability passed between Colab extraction and local
+    analysis. Accepting the NPZ path directly would bypass that explicit
+    boundary, so callers must provide the exact sidecar manifest.
+    """
+
+    manifest_path = Path(manifest_path).absolute()
+    if not manifest_path.name.endswith(".manifest.json"):
+        raise ValueError("activation loader requires the exact sidecar manifest path")
+    _reject_symlinked_components((manifest_path,))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("activation shard manifest is unreadable") from error
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ValueError("activation shard manifest has an invalid schema")
+    npz_name = manifest.get("npz_file")
+    if (
+        not isinstance(npz_name, str)
+        or Path(npz_name).name != npz_name
+        or not npz_name.endswith(".npz")
+    ):
+        raise ValueError("activation shard manifest has an invalid NPZ path")
+    shard = resume_activation_shard(manifest_path.parent / npz_name)
+    if shard.manifest_path != manifest_path:
+        raise ValueError("activation loader requires the exact sidecar manifest path")
+
+    rows = _read_index(shard.index_path)
+    records: list[ActivationRecord] = []
+    with zipfile.ZipFile(shard.npz_path, "r") as archive:
+        for row in rows:
+            member = row["npz_member"]
+            with archive.open(member) as source:
+                array = np.array(np.load(source, allow_pickle=False), copy=True, order="C")
+            anchors = _anchor_record_from_index(row)
+            records.append(
+                ActivationRecord(
+                    example_id=row["example_id"],
+                    anchors=anchors,
+                    layer_ids=tuple(row["layer_ids"]),
+                    activations=array,
+                    dtype=row["dtype"],
+                    shape=tuple(row["shape"]),
+                    activation_sha256=row["activation_sha256"],
+                    model_id=row["model_id"],
+                    model_revision=row["model_revision"],
+                    anchor_names=tuple(row["anchor_names"]),
+                )
+            )
+    return tuple(records)
+
+
+def _anchor_record_from_index(row: Mapping[str, Any]) -> AnchorRecord:
+    payload = row.get("anchors")
+    if not isinstance(payload, Mapping):
+        raise ValueError("activation shard anchor provenance is invalid")
+    try:
+        rendered = bytes.fromhex(payload["rendered_utf8_hex"])
+        positions = tuple(payload["anchor_indices"])
+        return AnchorRecord(
+            example_id=row["example_id"],
+            rendered_bytes=rendered,
+            rendered_prompt_sha256=payload["rendered_prompt_sha256"],
+            input_ids=tuple(payload["input_ids"]),
+            special_tokens_mask=tuple(payload["special_tokens_mask"]),
+            offset_mapping=tuple(tuple(pair) for pair in payload["offset_mapping"]),
+            target_intro_end=positions[0],
+            user_prompt_end=positions[1],
+            assistant_prefix_end=positions[2],
+            tokenizer_id=payload["tokenizer_id"],
+            tokenizer_revision=payload["tokenizer_revision"],
+            tokenizer_config_sha256=payload["tokenizer_config_sha256"],
+            chat_template_sha256=payload["chat_template_sha256"],
+            position_semantics=tuple(payload["position_semantics"]),
+        )
+    except (KeyError, TypeError, ValueError, IndexError) as error:
+        raise ValueError("activation shard anchor provenance is invalid") from error
+
+
 def _run_selected(
     runner: Any,
     input_ids: tuple[int, ...],
