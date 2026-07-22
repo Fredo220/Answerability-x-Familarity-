@@ -54,6 +54,7 @@ INTERVENTION_TEMPLATE_FAMILIES = (
 TEST_TEMPLATE_FAMILIES = BEHAVIOR_TEMPLATE_FAMILIES
 CONFIRMATORY_POWER_SIMULATIONS = 2000
 CONFIRMATORY_POWER_SEED = 20260722
+_CONFIRMATORY_POWER_CELLS = 180
 _CODE = re.compile(r"K[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}\Z")
 _FAMILIES_BY_SPLIT = {
     "mechanism_train": TRAIN_TEMPLATE_FAMILIES,
@@ -328,7 +329,7 @@ class FAManifest:
         object.__setattr__(self, "examples", ordered)
         if len({row.example_id for row in ordered}) != len(ordered):
             raise ValueError("manifest cannot contain duplicate example IDs")
-        expected = _manifest_sha256(self.config_hash, ordered)
+        expected = _manifest_sha256(self.config_hash, ordered, self.power_audit)
         if self.manifest_sha256 != expected:
             raise ValueError("manifest_sha256 must derive from canonical content")
 
@@ -403,18 +404,23 @@ def build_manifest(
     *,
     power_audit: PowerAudit | None = None,
 ) -> FAManifest:
-    """Seal deterministic rows and fail closed for a full confirmatory design."""
+    """Seal deterministic rows and fail closed for every confirmatory manifest."""
     rows = tuple(sorted(examples, key=lambda row: row.example_id))
     factorial_rows = tuple(row for row in rows if row.block == "factorial")
-    if _is_full_confirmatory_design(config, factorial_rows):
+    if config.profile == "confirmatory":
+        if not _is_complete_confirmatory_design(config, rows):
+            raise ValueError("confirmatory manifest requires a complete factorial and same-string design")
         if power_audit is None:
             raise ValueError("confirmatory manifest requires a registered power audit")
         if not _is_valid_confirmatory_power_audit(power_audit, factorial_rows):
             raise ValueError("confirmatory manifest requires a passing registered power audit")
+        recomputed_audit = _recompute_confirmatory_power_audit(factorial_rows)
+        if power_audit != recomputed_audit:
+            raise ValueError("confirmatory power audit must equal the exact registered recomputation")
     return FAManifest(
         config_hash=config.config_hash,
         examples=rows,
-        manifest_sha256=_manifest_sha256(config.config_hash, rows),
+        manifest_sha256=_manifest_sha256(config.config_hash, rows, power_audit),
         power_audit=power_audit,
     )
 
@@ -488,6 +494,8 @@ def simulate_interaction_power(
         raise ValueError("power rates and ICCs must be in [0, 1]")
     if any(value < 0.0 or value > 1.0 for value in interactions):
         raise ValueError("interaction effects must be in [0, 1]")
+    for entity_icc, template_icc in product(entity_iccs, template_iccs):
+        _joint_logit_random_effect_variances(float(entity_icc), float(template_icc))
 
     power_design = _prepare_power_design(rows)
     if power_design is None:
@@ -804,10 +812,16 @@ def _normalize_token_ids(value: Any, tokenizer: Any) -> Sequence[Any]:
 
 
 def _require_confirmatory_chat_template(config: FAConfig, tokenizer: Any | None) -> None:
-    if config.profile == "confirmatory" and not callable(
-        getattr(tokenizer, "apply_chat_template", None)
-    ):
+    if config.profile != "confirmatory":
+        return
+    if not callable(getattr(tokenizer, "apply_chat_template", None)):
         raise ValueError("confirmatory construction requires tokenizer.apply_chat_template")
+    chat_template = getattr(tokenizer, "chat_template", None)
+    if not isinstance(chat_template, str):
+        raise ValueError("confirmatory construction requires tokenizer.chat_template bytes")
+    actual_sha256 = hashlib.sha256(chat_template.encode("utf-8")).hexdigest()
+    if actual_sha256 != config.chat_template_sha256:
+        raise ValueError("tokenizer chat_template_sha256 does not match the confirmatory config")
 
 
 def _normalize_prompt_punctuation(text: str) -> str:
@@ -1158,8 +1172,12 @@ def _simulate_crossed_cluster_cell(
     entity_count = entity_membership.shape[1]
     template_count = template_membership.shape[1]
     intersection_count = intersection_membership.shape[1]
-    entity_sd = _logit_random_effect_sd(entity_icc)
-    template_sd = _logit_random_effect_sd(template_icc)
+    entity_variance, template_variance = _joint_logit_random_effect_variances(
+        entity_icc,
+        template_icc,
+    )
+    entity_sd = math.sqrt(entity_variance)
+    template_sd = math.sqrt(template_variance)
     base_probability = np.where(absent, absent_rate, 0.80).astype(np.float64)
     base_probability = base_probability + (absent & target_real) * interaction
     base_probability = np.clip(base_probability, 1e-6, 1.0 - 1e-6)
@@ -1222,9 +1240,21 @@ def _simulate_crossed_cluster_cell(
 
 
 def _logit_random_effect_sd(icc: float) -> float:
-    if icc <= 0.0:
-        return 0.0
-    return math.sqrt((icc * (math.pi**2 / 3.0)) / max(1.0 - icc, 1e-12))
+    variance, _ = _joint_logit_random_effect_variances(icc, 0.0)
+    return math.sqrt(variance)
+
+
+def _joint_logit_random_effect_variances(
+    entity_icc: float,
+    template_icc: float,
+) -> tuple[float, float]:
+    values = (entity_icc, template_icc)
+    if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in values):
+        raise ValueError("entity and template ICCs must be finite")
+    if entity_icc < 0.0 or template_icc < 0.0 or entity_icc + template_icc >= 1.0:
+        raise ValueError("entity and template ICCs must be nonnegative and sum to less than one")
+    total_variance = (math.pi**2 / 3.0) / (1.0 - entity_icc - template_icc)
+    return entity_icc * total_variance, template_icc * total_variance
 
 
 def _logistic_normal_mean(intercept: float, variance: float) -> float:
@@ -1250,19 +1280,91 @@ def _cluster_correction(cluster_count: int) -> float:
     return cluster_count / (cluster_count - 1.0) if cluster_count > 1 else 0.0
 
 
-def _is_full_confirmatory_design(config: FAConfig, rows: Sequence[FAExample]) -> bool:
-    if config.profile != "confirmatory" or any(row.block != "factorial" for row in rows):
+def _is_complete_confirmatory_design(config: FAConfig, rows: Sequence[FAExample]) -> bool:
+    if config.profile != "confirmatory" or not rows:
         return False
-    observed = Counter(row.entity_unit_id for row in rows)
-    split_by_unit = {row.entity_unit_id: row.split for row in rows}
-    expected_units = Counter(config.split_counts)
-    observed_units = Counter(split_by_unit.values())
-    if observed_units != expected_units:
+    factorial_by_unit: dict[str, list[FAExample]] = defaultdict(list)
+    same_string_by_unit: dict[str, list[FAExample]] = defaultdict(list)
+    splits_by_unit: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        splits_by_unit[row.entity_unit_id].add(row.split)
+        destination = factorial_by_unit if row.block == "factorial" else same_string_by_unit
+        destination[row.entity_unit_id].append(row)
+
+    if any(len(splits) != 1 for splits in splits_by_unit.values()):
         return False
-    return all(
-        observed[unit_id] == 12 * len(_FAMILIES_BY_SPLIT[split])
-        for unit_id, split in split_by_unit.items()
+    split_by_unit = {unit_id: next(iter(splits)) for unit_id, splits in splits_by_unit.items()}
+    if Counter(split_by_unit.values()) != Counter(config.split_counts):
+        return False
+    if set(factorial_by_unit) != set(split_by_unit) or set(same_string_by_unit) != set(split_by_unit):
+        return False
+
+    factorial_cells = tuple(
+        product(
+            ("screened_real", "matched_synthetic"),
+            ("screened_real", "matched_synthetic"),
+            ("target_bound", "distractor_bound", "code_absent"),
+        )
     )
+    same_string_cells = Counter(
+        {
+            ("high_exposure", "target_bound"): 1,
+            ("low_exposure", "target_bound"): 1,
+            ("high_exposure", "code_absent"): 1,
+            ("low_exposure", "code_absent"): 1,
+        }
+    )
+    for unit_id, split in split_by_unit.items():
+        families = _FAMILIES_BY_SPLIT[split]
+        expected_factorial = Counter(
+            (family, target, distractor, answerability)
+            for family in families
+            for target, distractor, answerability in factorial_cells
+        )
+        observed_factorial = Counter(
+            (
+                row.template_family,
+                row.target_familiarity,
+                row.distractor_familiarity,
+                row.answerability,
+            )
+            for row in factorial_by_unit[unit_id]
+        )
+        if observed_factorial != expected_factorial:
+            return False
+
+        same_string = same_string_by_unit[unit_id]
+        if (
+            Counter((row.exposure, row.answerability) for row in same_string) != same_string_cells
+            or len({row.template_family for row in same_string}) != 1
+            or any(row.template_family not in families for row in same_string)
+            or any(
+                row.target_familiarity != "matched_synthetic"
+                or row.distractor_familiarity != "matched_synthetic"
+                or row.entity_order != "target_second"
+                or row.query_role != "second"
+                for row in same_string
+            )
+        ):
+            return False
+    return True
+
+
+def _recompute_confirmatory_power_audit(factorial_rows: Sequence[FAExample]) -> PowerAudit:
+    audit = simulate_interaction_power(
+        factorial_rows,
+        REGISTERED_POWER_GRID.interactions,
+        {
+            "entity_icc": REGISTERED_POWER_GRID.entity_iccs,
+            "template_icc": REGISTERED_POWER_GRID.template_iccs,
+            "invalid_format_rate": REGISTERED_POWER_GRID.invalid_format_rates,
+        },
+        CONFIRMATORY_POWER_SEED,
+        simulations=CONFIRMATORY_POWER_SIMULATIONS,
+    )
+    if len(audit.cells) != _CONFIRMATORY_POWER_CELLS:
+        raise RuntimeError("registered confirmatory power simulation must produce exactly 180 cells")
+    return audit
 
 
 def _is_valid_confirmatory_power_audit(
@@ -1278,6 +1380,8 @@ def _is_valid_confirmatory_power_audit(
             REGISTERED_POWER_GRID.interactions,
         )
     )
+    if len(expected_keys) != _CONFIRMATORY_POWER_CELLS:
+        return False
     if (
         not audit.registered_grid
         or audit.seed != CONFIRMATORY_POWER_SEED
@@ -1328,9 +1432,47 @@ def _design_sha256(rows: Sequence[FAExample]) -> str:
     return hashlib.sha256("\n".join(sorted(row.example_id for row in rows)).encode("utf-8")).hexdigest()
 
 
-def _manifest_sha256(config_hash: str, rows: Sequence[FAExample]) -> str:
+def _manifest_sha256(
+    config_hash: str,
+    rows: Sequence[FAExample],
+    power_audit: PowerAudit | None = None,
+) -> str:
     payload = {"config_hash": config_hash, "example_ids": [row.example_id for row in rows]}
+    if power_audit is not None:
+        payload["power_audit"] = _power_audit_payload(power_audit)
     return _payload_sha256(payload)
+
+
+def _power_audit_payload(audit: PowerAudit) -> dict[str, Any]:
+    ordered_cells = sorted(
+        audit.cells,
+        key=lambda cell: (
+            cell.absent_attempt_rate,
+            cell.entity_icc,
+            cell.template_icc,
+            cell.invalid_format_rate,
+            cell.interaction,
+        ),
+    )
+    return {
+        "design_sha256": audit.design_sha256,
+        "seed": audit.seed,
+        "simulations": audit.simulations,
+        "registered_grid": audit.registered_grid,
+        "cells": [
+            {
+                "absent_attempt_rate": cell.absent_attempt_rate,
+                "entity_icc": cell.entity_icc,
+                "template_icc": cell.template_icc,
+                "invalid_format_rate": cell.invalid_format_rate,
+                "interaction": cell.interaction,
+                "estimated_power": cell.estimated_power,
+                "monte_carlo_standard_error": cell.monte_carlo_standard_error,
+                "simulations": cell.simulations,
+            }
+            for cell in ordered_cells
+        ],
+    }
 
 
 def _example_sha256(row: FAExample) -> str:

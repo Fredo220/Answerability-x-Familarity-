@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, dataclass, replace
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from trajectory_extractor.fa_scoring import (
 
 class RegisteredTokenizer:
     all_special_ids = ()
+    chat_template = "registered-scoring-test-template-v1"
 
     def encode(self, text, add_special_tokens=False):
         return text.split()
@@ -33,6 +35,11 @@ def production_example_and_vocabulary() -> tuple[FAExample, frozenset[str], str]
     """Build real registered rows so vocabulary scoring cannot rely on test-only fields."""
     config = FAConfig.from_json(
         Path(__file__).parents[1] / "configs" / "familiarity_answerability_gemma2_2b.json"
+    )
+    object.__setattr__(
+        config,
+        "chat_template_sha256",
+        hashlib.sha256(RegisteredTokenizer.chat_template.encode("utf-8")).hexdigest(),
     )
     matches = tuple(
         EntityMatch(

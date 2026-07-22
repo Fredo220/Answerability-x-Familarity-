@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import FrozenInstanceError, replace
 from itertools import product
+import hashlib
 import math
 
 import pytest
@@ -29,6 +30,7 @@ from trajectory_extractor.fa_entities import EntityMatch
 
 class FakeTokenizer:
     all_special_ids = (0,)
+    chat_template = "test-chat-template-v1"
 
     def encode(self, text, add_special_tokens=False):
         tokens = text.replace(".", " .").replace("?", " ?").split()
@@ -75,7 +77,7 @@ class VariableCodeTokenizer(FakeTokenizer):
 
 
 def config() -> FAConfig:
-    return FAConfig(
+    result = FAConfig(
         schema_version=1,
         profile="confirmatory",
         study_id="familiarity-answerability-gemma2-2b-v1",
@@ -116,6 +118,14 @@ def config() -> FAConfig:
         },
         anchors=("target_intro_end", "user_prompt_end", "assistant_prefix_end"),
     )
+    # Keep confirmatory validation intact in production while pinning this fake
+    # tokenizer's actual template bytes inside this test module.
+    object.__setattr__(
+        result,
+        "chat_template_sha256",
+        hashlib.sha256(FakeTokenizer.chat_template.encode("utf-8")).hexdigest(),
+    )
+    return result
 
 
 def entity_unit(
@@ -223,6 +233,14 @@ def exhaustive_power_audit(rows, *, power=0.80):
         cells=cells,
         registered_grid=True,
     )
+
+
+def stub_confirmatory_recomputation(monkeypatch, expected):
+    def recompute(rows):
+        assert fa_data._design_sha256(rows) == expected.design_sha256
+        return expected
+
+    monkeypatch.setattr(fa_data, "_recompute_confirmatory_power_audit", recompute)
 
 
 def test_each_entity_unit_expands_over_its_registered_template_families():
@@ -507,12 +525,37 @@ def test_confirmatory_construction_requires_apply_chat_template_but_fake_adapter
     assert special_tokens == (0, 0)
 
 
+def test_confirmatory_construction_rejects_wrong_template_bytes_before_rendering():
+    class WrongTemplateTokenizer(FakeTokenizer):
+        chat_template = "test-chat-template-v2"
+
+        def __init__(self):
+            self.render_calls = 0
+
+        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+            self.render_calls += 1
+            raise AssertionError("wrong template must be rejected before rendering")
+
+    _rows, matches = registered_examples()
+    tokenizer = WrongTemplateTokenizer()
+
+    with pytest.raises(ValueError, match="chat_template_sha256"):
+        build_factorial_examples(config(), matches, tokenizer=tokenizer)
+
+    assert tokenizer.render_calls == 0
+
+
 def test_examples_and_manifests_are_immutable_and_content_addressed():
     rows, _ = registered_examples()
-    manifest = build_manifest(config(), rows)
+    test_config = config()
+    ordered = tuple(sorted(rows, key=lambda row: row.example_id))
+    manifest = FAManifest(
+        config_hash=test_config.config_hash,
+        examples=ordered,
+        manifest_sha256=fa_data._manifest_sha256(test_config.config_hash, ordered),
+    )
 
     assert isinstance(manifest, FAManifest)
-    assert manifest.manifest_sha256 == build_manifest(config(), tuple(reversed(rows))).manifest_sha256
     assert len(manifest.manifest_sha256) == 64
     assert rows[0].canonical_payload_sha256 in rows[0].example_id
     with pytest.raises(FrozenInstanceError):
@@ -649,9 +692,8 @@ def test_power_design_registers_entity_template_intersections_for_two_way_cluste
 
 
 def test_logistic_random_effects_preserve_registered_marginal_probabilities():
-    total_variance = fa_data._logit_random_effect_sd(0.30) ** 2 + fa_data._logit_random_effect_sd(
-        0.10
-    ) ** 2
+    entity_variance, template_variance = fa_data._joint_logit_random_effect_variances(0.30, 0.10)
+    total_variance = entity_variance + template_variance
 
     for probability in (0.10, 0.25, 0.50, 0.55, 0.80):
         intercept = fa_data._calibrated_logit_intercept(probability, total_variance)
@@ -659,6 +701,54 @@ def test_logistic_random_effects_preserve_registered_marginal_probabilities():
             probability,
             abs=1e-10,
         )
+
+
+@pytest.mark.parametrize("entity_icc,template_icc", [(0.0, 0.0), (0.05, 0.02), (0.30, 0.10)])
+def test_joint_logistic_random_effect_variances_realize_both_iccs(entity_icc, template_icc):
+    entity_variance, template_variance = fa_data._joint_logit_random_effect_variances(
+        entity_icc,
+        template_icc,
+    )
+    latent_total = entity_variance + template_variance + math.pi**2 / 3.0
+
+    assert entity_variance / latent_total == pytest.approx(entity_icc)
+    assert template_variance / latent_total == pytest.approx(template_icc)
+
+
+@pytest.mark.parametrize("entity_icc,template_icc", [(-0.01, 0.10), (0.30, -0.01), (0.60, 0.40)])
+def test_joint_logistic_random_effect_variances_reject_invalid_pairs(entity_icc, template_icc):
+    with pytest.raises(ValueError, match="ICCs"):
+        fa_data._joint_logit_random_effect_variances(entity_icc, template_icc)
+
+
+def test_confirmatory_power_recomputation_uses_exact_registered_execution(monkeypatch):
+    rows, _ = registered_examples()
+    sentinel = exhaustive_power_audit(rows)
+    calls = []
+
+    def simulate(design, effect_grid, within_entity_correlations, seed, *, simulations):
+        calls.append(
+            (tuple(design), effect_grid, within_entity_correlations, seed, simulations)
+        )
+        return sentinel
+
+    monkeypatch.setattr(fa_data, "simulate_interaction_power", simulate)
+
+    assert fa_data._recompute_confirmatory_power_audit(rows) is sentinel
+    assert calls == [
+        (
+            tuple(rows),
+            REGISTERED_POWER_GRID.interactions,
+            {
+                "entity_icc": REGISTERED_POWER_GRID.entity_iccs,
+                "template_icc": REGISTERED_POWER_GRID.template_iccs,
+                "invalid_format_rate": REGISTERED_POWER_GRID.invalid_format_rates,
+            },
+            20260722,
+            2000,
+        )
+    ]
+    assert len(sentinel.cells) == 180
 
 
 def test_confirmatory_manifest_fails_closed_without_a_registered_power_audit():
@@ -672,14 +762,17 @@ def test_confirmatory_manifest_fails_closed_without_a_registered_power_audit():
             + ["intervention_test"] * 24
         )
     )
-    rows = build_factorial_examples(config(), matches, tokenizer=FakeTokenizer())
+    tokenizer = FakeTokenizer()
+    rows = build_factorial_examples(config(), matches, tokenizer=tokenizer)
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
 
     with pytest.raises(ValueError, match="power audit"):
-        build_manifest(config(), rows)
+        build_manifest(config(), rows + same_string)
 
 
 def test_confirmatory_gate_recognizes_factorial_corpus_when_same_string_rows_are_included(
     full_confirmatory_design,
+    monkeypatch,
 ):
     factorial, same_string = full_confirmatory_design
 
@@ -687,8 +780,61 @@ def test_confirmatory_gate_recognizes_factorial_corpus_when_same_string_rows_are
         build_manifest(config(), factorial + same_string)
 
     audit = exhaustive_power_audit(factorial)
+    stub_confirmatory_recomputation(monkeypatch, audit)
     manifest = build_manifest(config(), factorial + same_string, power_audit=audit)
     assert manifest.power_audit == audit
+
+
+def test_confirmatory_gate_rejects_structurally_valid_fabricated_power_audit(
+    full_confirmatory_design,
+    monkeypatch,
+):
+    factorial, same_string = full_confirmatory_design
+    recomputed = exhaustive_power_audit(factorial, power=0.81)
+    fabricated = exhaustive_power_audit(factorial, power=0.95)
+    stub_confirmatory_recomputation(monkeypatch, recomputed)
+
+    with pytest.raises(ValueError, match="exact registered recomputation"):
+        build_manifest(config(), factorial + same_string, power_audit=fabricated)
+
+
+def test_manifest_hash_commits_to_canonical_power_audit_content(
+    full_confirmatory_design,
+    monkeypatch,
+):
+    factorial, same_string = full_confirmatory_design
+    first_audit = exhaustive_power_audit(factorial, power=0.80)
+    stub_confirmatory_recomputation(monkeypatch, first_audit)
+    first = build_manifest(config(), factorial + same_string, power_audit=first_audit)
+
+    second_audit = exhaustive_power_audit(factorial, power=0.81)
+    stub_confirmatory_recomputation(monkeypatch, second_audit)
+    second = build_manifest(config(), factorial + same_string, power_audit=second_audit)
+
+    assert first.manifest_sha256 != second.manifest_sha256
+
+
+@pytest.mark.parametrize("missing_block", ["factorial", "same_string"])
+def test_confirmatory_manifest_rejects_any_missing_design_row(
+    full_confirmatory_design,
+    monkeypatch,
+    missing_block,
+):
+    factorial, same_string = full_confirmatory_design
+    rows = list(factorial + same_string)
+    rows.remove(next(row for row in rows if row.block == missing_block))
+
+    def power_must_not_run(_rows):
+        raise AssertionError("incomplete design must fail before power recomputation")
+
+    monkeypatch.setattr(fa_data, "_recompute_confirmatory_power_audit", power_must_not_run, raising=False)
+
+    with pytest.raises(ValueError, match="complete factorial and same-string design"):
+        build_manifest(
+            config(),
+            rows,
+            power_audit=exhaustive_power_audit(factorial),
+        )
 
 
 @pytest.mark.parametrize(
