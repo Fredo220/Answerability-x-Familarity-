@@ -2,16 +2,18 @@ import argparse
 import hashlib
 import json
 import math
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from trajectory_extractor import cli
-from trajectory_extractor.fa_artifacts import FAArtifactStore
+from trajectory_extractor.fa_artifacts import FAArtifactStore, UnlockReceipt
 import trajectory_extractor.fa_cli as fa_cli
+import trajectory_extractor.fa_probes as fa_probes
 from trajectory_extractor.fa_cli import dispatch_fa, register_fa_subcommands
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_data import (
@@ -23,6 +25,11 @@ from trajectory_extractor.fa_data import (
 )
 from trajectory_extractor.fa_entities import EntityMatch, NaturalnessRating
 from trajectory_extractor.fa_runtime import run_generation_shard
+from trajectory_extractor.fa_probes import (
+    OUTPUT_CONTROL_SCHEMA_SHA256,
+    ProbeRow,
+    ProbeTestAuthorization,
+)
 
 
 CONFIG_PATH = (
@@ -87,6 +94,70 @@ def sha256_json(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def probe_rows_for_examples(examples):
+    rows = []
+    domains = ("person", "place", "organization", "creative_work")
+    for index, example in enumerate(sorted(examples, key=lambda row: row.example_id)):
+        residual = np.zeros((3, 26, 4), dtype=np.float64)
+        residual[:, :, 0] = float(index % 2)
+        for task in ("familiarity", "answerability", "unsupported_answer"):
+            if task == "unsupported_answer" and example.answerability == "target_bound":
+                continue
+            if task == "familiarity":
+                label = int(example.target_familiarity == "screened_real")
+            elif task == "answerability":
+                label = example.answerability
+            else:
+                label = index % 2
+            rows.append(
+                ProbeRow(
+                    example_id=example.example_id,
+                    split=example.split,
+                    task=task,
+                    label=label,
+                    entity_id=f"{example.split}-entity-{index}",
+                    template_id=f"{example.split}-template-{index}",
+                    relation_id=f"{example.split}-relation-{index}",
+                    domain=domains[index % len(domains)],
+                    condition=f"condition-{index}",
+                    answerability_condition=example.answerability,
+                    target_familiarity_condition=example.target_familiarity,
+                    distractor_familiarity_condition=example.distractor_familiarity,
+                    surface_features=(float(index),),
+                    output_margin_features=tuple(float(index) for _ in range(11)),
+                    residual_features=residual,
+                    sae_features=None,
+                    outcome_status="valid",
+                    source_sha256=example.canonical_payload_sha256,
+                    activation_sha256=sha256_json(
+                        {"activation": example.example_id}
+                    ),
+                    metadata_manifest_sha256=sha256_json(
+                        {"metadata": example.split}
+                    ),
+                    metadata_row_sha256=sha256_json(
+                        {"metadata-row": example.example_id}
+                    ),
+                    output_control_schema_sha256=OUTPUT_CONTROL_SCHEMA_SHA256,
+                    output_evidence_sha256=sha256_json(
+                        {"output": example.example_id}
+                    ),
+                )
+            )
+    return tuple(rows)
+
+
+def write_probe_rows_artifact(root, config, split, rows, *, lineage=None):
+    return FAArtifactStore(root).write_completed_shard(
+        config.run_id,
+        split,
+        f"probe-rows-{split}",
+        [{"kind": "probe_rows", "row": row.to_record()} for row in rows],
+        {"config_sha256": config.config_hash, **(lineage or {})},
+        record_kind="probe_rows",
+    )
 
 
 def naturalness_ratings_manifest(root, config, *, rating_schema_version=1):
@@ -513,6 +584,220 @@ def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, mon
     )
 
 
+def test_probe_selection_reads_only_hash_bound_prompt_identities(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    examples, prompt = prompt_capability(tmp_path, config, "probe_test")
+
+    def forbidden_prompt_payload_read(*args, **kwargs):
+        raise AssertionError("selection must not parse protected prompt payloads")
+
+    monkeypatch.setattr(fa_cli, "_read_json_rows", forbidden_prompt_payload_read)
+    identities, verified = fa_cli._load_prompt_source_identities(
+        FAArtifactStore(tmp_path),
+        prompt.manifest_path,
+        config,
+        expected_namespace="probe_test",
+    )
+
+    assert verified.sha256 == prompt.sha256
+    assert [identity.example_id for identity in identities] == sorted(
+        example.example_id for example in examples
+    )
+    assert all(len(identity.canonical_payload_sha256) == 64 for identity in identities)
+
+
+def test_protected_probe_rows_open_only_after_authorization_and_match_task_identities(
+    tmp_path,
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    examples, prompt = prompt_capability(tmp_path, config, "probe_test")
+    store = FAArtifactStore(tmp_path)
+    task_identities, _ = fa_cli._load_prompt_task_source_identities(
+        store,
+        prompt.manifest_path,
+        config,
+        expected_namespace="probe_test",
+    )
+    rows = probe_rows_for_examples(examples)
+    probe_rows = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "probe-rows",
+        [{"kind": "probe_rows", "row": row.to_record()} for row in rows],
+        {
+            "config_sha256": config.config_hash,
+            "prompt_manifest_sha256": prompt.sha256,
+            "task_source_identities_sha256": fa_cli._task_source_identities_sha256(
+                task_identities
+            ),
+        },
+        record_kind="probe_rows",
+    )
+
+    with pytest.raises(ValueError, match="require a probe_test authorization"):
+        fa_cli._load_probe_rows_manifest(
+            store,
+            probe_rows.manifest_path,
+            config,
+            expected_namespace="probe_test",
+        )
+
+    authorization = ProbeTestAuthorization.from_unlock_receipt(
+        UnlockReceipt(
+            endpoint="probe_test",
+            lease_id="a" * 32,
+            state="unlocked_once",
+            preregistration_hash="b" * 64,
+            selection_manifest_hash="c" * 64,
+        )
+    )
+    loaded, verified = fa_cli._load_probe_rows_manifest(
+        store,
+        probe_rows.manifest_path,
+        config,
+        expected_namespace="probe_test",
+        authorization=authorization,
+        expected_prompt_sha256=prompt.sha256,
+        expected_task_identities=task_identities,
+    )
+
+    assert verified.sha256 == probe_rows.sha256
+    assert [row.to_record() for row in loaded] == [row.to_record() for row in rows]
+
+
+def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(fa_probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", True)
+    monkeypatch.setattr(fa_probes, "_BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS", 80)
+    config = FAConfig.from_json(CONFIG_PATH)
+    train = write_probe_rows_artifact(
+        tmp_path,
+        config,
+        "mechanism_train",
+        probe_rows_for_examples(valid_examples(config, "mechanism_train")),
+    )
+    validation = write_probe_rows_artifact(
+        tmp_path,
+        config,
+        "locked_validation",
+        probe_rows_for_examples(valid_examples(config, "locked_validation")),
+    )
+    test_examples, prompt = prompt_capability(tmp_path, config, "probe_test")
+
+    def smoke_nulls(
+        train_rows,
+        validation_rows,
+        *,
+        seeds,
+        protected_test_ids,
+        probe_test_source_identities,
+        _allow_test_seed_override,
+    ):
+        del protected_test_ids
+        base = fa_probes.fit_selection(train_rows, validation_rows)
+        results = []
+        for kind in (
+            "label_permutation",
+            "layer_order",
+            "random_map",
+            "output_aligned_11d",
+        ):
+            seed = seeds[0]
+            provenance = {"kind": kind, "seed": seed, "config": {"smoke": True}}
+            selection = replace(base, null_provenance=provenance)
+            frozen = {"kind": kind, "seed": seed, "transform": {"smoke": True}}
+            results.append(
+                fa_probes.NullSelectionResult(
+                    kind=kind,
+                    seed=seed,
+                    config=frozen,
+                    config_sha256=sha256_json(frozen),
+                    selection=selection,
+                    max_norm_error=0.0,
+                    test_source_identities=tuple(probe_test_source_identities),
+                    test_transform={
+                        "seed": seed,
+                        "row_count": len(probe_test_source_identities),
+                    },
+                )
+            )
+        return tuple(results)
+
+    monkeypatch.setattr(fa_cli, "_PROBE_NULL_SELECTOR", smoke_nulls)
+    payload = fa_cli._fit_probes(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            train_rows_manifest=train.manifest_path,
+            validation_rows_manifest=validation.manifest_path,
+            probe_test_manifest=prompt.manifest_path,
+            shard_id="selection-smoke",
+        ),
+    )
+    bundle = fa_cli._load_f2a_selection_bundle(
+        FAArtifactStore(tmp_path), payload["selection_manifest"], config
+    )
+
+    assert payload["status"] == "selected"
+    assert bundle.selection_bundle_hash == payload["selection_bundle_hash"]
+    assert all(len(bundle.null_selections[task]) == 4 for task in fa_probes.TASKS)
+
+    task_identities, _ = fa_cli._load_prompt_task_source_identities(
+        FAArtifactStore(tmp_path),
+        prompt.manifest_path,
+        config,
+        expected_namespace="probe_test",
+    )
+    test_rows = write_probe_rows_artifact(
+        tmp_path,
+        config,
+        "probe_test",
+        probe_rows_for_examples(test_examples),
+        lineage={
+            "prompt_manifest_sha256": prompt.sha256,
+            "task_source_identities_sha256": fa_cli._task_source_identities_sha256(
+                task_identities
+            ),
+        },
+    )
+    sealed = fa_cli._seal_probe_selection(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            selection_manifest=payload["selection_manifest"],
+            probe_test_manifest=prompt.manifest_path,
+            probe_rows_manifest=test_rows.manifest_path,
+        ),
+    )
+    evaluated = fa_cli._evaluate_probe_test(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            selection_manifest=payload["selection_manifest"],
+            probe_test_manifest=prompt.manifest_path,
+            probe_rows_manifest=test_rows.manifest_path,
+        ),
+    )
+    recovered = fa_cli._evaluate_probe_test(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            selection_manifest=payload["selection_manifest"],
+            probe_test_manifest=prompt.manifest_path,
+            probe_rows_manifest=test_rows.manifest_path,
+        ),
+    )
+
+    assert sealed["endpoint_state"] == "sealed"
+    assert evaluated["status"] == "evaluated"
+    assert evaluated["endpoint_state"] == "closed"
+    assert recovered["status"] == "recovered"
+    assert recovered["metrics_manifest"] == evaluated["metrics_manifest"]
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -793,27 +1078,35 @@ def test_generic_generation_rejects_protected_namespaces_before_runner_construct
 
 
 @pytest.mark.parametrize(
-    "command",
+    ("command", "required_option"),
     [
-        "fa-evaluate-probe-test",
-        "fa-evaluate-intervention-test",
+        ("fa-fit-probes", "--train-rows-manifest"),
+        ("fa-seal-selection", "--selection-manifest"),
+        ("fa-evaluate-probe-test", "--selection-manifest"),
     ],
 )
-def test_dedicated_protected_evaluation_commands_remain_not_implemented(
-    capsys, command
+def test_f2a_commands_require_explicit_artifacts_before_dispatch(
+    capsys, command, required_option
 ):
-    exit_code = cli.main([command, "--config", str(CONFIG_PATH)])
+    with pytest.raises(SystemExit) as raised:
+        cli.main([command, "--config", str(CONFIG_PATH)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert raised.value.code == 2
+    assert payload["command"] == command
+    assert payload["status"] == "error"
+    assert payload["error"]["type"] == "ArgumentError"
+    assert required_option in payload["error"]["message"]
+
+
+def test_intervention_test_command_remains_not_implemented(capsys):
+    exit_code = cli.main(
+        ["fa-evaluate-intervention-test", "--config", str(CONFIG_PATH)]
+    )
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 2
-    assert payload == {
-        "command": command,
-        "error": {
-            "message": "FA command is not implemented",
-            "type": "NotImplementedError",
-        },
-        "status": "not_implemented",
-    }
+    assert payload["status"] == "not_implemented"
 
 
 def test_standalone_unlock_command_is_fail_closed_and_cannot_create_a_lease(
@@ -1041,9 +1334,10 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
     rows = tuple(
         SimpleNamespace(
             example_id=sha256_json({"namespace": namespace}),
-            canonical_payload_sha256=sha256_json({"namespace": namespace}),
-            split=namespace,
-        )
+                canonical_payload_sha256=sha256_json({"namespace": namespace}),
+                split=namespace,
+                answerability="code_absent",
+            )
         for namespace in config.split_counts
     )
     power = store.write_completed_shard(

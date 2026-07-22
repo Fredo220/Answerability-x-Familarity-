@@ -8,7 +8,7 @@ import re
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from trajectory_extractor.fa_activations import (
     HFSelectedPositionRunner,
@@ -50,6 +50,18 @@ from trajectory_extractor.fa_scoring import (
     estimate_behavior,
     score_response,
 )
+from trajectory_extractor.fa_probes import (
+    TASKS,
+    NullSelectionResult,
+    ProbeRow,
+    ProbeSourceIdentity,
+    ProbeTestAuthorization,
+    SelectionManifest,
+    evaluate_probe_bundle_once,
+    f2a_selection_bundle_hash,
+    fit_selection,
+    run_full_selection_nulls,
+)
 
 
 FA_COMMANDS = (
@@ -63,8 +75,11 @@ _IMPLEMENTED = frozenset(
     (
         *FA_COMMANDS[:6],
         "fa-extract-activations",
+        "fa-fit-probes",
+        "fa-seal-selection",
         "fa-unlock-endpoint",
         "fa-evaluate-behavior-test",
+        "fa-evaluate-probe-test",
     )
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
@@ -86,6 +101,9 @@ _ACTIVATION_RUNNER_FACTORY = HFSelectedPositionRunner
 _ACTIVATION_SHARD_WRITER = write_activation_shard
 _BEHAVIOR_BOOTSTRAP = crossed_bootstrap
 _BEHAVIOR_GATE = behavioral_gate
+_PROBE_SELECTOR = fit_selection
+_PROBE_NULL_SELECTOR = run_full_selection_nulls
+_PROBE_BUNDLE_EVALUATOR = evaluate_probe_bundle_once
 
 
 @dataclass(frozen=True)
@@ -103,6 +121,17 @@ class VerifiedPromptManifest:
     naturalness_audit_manifest_path: Path | None
     naturalness_audit_sha256: str | None
     generation: dict[str, Any]
+    shard_manifest_path: Path
+    shard_sha256: str
+
+
+@dataclass(frozen=True)
+class VerifiedF2ASelectionBundle:
+    selections: Mapping[str, SelectionManifest]
+    null_selections: Mapping[str, tuple[NullSelectionResult, ...]]
+    selection_bundle_hash: str
+    probe_test_prompt_sha256: str
+    probe_test_task_identities_sha256: str
     shard_manifest_path: Path
     shard_sha256: str
 
@@ -139,9 +168,22 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     activations.add_argument("--layers")
     activations.add_argument("--resume", action="store_true")
+    fit_probes = parsers["fa-fit-probes"]
+    fit_probes.add_argument("--train-rows-manifest", required=True)
+    fit_probes.add_argument("--validation-rows-manifest", required=True)
+    fit_probes.add_argument("--probe-test-manifest", required=True)
+    fit_probes.add_argument("--shard-id", required=True)
+    seal_selection = parsers["fa-seal-selection"]
+    seal_selection.add_argument("--selection-manifest", required=True)
+    seal_selection.add_argument("--probe-test-manifest", required=True)
+    seal_selection.add_argument("--probe-rows-manifest", required=True)
     behavior_test = parsers["fa-evaluate-behavior-test"]
     behavior_test.add_argument("--manifest", required=True)
     behavior_test.add_argument("--shard-id", required=True)
+    probe_test = parsers["fa-evaluate-probe-test"]
+    probe_test.add_argument("--selection-manifest", required=True)
+    probe_test.add_argument("--probe-test-manifest", required=True)
+    probe_test.add_argument("--probe-rows-manifest", required=True)
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)
@@ -179,8 +221,14 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _run_generation(config, root, args)
         elif command == "fa-extract-activations":
             payload = _extract_activations(config, root, args)
+        elif command == "fa-fit-probes":
+            payload = _fit_probes(config, root, args)
+        elif command == "fa-seal-selection":
+            payload = _seal_probe_selection(config, root, args)
         elif command == "fa-evaluate-behavior-test":
             payload = _evaluate_behavior_test(config, root, args)
+        elif command == "fa-evaluate-probe-test":
+            payload = _evaluate_probe_test(config, root, args)
         elif command == "fa-unlock-endpoint":
             payload = _reject_standalone_unlock()
         else:
@@ -521,6 +569,423 @@ def _safe_cli_id(value: object, field: str) -> str:
     if value in {".", ".."} or ".." in value:
         raise ValueError(f"{field} is invalid")
     return value
+
+
+def _fit_probes(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    train_rows, train_shard = _load_probe_rows_manifest(
+        store,
+        args.train_rows_manifest,
+        config,
+        expected_namespace="mechanism_train",
+    )
+    validation_rows, validation_shard = _load_probe_rows_manifest(
+        store,
+        args.validation_rows_manifest,
+        config,
+        expected_namespace="locked_validation",
+    )
+    task_identities, prompt_shard = _load_prompt_task_source_identities(
+        store,
+        args.probe_test_manifest,
+        config,
+        expected_namespace="probe_test",
+    )
+    train_by_task = _probe_rows_by_task(train_rows)
+    validation_by_task = _probe_rows_by_task(validation_rows)
+    protected_ids = {
+        identity.example_id
+        for identities in task_identities.values()
+        for identity in identities
+    }
+    selections = {
+        task: _PROBE_SELECTOR(
+            train_by_task[task],
+            validation_by_task[task],
+            protected_test_ids=protected_ids,
+        )
+        for task in TASKS
+    }
+    nulls: dict[str, tuple[NullSelectionResult, ...]] = {}
+    for task in TASKS:
+        kwargs: dict[str, Any] = {
+            "protected_test_ids": protected_ids,
+            "probe_test_source_identities": task_identities[task],
+        }
+        if config.profile == "smoke":
+            kwargs.update(
+                seeds=(2026072201,),
+                _allow_test_seed_override=True,
+            )
+        nulls[task] = tuple(
+            _PROBE_NULL_SELECTOR(
+                train_by_task[task], validation_by_task[task], **kwargs
+            )
+        )
+    selection_bundle_hash = f2a_selection_bundle_hash(selections)
+    task_identities_sha256 = _task_source_identities_sha256(task_identities)
+    mode = "registered_confirmatory" if config.profile == "confirmatory" else "smoke_rehearsal"
+    row = {
+        "kind": "selection_manifest",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "selection_bundle_hash": selection_bundle_hash,
+        "probe_test_prompt_sha256": prompt_shard.sha256,
+        "probe_test_task_identities_sha256": task_identities_sha256,
+        "selection_mode": mode,
+        "selections": {
+            task: selections[task].to_record() for task in TASKS
+        },
+        "null_selections": {
+            task: [result.to_record() for result in nulls[task]]
+            for task in TASKS
+        },
+    }
+    shard = store.write_completed_shard(
+        config.run_id,
+        "locked_validation",
+        _safe_cli_id(args.shard_id, "selection shard-id"),
+        (row,),
+        {
+            "config_sha256": config.config_hash,
+            "train_probe_rows_sha256": train_shard.sha256,
+            "validation_probe_rows_sha256": validation_shard.sha256,
+            "probe_test_prompt_sha256": prompt_shard.sha256,
+            "probe_test_task_identities_sha256": task_identities_sha256,
+            "selection_bundle_hash": selection_bundle_hash,
+            "selection_mode": mode,
+        },
+        record_kind="selection_manifest",
+    )
+    return {
+        "status": "selected",
+        "selection_manifest": str(shard.manifest_path),
+        "selection_bundle_hash": selection_bundle_hash,
+        "selection_mode": mode,
+        "null_count": sum(len(values) for values in nulls.values()),
+    }
+
+
+def _seal_probe_selection(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    selection = _load_f2a_selection_bundle(
+        store, args.selection_manifest, config
+    )
+    task_identities, prompt_shard = _load_prompt_task_source_identities(
+        store,
+        args.probe_test_manifest,
+        config,
+        expected_namespace="probe_test",
+    )
+    if selection.probe_test_prompt_sha256 != prompt_shard.sha256:
+        raise ValueError("selection bundle does not bind the probe_test prompt capability")
+    if selection.probe_test_task_identities_sha256 != _task_source_identities_sha256(
+        task_identities
+    ):
+        raise ValueError("selection bundle does not bind probe_test task identities")
+    probe_rows_shard = _require_verified_shard_kind(
+        store,
+        args.probe_rows_manifest,
+        "probe_rows",
+        "verified protected probe rows manifest",
+    )
+    if probe_rows_shard.namespace != "probe_test":
+        raise ValueError("protected probe rows must use the probe_test namespace")
+    _verify_artifact_run_id(probe_rows_shard.manifest_path, config.run_id)
+    _verify_shard_lineage(
+        probe_rows_shard,
+        {
+            "config_sha256": config.config_hash,
+            "prompt_manifest_sha256": prompt_shard.sha256,
+            "task_source_identities_sha256": _task_source_identities_sha256(
+                task_identities
+            ),
+        },
+    )
+    sealed_path = store.seal_endpoint(
+        "probe_test",
+        (prompt_shard, probe_rows_shard),
+        {
+            "preregistration": hashlib.sha256(
+                _PREREGISTRATION_PATH.read_bytes()
+            ).hexdigest(),
+            "selection_manifest": selection.selection_bundle_hash,
+        },
+    )
+    return {
+        "status": "sealed",
+        "endpoint": "probe_test",
+        "endpoint_state": "sealed",
+        "sealed_state": str(sealed_path),
+        "selection_bundle_hash": selection.selection_bundle_hash,
+    }
+
+
+def _evaluate_probe_test(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    selection = _load_f2a_selection_bundle(
+        store, args.selection_manifest, config
+    )
+    task_identities, prompt_shard = _load_prompt_task_source_identities(
+        store,
+        args.probe_test_manifest,
+        config,
+        expected_namespace="probe_test",
+    )
+    if selection.probe_test_prompt_sha256 != prompt_shard.sha256:
+        raise ValueError("selection bundle does not bind the probe_test prompt capability")
+    if selection.probe_test_task_identities_sha256 != _task_source_identities_sha256(
+        task_identities
+    ):
+        raise ValueError("selection bundle does not bind probe_test task identities")
+    store.verify_endpoint_artifact("probe_test", prompt_shard.manifest_path)
+    probe_rows_shard = store.verify_endpoint_artifact(
+        "probe_test", args.probe_rows_manifest
+    )
+    if probe_rows_shard.record_kind != "probe_rows":
+        raise ValueError("sealed probe test rows have the wrong record kind")
+    state = store.endpoint_state("probe_test", prompt_shard.manifest_path)
+    if state == "closed":
+        closed = store.read_closed_metrics(
+            "probe_test", prompt_shard.manifest_path
+        )
+        return {
+            "status": "recovered",
+            "endpoint_state": "closed",
+            "metrics_manifest": str(closed.metrics_artifact.manifest_path),
+            "selection_bundle_hash": selection.selection_bundle_hash,
+        }
+    receipt = store.unlock_or_resume_endpoint(
+        "probe_test", prompt_shard.manifest_path
+    )
+    authorization = ProbeTestAuthorization.from_unlock_receipt(receipt)
+    rows, _ = _load_probe_rows_manifest(
+        store,
+        probe_rows_shard.manifest_path,
+        config,
+        expected_namespace="probe_test",
+        authorization=authorization,
+        expected_prompt_sha256=prompt_shard.sha256,
+        expected_task_identities=task_identities,
+    )
+    rows_by_task = _probe_rows_by_task(rows)
+    bundle = _PROBE_BUNDLE_EVALUATOR(
+        selection.selections,
+        authorization,
+        rows_by_task,
+        null_selections_by_task=selection.null_selections,
+        store=store,
+        endpoint_manifest_path=prompt_shard.manifest_path,
+    )
+    closed = store.read_closed_metrics("probe_test", prompt_shard.manifest_path)
+    return {
+        "status": "evaluated",
+        "endpoint_state": "closed",
+        "metrics_manifest": str(closed.metrics_artifact.manifest_path),
+        "selection_bundle_hash": selection.selection_bundle_hash,
+        "bundle_sha256": bundle.sha256,
+        "gate_status": bundle.gates.status,
+    }
+
+
+def _load_probe_rows_manifest(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+    *,
+    expected_namespace: str,
+    authorization: ProbeTestAuthorization | None = None,
+    expected_prompt_sha256: str | None = None,
+    expected_task_identities: Mapping[
+        str, Sequence[ProbeSourceIdentity]
+    ] | None = None,
+) -> tuple[tuple[ProbeRow, ...], Any]:
+    if expected_namespace == "probe_test" and not isinstance(
+        authorization, ProbeTestAuthorization
+    ):
+        raise ValueError("protected probe rows require a probe_test authorization")
+    shard = _require_verified_shard_kind(
+        store, path, "probe_rows", "verified probe rows manifest"
+    )
+    if shard.namespace != expected_namespace:
+        raise ValueError("probe rows artifact uses the wrong namespace")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    expected_lineage: dict[str, Any] = {"config_sha256": config.config_hash}
+    if expected_prompt_sha256 is not None:
+        expected_lineage["prompt_manifest_sha256"] = expected_prompt_sha256
+    if expected_task_identities is not None:
+        expected_lineage["task_source_identities_sha256"] = (
+            _task_source_identities_sha256(expected_task_identities)
+        )
+    _verify_shard_lineage(shard, expected_lineage)
+    raw_rows = _read_json_rows(shard.data_path)
+    if any(
+        set(record) != {"kind", "row"} or record.get("kind") != "probe_rows"
+        for record in raw_rows
+    ):
+        raise ValueError("probe rows artifact has an invalid wrapper schema")
+    rows = tuple(ProbeRow.from_record(record["row"]) for record in raw_rows)
+    by_task = _probe_rows_by_task(rows)
+    if expected_task_identities is not None:
+        for task in TASKS:
+            observed = tuple(
+                sorted(
+                    (ProbeSourceIdentity.from_row(row) for row in by_task[task]),
+                    key=lambda item: (
+                        item.example_id,
+                        item.canonical_payload_sha256,
+                    ),
+                )
+            )
+            if observed != tuple(expected_task_identities[task]):
+                raise ValueError(
+                    f"{task} probe rows do not match the sealed task identities"
+                )
+    return rows, shard
+
+
+def _probe_rows_by_task(
+    rows: Sequence[ProbeRow],
+) -> Mapping[str, tuple[ProbeRow, ...]]:
+    values = tuple(rows)
+    if not values:
+        raise ValueError("probe rows artifact is empty")
+    grouped = {
+        task: tuple(
+            sorted(
+                (row for row in values if row.task == task),
+                key=lambda row: (row.example_id, row.sha256),
+            )
+        )
+        for task in TASKS
+    }
+    if any(not grouped[task] for task in TASKS):
+        raise ValueError("probe rows artifact must contain every registered task")
+    if len({(row.task, row.example_id) for row in values}) != len(values):
+        raise ValueError("probe rows artifact contains duplicate task/example IDs")
+    familiarity = {
+        row.example_id: row.source_sha256 for row in grouped["familiarity"]
+    }
+    answerability = {
+        row.example_id: row.source_sha256 for row in grouped["answerability"]
+    }
+    unsupported = {
+        row.example_id: row.source_sha256
+        for row in grouped["unsupported_answer"]
+    }
+    if familiarity != answerability or not set(unsupported.items()).issubset(
+        familiarity.items()
+    ):
+        raise ValueError("probe task rows do not share a coherent source identity set")
+    return grouped
+
+
+def _task_source_identities_sha256(
+    values: Mapping[str, Sequence[ProbeSourceIdentity]],
+) -> str:
+    if set(values) != set(TASKS):
+        raise ValueError("task source identities require every registered task")
+    return _sha256_json(
+        {
+            task: [identity.to_record() for identity in values[task]]
+            for task in TASKS
+        }
+    )
+
+
+def _load_f2a_selection_bundle(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+) -> VerifiedF2ASelectionBundle:
+    shard = _require_verified_shard_kind(
+        store, path, "selection_manifest", "verified F2A selection manifest"
+    )
+    if shard.namespace != "locked_validation":
+        raise ValueError("F2A selection manifest must use locked_validation")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    records = _read_json_rows(shard.data_path)
+    expected = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "selection_bundle_hash",
+        "probe_test_prompt_sha256",
+        "probe_test_task_identities_sha256",
+        "selection_mode",
+        "selections",
+        "null_selections",
+    }
+    if len(records) != 1 or set(records[0]) != expected:
+        raise ValueError("F2A selection manifest has an invalid schema")
+    record = records[0]
+    if (
+        record["kind"] != "selection_manifest"
+        or record["schema_version"] != 1
+        or record["config_sha256"] != config.config_hash
+    ):
+        raise ValueError("F2A selection manifest identity is invalid")
+    if not isinstance(record["selections"], dict) or set(
+        record["selections"]
+    ) != set(TASKS):
+        raise ValueError("F2A selection manifest requires every registered task")
+    if not isinstance(record["null_selections"], dict) or set(
+        record["null_selections"]
+    ) != set(TASKS):
+        raise ValueError("F2A null selections require every registered task")
+    selections = {
+        task: SelectionManifest.from_record(record["selections"][task])
+        for task in TASKS
+    }
+    nulls: dict[str, tuple[NullSelectionResult, ...]] = {}
+    for task in TASKS:
+        raw = record["null_selections"][task]
+        if not isinstance(raw, list) or not raw:
+            raise ValueError(f"F2A {task} null selections are missing")
+        loaded = tuple(NullSelectionResult.from_record(item) for item in raw)
+        if any(item.selection.task != task or item.test_metrics is not None for item in loaded):
+            raise ValueError("F2A null selections are task-mismatched or already scored")
+        nulls[task] = loaded
+    bundle_hash = f2a_selection_bundle_hash(selections)
+    if record["selection_bundle_hash"] != bundle_hash:
+        raise ValueError("F2A selection bundle hash does not verify")
+    mode = record["selection_mode"]
+    expected_count = 396 if mode == "registered_confirmatory" else 4
+    if mode not in {"registered_confirmatory", "smoke_rehearsal"} or any(
+        len(nulls[task]) != expected_count for task in TASKS
+    ):
+        raise ValueError("F2A null selection count does not match its mode")
+    prompt_sha256 = record["probe_test_prompt_sha256"]
+    _required_sha256(prompt_sha256, "probe_test_prompt_sha256")
+    task_identities_sha256 = record["probe_test_task_identities_sha256"]
+    _required_sha256(
+        task_identities_sha256, "probe_test_task_identities_sha256"
+    )
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "probe_test_prompt_sha256": prompt_sha256,
+            "probe_test_task_identities_sha256": task_identities_sha256,
+            "selection_bundle_hash": bundle_hash,
+            "selection_mode": mode,
+        },
+    )
+    return VerifiedF2ASelectionBundle(
+        selections=selections,
+        null_selections=nulls,
+        selection_bundle_hash=bundle_hash,
+        probe_test_prompt_sha256=prompt_sha256,
+        probe_test_task_identities_sha256=task_identities_sha256,
+        shard_manifest_path=shard.manifest_path,
+        shard_sha256=shard.sha256,
+    )
 
 
 def _evaluate_behavior_test(
@@ -882,6 +1347,8 @@ def _load_manifest(
             dict(config.generation),
         ):
             raise ValueError("prompt runtime pins do not match config")
+    task_source_identities = _task_source_identity_records(examples)
+    source_identities = task_source_identities["familiarity"]
     _verify_shard_lineage(
         shard,
         {
@@ -891,6 +1358,12 @@ def _load_manifest(
             "chat_template_sha256": template_hash,
             "tokenizer_pin_sha256": tokenizer_pin_sha256,
             "naturalness_audit_sha256": naturalness_audit_sha256,
+            "source_identities": source_identities,
+            "source_identities_sha256": _sha256_json(source_identities),
+            "task_source_identities": task_source_identities,
+            "task_source_identities_sha256": _sha256_json(
+                task_source_identities
+            ),
         },
     )
     return VerifiedPromptManifest(
@@ -910,6 +1383,98 @@ def _load_manifest(
         shard_manifest_path=shard.manifest_path,
         shard_sha256=shard.sha256,
     )
+
+
+def _load_prompt_source_identities(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+    *,
+    expected_namespace: str,
+) -> tuple[tuple[ProbeSourceIdentity, ...], Any]:
+    """Load only pre-outcome IDs and hashes from a prompt capability sidecar."""
+
+    task_identities, shard = _load_prompt_task_source_identities(
+        store, path, config, expected_namespace=expected_namespace
+    )
+    return task_identities["familiarity"], shard
+
+
+def _load_prompt_task_source_identities(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+    *,
+    expected_namespace: str,
+) -> tuple[Mapping[str, tuple[ProbeSourceIdentity, ...]], Any]:
+    """Load task-scoped identities without parsing protected prompt contents."""
+
+    shard = _require_verified_shard_kind(
+        store, path, "prompt_manifest", "verified prompt identity capability"
+    )
+    if shard.namespace != expected_namespace:
+        raise ValueError("prompt identity capability uses the wrong namespace")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    sidecar = _read_json_object(shard.manifest_path)
+    lineage = sidecar.get("lineage")
+    if not isinstance(lineage, dict) or lineage.get("config_sha256") != config.config_hash:
+        raise ValueError("prompt identity capability does not bind the config")
+    raw = lineage.get("task_source_identities")
+    if not isinstance(raw, dict) or set(raw) != set(TASKS):
+        raise ValueError("prompt identity capability has no task-scoped identities")
+    task_identities: dict[str, tuple[ProbeSourceIdentity, ...]] = {}
+    for task in TASKS:
+        records = raw.get(task)
+        if not isinstance(records, list) or not records:
+            raise ValueError(f"prompt identity capability has no {task} identities")
+        identities = tuple(ProbeSourceIdentity.from_record(item) for item in records)
+        canonical = tuple(
+            sorted(
+                identities,
+                key=lambda item: (item.example_id, item.canonical_payload_sha256),
+            )
+        )
+        if identities != canonical or len(set(identities)) != len(identities):
+            raise ValueError(
+                "prompt source identities must be unique and canonically ordered"
+            )
+        task_identities[task] = identities
+    canonical_record = {
+        task: [item.to_record() for item in task_identities[task]] for task in TASKS
+    }
+    if lineage.get("task_source_identities_sha256") != _sha256_json(
+        canonical_record
+    ):
+        raise ValueError("prompt task source identity hash does not verify")
+    if task_identities["familiarity"] != task_identities["answerability"]:
+        raise ValueError("familiarity and answerability identities must match")
+    if not set(task_identities["unsupported_answer"]).issubset(
+        task_identities["familiarity"]
+    ):
+        raise ValueError("unsupported-answer identities must be a strict task subset")
+    return task_identities, shard
+
+
+def _task_source_identity_records(
+    examples: Sequence[Any],
+) -> dict[str, list[dict[str, str]]]:
+    ordered = tuple(sorted(examples, key=lambda example: example.example_id))
+    source = [
+        {
+            "example_id": example.example_id,
+            "canonical_payload_sha256": example.canonical_payload_sha256,
+        }
+        for example in ordered
+    ]
+    return {
+        "familiarity": source,
+        "answerability": source,
+        "unsupported_answer": [
+            identity
+            for identity, example in zip(source, ordered, strict=True)
+            if example.answerability in {"distractor_bound", "code_absent"}
+        ],
+    }
 
 
 def _write_prompt_capability(
@@ -940,6 +1505,8 @@ def _write_prompt_capability(
         ordered,
     )
     model_hash, tokenizer_hash = _config_runtime_hashes(config)
+    task_source_identities = _task_source_identity_records(ordered)
+    source_identities = task_source_identities["familiarity"]
     row = {
         "kind": "prompt_manifest",
         "config_hash": config.config_hash,
@@ -977,6 +1544,12 @@ def _write_prompt_capability(
             "tokenizer_pin_sha256": tokenizer_pin.sha256,
             "naturalness_audit_sha256": (
                 None if naturalness_audit is None else naturalness_audit.sha256
+            ),
+            "source_identities": source_identities,
+            "source_identities_sha256": _sha256_json(source_identities),
+            "task_source_identities": task_source_identities,
+            "task_source_identities_sha256": _sha256_json(
+                task_source_identities
             ),
         },
         record_kind="prompt_manifest",

@@ -191,6 +191,39 @@ class ProbeRow:
     output_control_schema_sha256: str
     output_evidence_sha256: str
 
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> "ProbeRow":
+        expected = {
+            "example_id", "split", "task", "label", "entity_id", "template_id",
+            "relation_id", "domain", "condition", "answerability_condition",
+            "target_familiarity_condition", "distractor_familiarity_condition",
+            "surface_features", "output_margin_features", "residual_features",
+            "sae_features", "outcome_status", "source_sha256", "activation_sha256",
+            "metadata_manifest_sha256", "metadata_row_sha256",
+            "output_control_schema_sha256", "output_evidence_sha256",
+        }
+        if not isinstance(record, Mapping) or set(record) != expected:
+            raise ValueError("probe row has an invalid schema")
+        try:
+            loaded = cls(
+                **{
+                    **dict(record),
+                    "surface_features": tuple(record["surface_features"]),
+                    "output_margin_features": tuple(record["output_margin_features"]),
+                    "residual_features": np.asarray(record["residual_features"], dtype=np.float64),
+                    "sae_features": (
+                        None
+                        if record["sae_features"] is None
+                        else np.asarray(record["sae_features"], dtype=np.float64)
+                    ),
+                }
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"probe row is invalid: {error}") from error
+        if loaded.to_record() != dict(record):
+            raise ValueError("probe row is not canonical")
+        return loaded
+
     def __post_init__(self) -> None:
         for name in (
             "example_id",
@@ -215,6 +248,13 @@ class ProbeRow:
                 raise ValueError("answerability label must use the frozen three-state target")
         elif type(self.label) is not int or self.label not in {0, 1}:
             raise ValueError("binary task label must be 0 or 1")
+        if (
+            self.task == "unsupported_answer"
+            and self.answerability_condition == "target_bound"
+        ):
+            raise ValueError(
+                "unsupported-answer rows require an evidence-absent condition"
+            )
         if self.outcome_status not in OUTCOME_STATUSES:
             raise ValueError("outcome_status is not registered")
         surface = tuple(float(value) for value in self.surface_features)
@@ -304,7 +344,7 @@ class ProbeSourceIdentity:
         if not isinstance(record, Mapping):
             raise ValueError("sealed probe-test source identity has an invalid schema")
         required = {"example_id", "canonical_payload_sha256"}
-        if not required.issubset(record):
+        if set(record) != required:
             raise ValueError("sealed probe-test source identity has an invalid schema")
         return cls(record["example_id"], record["canonical_payload_sha256"])
 
@@ -2305,8 +2345,10 @@ class ProbeResult:
         return self.claim_scope
 
 
-def _sealed_probe_test_identities(endpoint_artifact: Any) -> tuple[ProbeSourceIdentity, ...]:
-    """Read source identities from the one sealed protected prompt manifest."""
+def _sealed_probe_test_identities(
+    endpoint_artifact: Any,
+) -> Mapping[str, tuple[ProbeSourceIdentity, ...]]:
+    """Read task-specific source identities from the sealed prompt manifest."""
 
     if endpoint_artifact.record_kind != "prompt_manifest":
         raise ValueError("probe_test endpoint requires a prompt_manifest artifact")
@@ -2339,9 +2381,50 @@ def _sealed_probe_test_identities(endpoint_artifact: Any) -> tuple[ProbeSourceId
     examples = prompt_manifest.get("examples")
     if not isinstance(examples, list) or not examples:
         raise ValueError("probe_test prompt manifest requires a nonempty examples list")
-    identities = tuple(ProbeSourceIdentity.from_record(record) for record in examples)
-    return _canonical_source_identities(
+    identities = tuple(
+        ProbeSourceIdentity.from_record(
+            {
+                "example_id": record.get("example_id"),
+                "canonical_payload_sha256": record.get("canonical_payload_sha256"),
+            }
+        )
+        for record in examples
+    )
+    all_identities = _canonical_source_identities(
         identities, field_name="sealed probe-test source identities"
+    )
+    unsupported = _canonical_source_identities(
+        tuple(
+            identity
+            for identity, record in zip(identities, examples, strict=True)
+            if record.get("answerability") in {"distractor_bound", "code_absent"}
+        ),
+        field_name="sealed unsupported-answer source identities",
+    )
+    return MappingProxyType(
+        {
+            "familiarity": all_identities,
+            "answerability": all_identities,
+            "unsupported_answer": unsupported,
+        }
+    )
+
+
+def _task_identity_bundle_digest(
+    identities_by_task: Mapping[str, Sequence[ProbeSourceIdentity]],
+) -> str:
+    if set(identities_by_task) != set(TASKS):
+        raise ValueError("probe source identity bundle requires every registered task")
+    return _digest(
+        {
+            task: _source_identity_digest(
+                _canonical_source_identities(
+                    identities_by_task[task],
+                    field_name=f"{task} source identities",
+                )
+            )
+            for task in TASKS
+        }
     )
 
 
@@ -2872,11 +2955,17 @@ class ProbeBundleResult:
         if any(
             result.authorization_sha256 != self.authorization_sha256
             or result.endpoint_input_sha256 != self.endpoint_input_sha256
-            or result.endpoint_input_identities_sha256
-            != self.endpoint_input_identities_sha256
             for result in self.results.values()
         ):
             raise ValueError("probe bundle result provenance is inconsistent")
+        result_identity_bundle = _digest(
+            {
+                task: self.results[task].endpoint_input_identities_sha256
+                for task in TASKS
+            }
+        )
+        if result_identity_bundle != self.endpoint_input_identities_sha256:
+            raise ValueError("probe bundle task identity provenance is inconsistent")
         if (
             self.gates.familiarity_result_sha256 != self.results["familiarity"].sha256
             or self.gates.answerability_result_sha256 != self.results["answerability"].sha256
@@ -2902,6 +2991,10 @@ class ProbeBundleResult:
     @property
     def endpoint_source_identities_sha256(self) -> str:
         return self.endpoint_input_identities_sha256
+
+    @property
+    def sha256(self) -> str:
+        return _digest(self.to_record())
 
 
 def _calculate_probe_result(
@@ -3107,7 +3200,7 @@ def _recover_evaluated_probe_bundle(
     selections: Mapping[str, SelectionManifest],
     authorization: ProbeTestAuthorization,
     endpoint_artifact: Any,
-    sealed_identities: Sequence[ProbeSourceIdentity],
+    sealed_identities: Mapping[str, Sequence[ProbeSourceIdentity]],
 ) -> ProbeBundleResult:
     rows = _read_canonical_probe_rows(metrics_shard)
     if (
@@ -3119,7 +3212,7 @@ def _recover_evaluated_probe_bundle(
     ):
         raise ValueError("evaluated probe metrics artifact has an invalid schema")
     bundle = ProbeBundleResult.from_record(rows[0]["result"], selections=selections)
-    identity_hash = _source_identity_digest(sealed_identities)
+    identity_hash = _task_identity_bundle_digest(sealed_identities)
     if (
         bundle.selection_bundle_hash != f2a_selection_bundle_hash(selections)
         or bundle.authorization_sha256 != authorization.sha256
@@ -3190,7 +3283,7 @@ def evaluate_probe_bundle_once(
             tuple(ProbeSourceIdentity.from_row(row) for row in rows_by_task[task]),
             field_name=f"{task} probe-test source identities",
         )
-        if Counter(evaluated) != Counter(sealed_identities):
+        if Counter(evaluated) != Counter(sealed_identities[task]):
             raise ValueError(
                 "probe test rows do not match the sealed probe-test source identities"
             )
@@ -3201,8 +3294,10 @@ def evaluate_probe_bundle_once(
             authorization,
             rows_by_task[task],
             endpoint_input_sha256=endpoint_artifact.sha256,
-            endpoint_source_identities_sha256=_source_identity_digest(sealed_identities),
-            expected_source_identities=sealed_identities,
+            endpoint_source_identities_sha256=_source_identity_digest(
+                sealed_identities[task]
+            ),
+            expected_source_identities=sealed_identities[task],
             null_selections=null_map.get(task, ()),
         )
         for task in TASKS
@@ -3215,7 +3310,9 @@ def evaluate_probe_bundle_once(
         selection_bundle_hash=selection_bundle_hash,
         authorization_sha256=authorization.sha256,
         endpoint_input_sha256=endpoint_artifact.sha256,
-        endpoint_input_identities_sha256=_source_identity_digest(sealed_identities),
+        endpoint_input_identities_sha256=_task_identity_bundle_digest(
+            sealed_identities
+        ),
         results=results,
         gates=gates,
     )
@@ -3232,7 +3329,9 @@ def evaluate_probe_bundle_once(
             "selection_manifest": selection_bundle_hash,
             "authorization": authorization.sha256,
             "endpoint_input_sha256": endpoint_artifact.sha256,
-            "endpoint_source_identities_sha256": _source_identity_digest(sealed_identities),
+            "endpoint_source_identities_sha256": _task_identity_bundle_digest(
+                sealed_identities
+            ),
         },
         record_kind="metrics",
     )
@@ -4171,6 +4270,10 @@ class NullSelectionResult:
     test_cross_condition_transfer: CrossConditionTransferSummary | None = None
     test_relative_h5_log_loss_improvement: float | None = None
     test_relative_h6_log_loss_improvement: float | None = None
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> "NullSelectionResult":
+        return _null_result_from_record(record)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", _freeze_mapping(self.config))

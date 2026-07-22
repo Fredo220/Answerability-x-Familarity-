@@ -64,6 +64,8 @@ def _rows(split: str, count: int = 12, *, task: str = "familiarity") -> tuple[Pr
     prefix = {"mechanism_train": "tr", "locked_validation": "va", "probe_test": "te"}[split]
     for index in range(count):
         answerability_condition = ANSWERABILITY_CLASSES[(index // 4) % 3]
+        if task == "unsupported_answer" and answerability_condition == "target_bound":
+            continue
         target_familiarity_condition = TARGET_FAMILIARITY_CONDITIONS[index % 2]
         distractor_familiarity_condition = TARGET_FAMILIARITY_CONDITIONS[(index // 2) % 2]
         if task == "answerability":
@@ -128,6 +130,21 @@ def _source_identities(rows: tuple[ProbeRow, ...]):
     return tuple(probes.ProbeSourceIdentity.from_row(row) for row in rows)
 
 
+def test_probe_row_has_strict_canonical_artifact_loader():
+    row = _rows("mechanism_train")[0]
+
+    assert ProbeRow.from_record(row.to_record()).to_record() == row.to_record()
+
+    extra = {**row.to_record(), "unexpected": True}
+    with pytest.raises(ValueError, match="invalid schema"):
+        ProbeRow.from_record(extra)
+
+    noncanonical = row.to_record()
+    noncanonical["surface_features"][0] = "2.0"
+    with pytest.raises(ValueError, match="not canonical"):
+        ProbeRow.from_record(noncanonical)
+
+
 def _prompt_capability_record(rows: tuple[ProbeRow, ...]) -> dict[str, object]:
     return {
         "kind": "prompt_manifest",
@@ -149,6 +166,7 @@ def _prompt_capability_record(rows: tuple[ProbeRow, ...]) -> dict[str, object]:
                 "canonical_payload_sha256": row.source_sha256,
                 "split": "probe_test",
                 "condition": row.condition,
+                "answerability": row.answerability_condition,
             }
             for row in sorted(rows, key=lambda item: item.example_id)
         ],
@@ -198,11 +216,24 @@ def _seal_bundle_endpoint(
     expected = probes._canonical_source_identities(
         _source_identities(source_rows), field_name="test prompt source identities"
     )
+    expected_by_task = {
+        "familiarity": expected,
+        "answerability": expected,
+        "unsupported_answer": tuple(
+            identity
+            for identity in expected
+            if {
+                row.example_id: row.answerability_condition for row in source_rows
+            }[identity.example_id]
+            in {"distractor_bound", "code_absent"}
+        ),
+    }
     assert all(
         probes._canonical_source_identities(
-            _source_identities(tuple(rows_by_task[task])), field_name="test task source identities"
+            _source_identities(tuple(rows_by_task[task])),
+            field_name="test task source identities",
         )
-        == expected
+        == expected_by_task[task]
         for task in probes.TASKS
     )
     shard = store.write_completed_shard(
@@ -282,7 +313,10 @@ def _null_result(
         test_source_identities=_source_identities(
             _rows("probe_test", task=selection.task)
         ),
-        test_transform={"seed": seed, "row_count": len(_rows("probe_test"))},
+        test_transform={
+            "seed": seed,
+            "row_count": len(_rows("probe_test", task=selection.task)),
+        },
     )
 
 
@@ -762,23 +796,15 @@ def test_probe_metrics_lineage_binds_verified_endpoint_source_identities(tmp_pat
     )
     metrics = json.loads(metrics_manifest.read_text(encoding="utf-8"))
     assert metrics["lineage"]["endpoint_input_sha256"] == endpoint.sha256
-    source_identities = probes._canonical_source_identities(
-        _source_identities(rows_by_task["familiarity"]),
-        field_name="expected source identities",
-    )
-    expected_digest = _sha(
-        json.dumps(
-            [identity.to_record() for identity in source_identities],
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    )
+    source_identities = probes._sealed_probe_test_identities(endpoint)
+    expected_digest = probes._task_identity_bundle_digest(source_identities)
     assert metrics["lineage"]["endpoint_source_identities_sha256"] == expected_digest
     assert result.endpoint_input_sha256 == endpoint.sha256
     assert result.endpoint_source_identities_sha256 == expected_digest
     assert all(
-        task_result.endpoint_source_identities_sha256 == expected_digest
-        for task_result in result.results.values()
+        result.results[task].endpoint_source_identities_sha256
+        == probes._source_identity_digest(source_identities[task])
+        for task in probes.TASKS
     )
 
 
@@ -1060,6 +1086,8 @@ def test_all_nulls_rerun_full_selection_and_record_seed_config(monkeypatch):
         for item in nulls
         for identity in item.test_source_identities
     )
+    loaded = NullSelectionResult.from_record(nulls[0].to_record())
+    assert loaded.to_record() == nulls[0].to_record()
     with pytest.raises(ValueError, match="row_count"):
         replace(nulls[0], test_transform={"seed": 7, "row_count": 11})
 
