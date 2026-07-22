@@ -14,6 +14,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIRMATORY_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_gemma2_2b.json"
 SMOKE_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_qwen06b_smoke.json"
 SOURCE_PINS = REPO_ROOT / "data" / "fa" / "source_pins.json"
+PROTOCOL_AMENDMENT = (
+    REPO_ROOT / "docs" / "familiarity_answerability_protocol_amendment_2026-07-22.md"
+)
 
 
 def test_confirmatory_config_is_canonical_and_pinned():
@@ -213,3 +216,25 @@ def test_source_pins_use_the_official_gemma_scope_repository_and_revision():
         "repository": "google/gemma-scope-2b-pt-res",
         "revision": "fd571b47c1c64851e9b1989792367b9babb4af63",
     }
+
+
+def test_pre_outcome_amendment_freezes_the_exact_output_control_coordinates():
+    amendment = PROTOCOL_AMENDMENT.read_text(encoding="utf-8")
+    coordinates = (
+        "target sequence log-likelihood",
+        "UNKNOWN sequence log-likelihood",
+        "target-minus-UNKNOWN log-likelihood",
+        "maximum registered sequence log-likelihood",
+        "registered-sequence log-sum-exp",
+        "normalized target probability",
+        "normalized UNKNOWN probability",
+        "binary target-versus-UNKNOWN entropy",
+        "absolute normalized probability margin",
+        "signed normalized probability margin",
+        "maximum normalized registered-sequence probability",
+    )
+
+    positions = [amendment.index(f"{index}. {name}") for index, name in enumerate(coordinates, 1)]
+    assert positions == sorted(positions)
+    assert "teacher-forced" in amendment
+    assert "no generated completion" in amendment

@@ -33,6 +33,22 @@ The crossed bootstrap independently resamples entity units and template families
 
 Same-string activation interchange is full replacement (`alpha = 1`) and has no tuned alpha. The validation alpha grid `{0.25, 0.50, 1.00, 1.50}` applies only to secondary contrastive-direction steering. Residual candidates cover all 26 Gemma 2 transformer layers; PCA candidates are `{none, 16, 32, 64}`; and L2 logistic `C` candidates are `{0.01, 0.1, 1.0, 10.0}`. Target familiarity uses `target_intro_end`; answerability uses `user_prompt_end`; unsupported-answer prediction may evaluate the output-proximal control but cannot use it for a pre-output claim.
 
+The output-aligned control is frozen as an ordered 11-dimensional vector. It is computed at the assistant-prefix position with teacher-forced scoring of exactly two candidate strings: the example's registered target code and the literal `UNKNOWN`. A candidate's sequence log-likelihood is the sum of its conditional token log-probabilities. Normalized probabilities are the two-way softmax over those two sequence log-likelihoods. The control uses no generated completion and no behavioral outcome label. Its coordinates, in order, are:
+
+1. target sequence log-likelihood
+2. UNKNOWN sequence log-likelihood
+3. target-minus-UNKNOWN log-likelihood
+4. maximum registered sequence log-likelihood
+5. registered-sequence log-sum-exp
+6. normalized target probability
+7. normalized UNKNOWN probability
+8. binary target-versus-UNKNOWN entropy
+9. absolute normalized probability margin
+10. signed normalized probability margin
+11. maximum normalized registered-sequence probability
+
+These coordinates are an output-proximal control, not a hidden-state mechanism. Any pre-output claim must exclude this vector and the `assistant_prefix_end` anchor; its purpose is to test whether registered activation features add predictive information beyond a compact summary of the model's immediately available answer preference.
+
 The confirmatory model and tokenizer revision is `299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8`; the Gemma chat-template SHA-256 is `ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6`; Gemma Scope residual SAE repository `google/gemma-scope-2b-pt-res` is pinned at `fd571b47c1c64851e9b1989792367b9babb4af63`; and optional circuit-tracer is pinned at `4bb8c0ea10bde09727e14565ec8469656880da53` (`v0.5.0`). Individual SAE paths are selected from the registered 16K family on training/validation only and still require the instruction-tuned loss-recovery gate. These pins are recorded in `data/fa/source_pins.json`; gated model access has not been tested by this amendment.
 
 No outcomes were generated, inspected, or used to select the counts, pins, thresholds, template families, layers, directions, or claims described here.
