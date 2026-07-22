@@ -21,7 +21,7 @@ from trajectory_extractor.fa_data import (
     PowerCell,
     build_factorial_examples,
 )
-from trajectory_extractor.fa_entities import EntityMatch
+from trajectory_extractor.fa_entities import EntityMatch, NaturalnessRating
 from trajectory_extractor.fa_runtime import run_generation_shard
 
 
@@ -87,6 +87,68 @@ def sha256_json(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def naturalness_ratings_manifest(root, config, *, rating_schema_version=1):
+    store = FAArtifactStore(root)
+    ratings = [
+        asdict(
+            NaturalnessRating(
+                pair_id=MATCH["pair_id"],
+                rater_id=rater_id,
+                real_naturalness=4,
+                synthetic_naturalness=4,
+                real_type_fit=4,
+                synthetic_type_fit=4,
+                synthetic_malformed=False,
+            )
+        )
+        for rater_id in ("rater-a", "rater-b")
+    ]
+    ratings[0]["schema_version"] = rating_schema_version
+    assignments = [
+        {
+            "pair_id": MATCH["pair_id"],
+            "rater_id": rater_id,
+            "blind_slot": blind_slot,
+            "submission_sha256": sha256_json(
+                {"pair_id": MATCH["pair_id"], "rater_id": rater_id}
+            ),
+        }
+        for rater_id, blind_slot in (
+            ("rater-a", "slot-a"),
+            ("rater-b", "slot-b"),
+        )
+    ]
+    preregistration = (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "familiarity_answerability_preregistration.md"
+    )
+    protocol_sha256 = hashlib.sha256(preregistration.read_bytes()).hexdigest()
+    blinding_sha256 = sha256_json(assignments)
+    row = {
+        "kind": "naturalness_ratings",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "protocol_sha256": protocol_sha256,
+        "blinding_manifest_sha256": blinding_sha256,
+        "assignments": assignments,
+        "ratings": ratings,
+    }
+    shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"ratings-{rating_schema_version}",
+        [row],
+        {
+            "config_sha256": config.config_hash,
+            "protocol_sha256": protocol_sha256,
+            "blinding_manifest_sha256": blinding_sha256,
+        },
+        record_kind="naturalness_ratings",
+    )
+    return shard.manifest_path
 
 
 def valid_examples(config, split):
@@ -255,6 +317,7 @@ def test_prompt_verifier_rejects_forged_tokenizer_pin_identity_or_template_bytes
         prompt_row["namespace"],
         prompt_row["chat_template_sha256"],
         forged_pin.sha256,
+        None,
         tuple(prompt_row["examples"]),
     )
     prompt_lineage["subset_manifest_sha256"] = prompt_row[
@@ -597,6 +660,8 @@ def test_confirmatory_power_modes_are_explicit_and_mutually_exclusive(tmp_path, 
         str(tmp_path / "matches.json"),
         "--pilot-gate-manifest",
         str(tmp_path / "gate.json"),
+        "--naturalness-ratings-manifest",
+        str(tmp_path / "ratings.json"),
     ]
 
     with pytest.raises(SystemExit):
@@ -703,6 +768,7 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
     store = FAArtifactStore(tmp_path)
     matches = tmp_path / "matches.json"
     matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    ratings = naturalness_ratings_manifest(tmp_path, config)
     rows = tuple(
         SimpleNamespace(
             example_id=sha256_json({"namespace": namespace}),
@@ -760,6 +826,7 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
             pilot_gate_manifest=tmp_path / "gate.json",
             power_audit_manifest=None,
             run_registered_power_audit=True,
+            naturalness_ratings_manifest=ratings,
         ),
         confirmatory=True,
     )
@@ -767,6 +834,13 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
     assert observed_smoke_configs == [FAConfig.from_json(CONFIG_PATH)]
     assert set(payload["namespace_manifests"]) == set(config.split_counts)
     assert "protected_endpoint_manifests" not in payload
+    audit = store.verify_shard(payload["naturalness_audit_manifest"])
+    assert audit.record_kind == "naturalness_audit"
+    assert audit.sha256 == payload["naturalness_audit_sha256"]
+    for manifest_path in payload["namespace_manifests"].values():
+        prompt = store.verify_shard(manifest_path)
+        row = fa_cli._read_json_rows(prompt.data_path)[0]
+        assert row["naturalness_audit_sha256"] == audit.sha256
     assert not (
         tmp_path
         / "runs"
@@ -941,6 +1015,8 @@ def test_build_confirmatory_rejects_raw_passed_gate_before_tokenizer_loading(
             str(matches),
             "--pilot-gate-manifest",
             str(gate),
+            "--naturalness-ratings-manifest",
+            str(tmp_path / "ratings.json"),
             "--run-registered-power-audit",
         ]
     )
@@ -949,3 +1025,89 @@ def test_build_confirmatory_rejects_raw_passed_gate_before_tokenizer_loading(
     assert exit_code != 0
     assert payload["status"] == "error"
     assert "verified pilot gate sidecar manifest" in payload["error"]["message"]
+
+
+def test_confirmatory_build_requires_human_naturalness_ratings_at_parse_time(
+    tmp_path, capsys
+):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "fa-build-confirmatory",
+                "--config",
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "configs"
+                    / "familiarity_answerability_gemma2_2b.json"
+                ),
+                "--matches-manifest",
+                str(tmp_path / "matches.json"),
+                "--pilot-gate-manifest",
+                str(tmp_path / "gate.json"),
+                "--run-registered-power-audit",
+            ]
+        )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"]["type"] == "ArgumentError"
+    assert "naturalness-ratings-manifest" in payload["error"]["message"]
+
+
+def test_naturalness_ratings_require_verified_blinded_input_and_current_schema(
+    tmp_path,
+):
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    raw = tmp_path / "ratings.json"
+    raw.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="immutable shard manifest"):
+        fa_cli._load_verified_naturalness_ratings(
+            FAArtifactStore(tmp_path), raw, config
+        )
+
+    unsupported = naturalness_ratings_manifest(
+        tmp_path, config, rating_schema_version=2
+    )
+    with pytest.raises(ValueError, match="schema_version"):
+        fa_cli._load_verified_naturalness_ratings(
+            FAArtifactStore(tmp_path), unsupported, config
+        )
+
+
+def test_prompt_capability_writer_enforces_profile_specific_human_audit(tmp_path):
+    confirmatory = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    store = FAArtifactStore(tmp_path)
+    pin = store.write_completed_shard(
+        confirmatory.run_id,
+        "mechanism_train",
+        "pin-for-profile-check",
+        [{"kind": "tokenizer_pin"}],
+        {"config_sha256": confirmatory.config_hash},
+        record_kind="tokenizer_pin",
+    )
+    example = SimpleNamespace(
+        example_id="a" * 64,
+        canonical_payload_sha256="b" * 64,
+        split="mechanism_train",
+    )
+    with pytest.raises(ValueError, match="confirmatory prompt capability requires"):
+        fa_cli._write_prompt_capability(
+            store,
+            confirmatory,
+            "c" * 64,
+            "mechanism_train",
+            (example,),
+            confirmatory.chat_template_sha256,
+            pin,
+        )

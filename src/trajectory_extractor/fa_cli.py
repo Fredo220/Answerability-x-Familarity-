@@ -24,7 +24,15 @@ from trajectory_extractor.fa_data import (
     build_same_string_examples,
     simulate_interaction_power,
 )
-from trajectory_extractor.fa_entities import CandidateEntity, EntityMatch, SyntheticCandidate, match_synthetic_entities, score_screening
+from trajectory_extractor.fa_entities import (
+    CandidateEntity,
+    EntityMatch,
+    NaturalnessRating,
+    SyntheticCandidate,
+    audit_naturalness_manifest,
+    match_synthetic_entities,
+    score_screening,
+)
 from trajectory_extractor.fa_runtime import (
     HFModelRunner,
     load_pinned_tokenizer,
@@ -49,6 +57,11 @@ _SMOKE_CONFIG_PATH = (
     / "configs"
     / "familiarity_answerability_qwen06b_smoke.json"
 )
+_PREREGISTRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "familiarity_answerability_preregistration.md"
+)
 _TOKENIZER_LOADER = None
 _POWER_EXECUTOR = simulate_interaction_power
 _SMOKE_CHAT_TEMPLATE_SHA256 = SMOKE_CHAT_TEMPLATE_SHA256
@@ -66,6 +79,8 @@ class VerifiedPromptManifest:
     tokenizer_sha256: str
     tokenizer_pin_manifest_path: Path
     tokenizer_pin_sha256: str
+    naturalness_audit_manifest_path: Path | None
+    naturalness_audit_sha256: str | None
     generation: dict[str, Any]
     shard_manifest_path: Path
     shard_sha256: str
@@ -85,6 +100,9 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     parsers["fa-build-pilot"].add_argument("--matches-manifest", required=True)
     parsers["fa-build-confirmatory"].add_argument("--matches-manifest", required=True)
     parsers["fa-build-confirmatory"].add_argument("--pilot-gate-manifest", required=True)
+    parsers["fa-build-confirmatory"].add_argument(
+        "--naturalness-ratings-manifest", required=True
+    )
     power = parsers["fa-build-confirmatory"].add_mutually_exclusive_group(required=True)
     power.add_argument("--power-audit-manifest")
     power.add_argument("--run-registered-power-audit", action="store_true")
@@ -177,6 +195,7 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
 def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, confirmatory: bool) -> dict[str, Any]:
     store = FAArtifactStore(root)
     gate = None
+    naturalness_shard = None
     if confirmatory:
         if config.profile != "confirmatory":
             raise ValueError("confirmatory construction requires the confirmatory config")
@@ -186,8 +205,23 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         )
         if gate.get("status") != "passed":
             raise ValueError("confirmatory construction requires a verified passed pilot gate")
-    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
     matches = tuple(EntityMatch(**_without_schema(row)) for row in _read_json_rows(args.matches_manifest))
+    if confirmatory:
+        ratings, ratings_shard = _load_verified_naturalness_ratings(
+            store,
+            args.naturalness_ratings_manifest,
+            config,
+        )
+        audit = audit_naturalness_manifest(matches, ratings)
+        if not audit.accepted_pair_ids:
+            raise ValueError("confirmatory construction requires accepted naturalness pairs")
+        accepted = frozenset(audit.accepted_pair_ids)
+        audited_matches = matches
+        matches = tuple(match for match in matches if match.pair_id in accepted)
+        naturalness_shard = _write_naturalness_audit(
+            store, config, audited_matches, audit, ratings, ratings_shard
+        )
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
     factorial_rows = build_factorial_examples(config, matches, tokenizer=prepared.tokenizer)
     rows = factorial_rows
     power_shard = None
@@ -214,6 +248,7 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
             namespace_rows,
             prepared.chat_template_sha256,
             tokenizer_pin,
+            naturalness_shard,
         )
 
     if not confirmatory:
@@ -243,6 +278,7 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         capabilities,
         power_shard,
         tokenizer_pin,
+        naturalness_shard,
     )
     index = store.write_completed_shard(
         config.run_id,
@@ -267,6 +303,8 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
             for namespace, shard in sorted(capabilities.items())
         },
         "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path),
+        "naturalness_audit_manifest": str(naturalness_shard.manifest_path),
+        "naturalness_audit_sha256": naturalness_shard.sha256,
     }
 
 
@@ -278,6 +316,7 @@ def _confirmatory_index_record(
     capabilities,
     power_shard,
     tokenizer_pin,
+    naturalness_audit=None,
 ):
     return {
         "kind": "confirmatory_index",
@@ -287,6 +326,14 @@ def _confirmatory_index_record(
         "power_audit_sha256": power_shard.sha256,
         "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path.relative_to(store.root)),
         "tokenizer_pin_sha256": tokenizer_pin.sha256,
+        "naturalness_audit_manifest": (
+            None
+            if naturalness_audit is None
+            else str(naturalness_audit.manifest_path.relative_to(store.root))
+        ),
+        "naturalness_audit_sha256": (
+            None if naturalness_audit is None else naturalness_audit.sha256
+        ),
         "capabilities": {
             namespace: {
                 "manifest_path": str(shard.manifest_path.relative_to(store.root)),
@@ -474,6 +521,8 @@ def _load_manifest(
         "tokenizer_sha256",
         "tokenizer_pin_manifest",
         "tokenizer_pin_sha256",
+        "naturalness_audit_manifest",
+        "naturalness_audit_sha256",
         "generation",
         "examples",
     }
@@ -522,12 +571,39 @@ def _load_manifest(
         expected_source_manifest_sha256=full_hash,
         expected_chat_template_sha256=template_hash,
     )
+    naturalness_audit_path = None
+    naturalness_audit_sha256 = None
+    if config.profile == "confirmatory":
+        naturalness_audit_path = _artifact_path_from_record(
+            store,
+            value.get("naturalness_audit_manifest"),
+            "naturalness audit manifest",
+        )
+        naturalness_audit_sha256 = _required_sha256(
+            value.get("naturalness_audit_sha256"),
+            "naturalness_audit_sha256",
+        )
+        _load_verified_naturalness_audit(
+            store,
+            naturalness_audit_path,
+            config,
+            expected_sha256=naturalness_audit_sha256,
+            expected_pair_ids=frozenset(
+                example.entity_unit_id for example in examples
+            ),
+        )
+    elif (
+        value.get("naturalness_audit_manifest") is not None
+        or value.get("naturalness_audit_sha256") is not None
+    ):
+        raise ValueError("smoke prompt manifests cannot claim a naturalness audit")
     subset_hash = _prompt_subset_sha256(
         config_hash,
         full_hash,
         namespace,
         template_hash,
         tokenizer_pin_sha256,
+        naturalness_audit_sha256,
         examples,
     )
     if value.get("subset_manifest_sha256") != subset_hash:
@@ -555,6 +631,7 @@ def _load_manifest(
             "subset_manifest_sha256": subset_hash,
             "chat_template_sha256": template_hash,
             "tokenizer_pin_sha256": tokenizer_pin_sha256,
+            "naturalness_audit_sha256": naturalness_audit_sha256,
         },
     )
     return VerifiedPromptManifest(
@@ -568,6 +645,8 @@ def _load_manifest(
         tokenizer_sha256=tokenizer_hash,
         tokenizer_pin_manifest_path=tokenizer_pin_path,
         tokenizer_pin_sha256=tokenizer_pin_sha256,
+        naturalness_audit_manifest_path=naturalness_audit_path,
+        naturalness_audit_sha256=naturalness_audit_sha256,
         generation=dict(generation),
         shard_manifest_path=shard.manifest_path,
         shard_sha256=shard.sha256,
@@ -582,7 +661,12 @@ def _write_prompt_capability(
     examples: tuple[FAExample, ...],
     chat_template_sha256: str,
     tokenizer_pin,
+    naturalness_audit=None,
 ):
+    if config.profile == "confirmatory" and naturalness_audit is None:
+        raise ValueError("confirmatory prompt capability requires a naturalness audit")
+    if config.profile == "smoke" and naturalness_audit is not None:
+        raise ValueError("smoke prompt capability cannot claim a naturalness audit")
     ordered = tuple(sorted(examples, key=lambda row: row.example_id))
     template_hash = _required_sha256(
         chat_template_sha256, "prepared chat_template_sha256"
@@ -593,6 +677,7 @@ def _write_prompt_capability(
         namespace,
         template_hash,
         tokenizer_pin.sha256,
+        None if naturalness_audit is None else naturalness_audit.sha256,
         ordered,
     )
     model_hash, tokenizer_hash = _config_runtime_hashes(config)
@@ -609,6 +694,14 @@ def _write_prompt_capability(
             tokenizer_pin.manifest_path.relative_to(store.root)
         ),
         "tokenizer_pin_sha256": tokenizer_pin.sha256,
+        "naturalness_audit_manifest": (
+            None
+            if naturalness_audit is None
+            else str(naturalness_audit.manifest_path.relative_to(store.root))
+        ),
+        "naturalness_audit_sha256": (
+            None if naturalness_audit is None else naturalness_audit.sha256
+        ),
         "generation": dict(config.generation),
         "examples": [_record_value(example) for example in ordered],
     }
@@ -623,13 +716,22 @@ def _write_prompt_capability(
             "subset_manifest_sha256": subset_hash,
             "chat_template_sha256": template_hash,
             "tokenizer_pin_sha256": tokenizer_pin.sha256,
+            "naturalness_audit_sha256": (
+                None if naturalness_audit is None else naturalness_audit.sha256
+            ),
         },
         record_kind="prompt_manifest",
     )
 
 
 def _prompt_subset_sha256(
-    config_hash, full_hash, namespace, template_hash, tokenizer_pin_sha256, examples
+    config_hash,
+    full_hash,
+    namespace,
+    template_hash,
+    tokenizer_pin_sha256,
+    naturalness_audit_sha256,
+    examples,
 ):
     return _sha256_json(
         {
@@ -638,9 +740,213 @@ def _prompt_subset_sha256(
             "namespace": namespace,
             "chat_template_sha256": template_hash,
             "tokenizer_pin_sha256": tokenizer_pin_sha256,
+            "naturalness_audit_sha256": naturalness_audit_sha256,
             "examples": [_record_value(row) for row in examples],
         }
     )
+
+
+def _write_naturalness_audit(
+    store, config, matches, audit, ratings, ratings_shard
+):
+    row = {
+        "kind": "naturalness_audit",
+        "config_sha256": config.config_hash,
+        "ratings_manifest": str(ratings_shard.manifest_path.relative_to(store.root)),
+        "ratings_sha256": ratings_shard.sha256,
+        "matches": [_record_value(value) for value in sorted(matches, key=lambda value: value.pair_id)],
+        "ratings": [
+            _record_value(value)
+            for value in sorted(
+                ratings,
+                key=lambda value: (value.pair_id, value.round, value.rater_id),
+            )
+        ],
+        "accepted_pair_ids": list(audit.accepted_pair_ids),
+        "excluded_pair_ids": list(audit.excluded_pair_ids),
+        "third_rater_pair_ids": list(audit.third_rater_pair_ids),
+        "decisions": dict(audit.decisions),
+    }
+    audit_hash = _sha256_json(row)
+    return store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"naturalness-audit-{audit_hash[:16]}",
+        [row],
+        {
+            "config_sha256": config.config_hash,
+            "audit_sha256": audit_hash,
+            "ratings_sha256": ratings_shard.sha256,
+        },
+        record_kind="naturalness_audit",
+    )
+
+
+def _load_verified_naturalness_audit(
+    store,
+    path,
+    config,
+    *,
+    expected_sha256,
+    expected_pair_ids,
+):
+    shard = _require_verified_shard_kind(
+        store, path, "naturalness_audit", "verified naturalness audit manifest"
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    if shard.namespace != "mechanism_train" or shard.sha256 != expected_sha256:
+        raise ValueError("naturalness audit identity does not verify")
+    rows = _read_json_rows(shard.data_path)
+    if len(rows) != 1 or rows[0].get("kind") != "naturalness_audit":
+        raise ValueError("naturalness audit has an invalid schema")
+    row = rows[0]
+    required = {
+        "kind",
+        "config_sha256",
+        "ratings_manifest",
+        "ratings_sha256",
+        "matches",
+        "ratings",
+        "accepted_pair_ids",
+        "excluded_pair_ids",
+        "third_rater_pair_ids",
+        "decisions",
+    }
+    if set(row) != required or row.get("config_sha256") != config.config_hash:
+        raise ValueError("naturalness audit has an invalid schema or config")
+    ratings_path = _artifact_path_from_record(
+        store, row.get("ratings_manifest"), "naturalness ratings manifest"
+    )
+    expected_ratings_sha256 = _required_sha256(
+        row.get("ratings_sha256"), "naturalness ratings sha256"
+    )
+    verified_ratings, ratings_shard = _load_verified_naturalness_ratings(
+        store, ratings_path, config
+    )
+    if ratings_shard.sha256 != expected_ratings_sha256:
+        raise ValueError("naturalness ratings identity does not verify")
+    try:
+        matches = tuple(EntityMatch(**value) for value in row["matches"])
+        ratings = tuple(NaturalnessRating(**value) for value in row["ratings"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("naturalness audit evidence is invalid") from error
+    recomputed = audit_naturalness_manifest(matches, ratings)
+    if ratings != verified_ratings:
+        raise ValueError("naturalness audit ratings differ from their source artifact")
+    recorded = {
+        "accepted_pair_ids": list(recomputed.accepted_pair_ids),
+        "excluded_pair_ids": list(recomputed.excluded_pair_ids),
+        "third_rater_pair_ids": list(recomputed.third_rater_pair_ids),
+        "decisions": dict(recomputed.decisions),
+    }
+    if any(row[name] != value for name, value in recorded.items()):
+        raise ValueError("naturalness audit does not match deterministic recomputation")
+    accepted = frozenset(recomputed.accepted_pair_ids)
+    if not expected_pair_ids <= accepted:
+        raise ValueError("naturalness audit does not accept every prompt entity unit")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "audit_sha256": _sha256_json(row),
+            "ratings_sha256": expected_ratings_sha256,
+        },
+    )
+    return shard
+
+
+def _load_verified_naturalness_ratings(store, path, config):
+    shard = _require_verified_shard_kind(
+        store,
+        path,
+        "naturalness_ratings",
+        "verified naturalness ratings manifest",
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    if shard.namespace != "mechanism_train":
+        raise ValueError("naturalness ratings must use mechanism_train namespace")
+    rows = _read_json_rows(shard.data_path)
+    required = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "protocol_sha256",
+        "blinding_manifest_sha256",
+        "assignments",
+        "ratings",
+    }
+    if len(rows) != 1 or set(rows[0]) != required:
+        raise ValueError("naturalness ratings have an invalid schema")
+    row = rows[0]
+    if row.get("kind") != "naturalness_ratings" or row.get("schema_version") != 1:
+        raise ValueError("naturalness ratings schema_version must equal one")
+    if row.get("config_sha256") != config.config_hash:
+        raise ValueError("naturalness ratings config does not match")
+    protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
+    if row.get("protocol_sha256") != protocol_sha256:
+        raise ValueError("naturalness ratings protocol hash does not match preregistration")
+    assignments = row.get("assignments")
+    raw_ratings = row.get("ratings")
+    if not isinstance(assignments, list) or not isinstance(raw_ratings, list):
+        raise ValueError("naturalness ratings evidence must be lists")
+    if row.get("blinding_manifest_sha256") != _sha256_json(assignments):
+        raise ValueError("naturalness ratings blinding manifest does not verify")
+    assignment_keys = set()
+    submissions = set()
+    slots_by_pair = {}
+    for assignment in assignments:
+        if not isinstance(assignment, dict) or set(assignment) != {
+            "pair_id",
+            "rater_id",
+            "blind_slot",
+            "submission_sha256",
+        }:
+            raise ValueError("naturalness rating assignment has an invalid schema")
+        key = (assignment["pair_id"], assignment["rater_id"])
+        if key in assignment_keys:
+            raise ValueError("naturalness rating assignments must be unique")
+        assignment_keys.add(key)
+        submission = _required_sha256(
+            assignment.get("submission_sha256"), "rating submission sha256"
+        )
+        if submission in submissions:
+            raise ValueError("rating submissions must be unique")
+        submissions.add(submission)
+        slot = assignment.get("blind_slot")
+        if slot not in {"slot-a", "slot-b", "adjudicator"}:
+            raise ValueError("naturalness rating blind slot is invalid")
+        slots_by_pair.setdefault(assignment["pair_id"], set()).add(slot)
+    try:
+        ratings = tuple(NaturalnessRating(**value) for value in raw_ratings)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"naturalness rating schema_version is invalid: {error}") from error
+    rating_keys = {(rating.pair_id, rating.rater_id) for rating in ratings}
+    if len(rating_keys) != len(ratings) or rating_keys != assignment_keys:
+        raise ValueError("naturalness ratings must match blinded assignments exactly")
+    for pair_id, pair_ratings in _group_ratings(ratings).items():
+        initial = tuple(value for value in pair_ratings if value.round == 1)
+        adjudicators = tuple(value for value in pair_ratings if value.round == 2)
+        expected_slots = {"slot-a", "slot-b"} | (
+            {"adjudicator"} if adjudicators else set()
+        )
+        if len(initial) != 2 or len(adjudicators) > 1 or slots_by_pair[pair_id] != expected_slots:
+            raise ValueError("naturalness ratings do not prove the registered blind assignment")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "protocol_sha256": protocol_sha256,
+            "blinding_manifest_sha256": row["blinding_manifest_sha256"],
+        },
+    )
+    return tuple(sorted(ratings, key=lambda value: (value.pair_id, value.round, value.rater_id))), shard
+
+
+def _group_ratings(ratings):
+    grouped = {}
+    for rating in ratings:
+        grouped.setdefault(rating.pair_id, []).append(rating)
+    return grouped
 
 
 def _record_value(value: Any) -> dict[str, Any]:
