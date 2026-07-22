@@ -238,3 +238,23 @@ def test_pre_outcome_amendment_freezes_the_exact_output_control_coordinates():
     assert positions == sorted(positions)
     assert "teacher-forced" in amendment
     assert "no generated completion" in amendment
+
+
+def test_pre_outcome_amendment_freezes_f2a_selection_and_null_contract():
+    amendment = PROTOCOL_AMENDMENT.read_text(encoding="utf-8")
+
+    required_contract = (
+        "Grouped cross-validation entirely within `mechanism_train` selects PCA dimensionality and logistic `C`",
+        "The same four registered domains occur in every confirmatory split",
+        "each of the three answerability states in turn",
+        "each target-familiarity condition in turn",
+        "exactly 10,000 bootstrap replicates",
+        "2026072201` through `2026072299",
+        "7aee4f4ee03201f4a8b7bee296294bc5c6a14a5251dfa71bb8cff15ce3d4e07f",
+        "adjacent difference is `delta_l = h_l - h_(l-1)`",
+        "`1 - cosine(delta_(l-1), delta_l)`",
+        "exclude transformer layer 25 and `assistant_prefix_end`",
+    )
+
+    for clause in required_contract:
+        assert clause in amendment
