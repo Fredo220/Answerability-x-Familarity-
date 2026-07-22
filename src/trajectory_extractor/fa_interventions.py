@@ -26,6 +26,7 @@ from .fa_scoring import (
     BootstrapDistribution,
     OutcomeClass,
     PercentileInterval,
+    SameStringSealEvidence,
     SensitivityResult,
     behavioral_gate,
     score_response,
@@ -1219,6 +1220,18 @@ def _bootstrap_distribution(value: Any) -> BootstrapDistribution:
     )
 
 
+def behavioral_metrics_from_record(value: Any) -> BehavioralMetrics:
+    """Strictly reconstruct canonical F1 metrics for downstream reporting."""
+
+    return _behavioral_metrics(value)
+
+
+def bootstrap_distribution_from_record(value: Any) -> BootstrapDistribution:
+    """Strictly reconstruct canonical F1 bootstrap evidence."""
+
+    return _bootstrap_distribution(value)
+
+
 def _verify_f1_gate_row(
     row: Mapping[str, Any],
     *,
@@ -1248,6 +1261,12 @@ def _verify_f1_gate_row(
     gate_record = row["gate"]
     if not isinstance(gate_record, Mapping):
         raise ValueError("closed F1 gate has an invalid schema")
+    seal_record = gate_record.get("same_string_seal")
+    same_string_seal = (
+        None
+        if seal_record is None
+        else SameStringSealEvidence.from_record(seal_record)
+    )
     recomputed = behavioral_gate(
         metrics,
         bootstrap,
@@ -1255,6 +1274,7 @@ def _verify_f1_gate_row(
         same_string_sealed=gate_record.get("same_string_sealed"),
         config_hash=gate_record.get("config_hash"),
         manifest_hash=gate_record.get("manifest_hash"),
+        same_string_seal=same_string_seal,
     )
     if recomputed.to_record() != dict(gate_record):
         raise ValueError("closed F1 gate does not match the canonical recomputed gate")
@@ -1294,7 +1314,26 @@ def _hypothesis_gate_record(value: Any, hypothesis: str) -> HypothesisGate:
         if criterion.to_record() != dict(record):
             raise ValueError("F2A gate criterion is not canonical")
         criteria.append(criterion)
-    gate = HypothesisGate(hypothesis, tuple(criteria))
+    derived_reasons = []
+    for criterion in criteria:
+        if criterion.satisfied is None:
+            derived_reasons.append(f"{criterion.name} is not evaluable")
+        elif not criterion.satisfied:
+            derived_reasons.append(
+                f"{criterion.name}={criterion.observed:.6g} fails "
+                f"{criterion.comparison}{criterion.threshold:.6g}"
+            )
+    stored_reasons = tuple(value["reasons"])
+    if derived_reasons:
+        suffix = tuple(derived_reasons)
+        if stored_reasons[-len(suffix) :] != suffix:
+            raise ValueError("F2A gate reasons do not match its criteria")
+        context_reasons = stored_reasons[: -len(suffix)]
+    elif stored_reasons == ("all registered criteria are satisfied",):
+        context_reasons = ()
+    else:
+        context_reasons = stored_reasons
+    gate = HypothesisGate(hypothesis, tuple(criteria), context_reasons)
     if gate.to_record() != dict(value):
         raise ValueError("F2A gate does not match its recomputed criteria")
     return gate
@@ -1318,6 +1357,7 @@ def _verify_f2a_gate_row(
         "authorization_sha256",
         "endpoint_input_sha256",
         "endpoint_input_identities_sha256",
+        "endpoint_source_identities_sha256",
         "results",
         "gates",
         "refit_performed",
@@ -1329,6 +1369,8 @@ def _verify_f2a_gate_row(
         or result["refit_performed"] is not False
         or result["selection_bundle_hash"] != selection_manifest_sha256
         or result["endpoint_input_sha256"] != endpoint_input_sha256
+        or result["endpoint_source_identities_sha256"]
+        != result["endpoint_input_identities_sha256"]
     ):
         raise ValueError("closed F2A bundle is not bound to its protected endpoint")
     for name in (
@@ -1336,6 +1378,7 @@ def _verify_f2a_gate_row(
         "authorization_sha256",
         "endpoint_input_sha256",
         "endpoint_input_identities_sha256",
+        "endpoint_source_identities_sha256",
     ):
         _sha256(result[name], f"F2A {name}")
     results = result["results"]
@@ -1348,9 +1391,11 @@ def _verify_f2a_gate_row(
         "authorization_sha256",
         "endpoint_input_sha256",
         "endpoint_input_identities_sha256",
+        "endpoint_source_identities_sha256",
         "test_ids",
         "test_row_sha256s",
         "selected_feature_family",
+        "selected_model_scope",
         "metrics",
         "model_metrics",
         "per_condition",
@@ -1374,10 +1419,12 @@ def _verify_f2a_gate_row(
         if not isinstance(probe, Mapping) or set(probe) != required_probe_fields:
             raise ValueError("closed F2A probe result has an invalid schema")
         if (
-            probe["schema_version"] != 2
+            probe["schema_version"] != 3
             or probe["task"] != task
             or probe["refit_performed"] is not False
             or probe["endpoint_input_sha256"] != endpoint_input_sha256
+            or probe["endpoint_source_identities_sha256"]
+            != probe["endpoint_input_identities_sha256"]
             or not probe["test_ids"]
             or not probe["test_row_sha256s"]
         ):
@@ -1387,8 +1434,21 @@ def _verify_f2a_gate_row(
             "authorization_sha256",
             "endpoint_input_sha256",
             "endpoint_input_identities_sha256",
+            "endpoint_source_identities_sha256",
         ):
             _sha256(probe[name], f"F2A probe {name}")
+        scope = probe["selected_model_scope"]
+        if not isinstance(scope, Mapping) or set(scope) != {
+            "feature_family",
+            "anchor",
+            "layer",
+            "claim_scope",
+            "selected_model_sha256",
+        }:
+            raise ValueError("closed F2A selected model scope has an invalid schema")
+        if scope["feature_family"] != probe["selected_feature_family"]:
+            raise ValueError("closed F2A selected model scope is inconsistent")
+        _sha256(scope["selected_model_sha256"], "F2A selected_model_sha256")
         for digest in probe["test_row_sha256s"]:
             _sha256(digest, "F2A test row hash")
         _hypothesis_gate_record(probe["primary_gate"], hypotheses[task])
@@ -1431,7 +1491,7 @@ def _verify_f2a_gate_row(
         "selection_manifest": selection_manifest_sha256,
         "authorization": result["authorization_sha256"],
         "endpoint_input_sha256": endpoint_input_sha256,
-        "endpoint_input_identities_sha256": result[
+        "endpoint_source_identities_sha256": result[
             "endpoint_input_identities_sha256"
         ],
     }

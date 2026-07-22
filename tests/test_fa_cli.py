@@ -790,12 +790,46 @@ def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
             probe_rows_manifest=test_rows.manifest_path,
         ),
     )
+    report = fa_cli._build_evidence_report(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            behavior_test_manifest=None,
+            probe_test_manifest=prompt.manifest_path,
+            selection_manifest=payload["selection_manifest"],
+            output="reports/f2a-smoke.md",
+        ),
+    )
 
     assert sealed["endpoint_state"] == "sealed"
     assert evaluated["status"] == "evaluated"
     assert evaluated["endpoint_state"] == "closed"
     assert recovered["status"] == "recovered"
     assert recovered["metrics_manifest"] == evaluated["metrics_manifest"]
+    assert report["status"] == "reported"
+    report_text = (tmp_path / "reports" / "f2a-smoke.md").read_text(
+        encoding="utf-8"
+    )
+    assert "F1: unavailable" in report_text
+    assert "F2A: evaluated" in report_text
+    assert "F2B: skipped" in report_text
+
+
+def test_behavior_seal_is_config_bound_and_idempotently_rejected(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompt = prompt_capability(tmp_path, config, "behavior_test")
+    args = SimpleNamespace(behavior_test_manifest=prompt.manifest_path)
+
+    sealed = fa_cli._seal_behavior_test(config, tmp_path, args)
+
+    assert sealed["status"] == "sealed"
+    assert sealed["endpoint"] == "behavior_test"
+    assert len(sealed["selection_sha256"]) == 64
+    assert FAArtifactStore(tmp_path).endpoint_state(
+        "behavior_test", prompt.manifest_path
+    ) == "sealed"
+    with pytest.raises(ValueError, match="already sealed"):
+        fa_cli._seal_behavior_test(config, tmp_path, args)
 
 
 @pytest.mark.parametrize(
@@ -1081,8 +1115,10 @@ def test_generic_generation_rejects_protected_namespaces_before_runner_construct
     ("command", "required_option"),
     [
         ("fa-fit-probes", "--train-rows-manifest"),
+        ("fa-seal-behavior-test", "--behavior-test-manifest"),
         ("fa-seal-selection", "--selection-manifest"),
         ("fa-evaluate-probe-test", "--selection-manifest"),
+        ("fa-build-report", "--output"),
     ],
 )
 def test_f2a_commands_require_explicit_artifacts_before_dispatch(

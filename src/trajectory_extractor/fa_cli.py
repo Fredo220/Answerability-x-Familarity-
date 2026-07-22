@@ -45,10 +45,16 @@ from trajectory_extractor.fa_runtime import (
     validate_runner_binding,
 )
 from trajectory_extractor.fa_scoring import (
+    SameStringSealEvidence,
     behavioral_gate,
     crossed_bootstrap,
     estimate_behavior,
     score_response,
+)
+from trajectory_extractor.fa_report import (
+    build_report,
+    load_closed_f1_evidence,
+    load_closed_f2a_evidence,
 )
 from trajectory_extractor.fa_probes import (
     TASKS,
@@ -67,7 +73,7 @@ from trajectory_extractor.fa_probes import (
 FA_COMMANDS = (
     "fa-screen-entities", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
-    "fa-extract-activations", "fa-fit-probes", "fa-seal-selection", "fa-unlock-endpoint",
+    "fa-extract-activations", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
@@ -76,10 +82,12 @@ _IMPLEMENTED = frozenset(
         *FA_COMMANDS[:6],
         "fa-extract-activations",
         "fa-fit-probes",
+        "fa-seal-behavior-test",
         "fa-seal-selection",
         "fa-unlock-endpoint",
         "fa-evaluate-behavior-test",
         "fa-evaluate-probe-test",
+        "fa-build-report",
     )
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
@@ -173,6 +181,8 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     fit_probes.add_argument("--validation-rows-manifest", required=True)
     fit_probes.add_argument("--probe-test-manifest", required=True)
     fit_probes.add_argument("--shard-id", required=True)
+    behavior_seal = parsers["fa-seal-behavior-test"]
+    behavior_seal.add_argument("--behavior-test-manifest", required=True)
     seal_selection = parsers["fa-seal-selection"]
     seal_selection.add_argument("--selection-manifest", required=True)
     seal_selection.add_argument("--probe-test-manifest", required=True)
@@ -184,6 +194,11 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     probe_test.add_argument("--selection-manifest", required=True)
     probe_test.add_argument("--probe-test-manifest", required=True)
     probe_test.add_argument("--probe-rows-manifest", required=True)
+    report = parsers["fa-build-report"]
+    report.add_argument("--behavior-test-manifest")
+    report.add_argument("--probe-test-manifest")
+    report.add_argument("--selection-manifest")
+    report.add_argument("--output", required=True)
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)
@@ -223,12 +238,16 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _extract_activations(config, root, args)
         elif command == "fa-fit-probes":
             payload = _fit_probes(config, root, args)
+        elif command == "fa-seal-behavior-test":
+            payload = _seal_behavior_test(config, root, args)
         elif command == "fa-seal-selection":
             payload = _seal_probe_selection(config, root, args)
         elif command == "fa-evaluate-behavior-test":
             payload = _evaluate_behavior_test(config, root, args)
         elif command == "fa-evaluate-probe-test":
             payload = _evaluate_probe_test(config, root, args)
+        elif command == "fa-build-report":
+            payload = _build_evidence_report(config, root, args)
         elif command == "fa-unlock-endpoint":
             payload = _reject_standalone_unlock()
         else:
@@ -725,6 +744,73 @@ def _seal_probe_selection(
     }
 
 
+def _seal_behavior_test(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    manifest = _load_manifest(
+        store, args.behavior_test_manifest, config
+    )
+    if manifest.namespace != "behavior_test":
+        raise ValueError("behavior sealing requires a behavior_test prompt manifest")
+    try:
+        store.verify_endpoint_artifact(
+            "behavior_test", manifest.shard_manifest_path
+        )
+    except ValueError as error:
+        if str(error) != "behavior_test is not sealed":
+            raise
+    else:
+        raise ValueError("behavior_test is already sealed")
+
+    preregistration_sha256 = hashlib.sha256(
+        _PREREGISTRATION_PATH.read_bytes()
+    ).hexdigest()
+    selection_record = {
+        "kind": "behavior_selection_manifest",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "prompt_manifest_sha256": manifest.shard_sha256,
+        "full_manifest_sha256": manifest.full_manifest_sha256,
+        "preregistration_sha256": preregistration_sha256,
+        "bootstrap_seed": config.bootstrap_seed,
+        "bootstrap_replicates": config.bootstrap_replicates,
+        "thresholds": dict(config.thresholds),
+        "selection_frozen_before_endpoint_open": True,
+    }
+    selection_sha256 = _sha256_json(selection_record)
+    selection_shard = _write_or_resume_single_record(
+        store,
+        run_id=config.run_id,
+        namespace="locked_validation",
+        shard_id=f"behavior-selection-{manifest.shard_sha256[:16]}",
+        row=selection_record,
+        lineage={
+            "config_sha256": config.config_hash,
+            "prompt_manifest_sha256": manifest.shard_sha256,
+            "preregistration_sha256": preregistration_sha256,
+            "selection_sha256": selection_sha256,
+        },
+        record_kind="behavior_selection_manifest",
+    )
+    sealed_path = store.seal_endpoint(
+        "behavior_test",
+        (store.verify_shard(manifest.shard_manifest_path),),
+        {
+            "preregistration": preregistration_sha256,
+            "selection_manifest": selection_sha256,
+        },
+    )
+    return {
+        "status": "sealed",
+        "endpoint": "behavior_test",
+        "endpoint_state": "sealed",
+        "sealed_state": str(sealed_path),
+        "selection_manifest": str(selection_shard.manifest_path),
+        "selection_sha256": selection_sha256,
+    }
+
+
 def _evaluate_probe_test(
     config: FAConfig, root: Path, args: argparse.Namespace
 ) -> dict[str, Any]:
@@ -792,6 +878,77 @@ def _evaluate_probe_test(
         "bundle_sha256": bundle.sha256,
         "gate_status": bundle.gates.status,
     }
+
+
+def _build_evidence_report(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    behavior_manifest = getattr(args, "behavior_test_manifest", None)
+    probe_manifest = getattr(args, "probe_test_manifest", None)
+    selection_manifest = getattr(args, "selection_manifest", None)
+    if behavior_manifest is None and probe_manifest is None:
+        raise ValueError(
+            "fa-build-report requires at least one closed behavior_test or probe_test manifest"
+        )
+    if (probe_manifest is None) != (selection_manifest is None):
+        raise ValueError(
+            "probe_test reporting requires both --probe-test-manifest and --selection-manifest"
+        )
+
+    store = FAArtifactStore(root)
+    behavior = (
+        None
+        if behavior_manifest is None
+        else load_closed_f1_evidence(store, behavior_manifest)
+    )
+    if behavior is not None and behavior.gate.config_hash != config.config_hash:
+        raise ValueError("closed F1 evidence belongs to another config")
+
+    f2a = None
+    if probe_manifest is not None:
+        selection = _load_f2a_selection_bundle(store, selection_manifest, config)
+        f2a = load_closed_f2a_evidence(
+            store,
+            probe_manifest,
+            selections=selection.selections,
+        )
+
+    output = _root_scoped_output(root, args.output)
+    report = build_report(
+        behavior=behavior,
+        f2a=f2a,
+        f2b=None,
+        circuit=None,
+        output=output,
+    )
+    return {
+        "status": "reported",
+        "report": str(report),
+        "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+        "phases": {
+            "F1": "evaluated" if behavior is not None else "unavailable",
+            "F2A": "evaluated" if f2a is not None else "unavailable",
+            "F2B": "skipped",
+            "F3": "skipped",
+        },
+    }
+
+
+def _root_scoped_output(root: Path, value: object) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError("report output must be a nonempty path")
+    base = root.absolute().resolve()
+    candidate = Path(value)
+    destination = (
+        candidate.absolute().resolve()
+        if candidate.is_absolute()
+        else (base / candidate).resolve()
+    )
+    try:
+        destination.relative_to(base)
+    except ValueError as error:
+        raise ValueError("report output must remain inside --root") from error
+    return destination
 
 
 def _load_probe_rows_manifest(
@@ -1038,9 +1195,23 @@ def _evaluate_behavior_test(
         metrics,
         bootstrap,
         thresholds=config.thresholds,
-        same_string_sealed=any(row.block == "same_string" for row in manifest.examples),
+        same_string_sealed=any(
+            row.block == "same_string" for row in manifest.examples
+        ),
         config_hash=config.config_hash,
         manifest_hash=manifest.full_manifest_sha256,
+        same_string_seal=(
+            SameStringSealEvidence.from_registered_block(
+                source_manifest_sha256=manifest.full_manifest_sha256,
+                example_ids=tuple(
+                    row.example_id
+                    for row in manifest.examples
+                    if row.block == "same_string"
+                ),
+            )
+            if any(row.block == "same_string" for row in manifest.examples)
+            else None
+        ),
     )
     evidence = {
         "metrics": _json_safe(metrics.to_record()),
@@ -1120,6 +1291,52 @@ def _write_or_resume_metrics(
         sidecar = _read_json_object(existing.manifest_path)
         if sidecar.get("lineage") != lineage:
             raise ValueError("existing metrics lineage does not match this evaluation")
+        return existing
+
+
+def _write_or_resume_single_record(
+    store: FAArtifactStore,
+    *,
+    run_id: str,
+    namespace: str,
+    shard_id: str,
+    row: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+    record_kind: str,
+):
+    try:
+        return store.write_completed_shard(
+            run_id,
+            namespace,
+            shard_id,
+            (dict(row),),
+            dict(lineage),
+            record_kind=record_kind,
+        )
+    except FileExistsError:
+        candidate = (
+            store.root
+            / "runs"
+            / "familiarity_answerability"
+            / run_id
+            / "shards"
+            / namespace
+            / f"{shard_id}.jsonl.manifest.json"
+        )
+        existing = store.verify_shard(candidate)
+        expected = json.dumps(
+            dict(row), allow_nan=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8") + b"\n"
+        sidecar = _read_json_object(existing.manifest_path)
+        if (
+            existing.record_kind != record_kind
+            or existing.row_count != 1
+            or existing.sha256 != hashlib.sha256(expected).hexdigest()
+            or sidecar.get("lineage") != dict(lineage)
+        ):
+            raise ValueError(
+                "existing single-record artifact does not match this transaction"
+            )
         return existing
 
 

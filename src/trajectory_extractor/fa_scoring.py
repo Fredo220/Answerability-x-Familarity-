@@ -331,6 +331,30 @@ class SameStringSealEvidence:
             registered_block_sha256=_sha256_record(block_record),
         )
 
+    @classmethod
+    def from_record(cls, value: Mapping[str, Any]) -> SameStringSealEvidence:
+        expected = {
+            "schema_version",
+            "endpoint",
+            "source_manifest_sha256",
+            "block",
+            "example_ids",
+            "registered_block_sha256",
+        }
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise ValueError("same-string seal has an invalid schema")
+        seal = cls(
+            schema_version=value["schema_version"],
+            endpoint=value["endpoint"],
+            source_manifest_sha256=value["source_manifest_sha256"],
+            block=value["block"],
+            example_ids=tuple(value["example_ids"]),
+            registered_block_sha256=value["registered_block_sha256"],
+        )
+        if seal.to_record() != dict(value):
+            raise ValueError("same-string seal is not canonical")
+        return seal
+
     def __post_init__(self) -> None:
         if self.schema_version != 1 or self.endpoint != "behavior_test":
             raise ValueError("same-string seal endpoint or schema is invalid")

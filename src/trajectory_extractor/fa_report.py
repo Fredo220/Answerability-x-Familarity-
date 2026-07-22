@@ -25,14 +25,19 @@ from trajectory_extractor.fa_interventions import (
     REQUIRED_CAUSAL_CONTROLS,
     InterventionMetrics,
     InterventionTestResult,
+    behavioral_metrics_from_record,
+    bootstrap_distribution_from_record,
+    verify_gate_result_artifact,
 )
 from trajectory_extractor.fa_probes import (
     DEFAULT_FULL_SELECTION_NULL_SEED_HASH,
     DEFAULT_FULL_SELECTION_NULL_SEEDS,
     F2AGates,
     NullSelectionResult,
+    ProbeBundleResult,
     ProbeResult,
     SAEGate,
+    SelectionManifest,
     evaluate_f2a_gates,
 )
 from trajectory_extractor.fa_scoring import (
@@ -40,6 +45,7 @@ from trajectory_extractor.fa_scoring import (
     BehavioralMetrics,
     BootstrapDistribution,
     SameStringSealEvidence,
+    behavioral_gate,
 )
 
 
@@ -160,6 +166,88 @@ class F2AEvidence:
     @property
     def sha256(self) -> str:
         return hashlib.sha256(_canonical_json(self.to_record())).hexdigest()
+
+
+def load_closed_f1_evidence(
+    store: FAArtifactStore, manifest_path: str | Path
+) -> F1Evidence:
+    """Load F1 only from a verified CLOSED endpoint and recompute its gate."""
+
+    verified = verify_gate_result_artifact(store, manifest_path, phase="F1")
+    closed = store.read_closed_metrics("behavior_test", manifest_path)
+    row = _single_closed_metric_row(closed.metrics_artifact)
+    metrics = behavioral_metrics_from_record(row["metrics"])
+    bootstrap = bootstrap_distribution_from_record(row["bootstrap"])
+    gate_record = row["gate"]
+    if not isinstance(gate_record, Mapping):
+        raise ValueError("closed F1 gate must be a mapping")
+    seal = _same_string_seal_from_record(gate_record.get("same_string_seal"))
+    gate = behavioral_gate(
+        metrics,
+        bootstrap,
+        thresholds=gate_record.get("thresholds", {}),
+        same_string_sealed=gate_record.get("same_string_sealed"),
+        config_hash=gate_record.get("config_hash"),
+        manifest_hash=gate_record.get("manifest_hash"),
+        same_string_seal=seal,
+    )
+    if gate.to_record() != dict(gate_record):
+        raise ValueError("closed F1 gate does not match report-time recomputation")
+    if verified.config_sha256 != gate.config_hash:
+        raise ValueError("closed F1 verifier and report evidence disagree")
+    return F1Evidence(metrics=metrics, bootstrap=bootstrap, gate=gate)
+
+
+def load_closed_f2a_evidence(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    *,
+    selections: Mapping[str, SelectionManifest],
+) -> F2AEvidence:
+    """Load F2A only from a verified CLOSED endpoint and frozen selections."""
+
+    verified = verify_gate_result_artifact(store, manifest_path, phase="F2A")
+    closed = store.read_closed_metrics("probe_test", manifest_path)
+    row = _single_closed_metric_row(closed.metrics_artifact)
+    bundle = ProbeBundleResult.from_record(row["result"], selections=selections)
+    if verified.result_sha256 != bundle.sha256:
+        raise ValueError("closed F2A verifier and typed bundle disagree")
+    if verified.probe_selection_sha256 != bundle.selection_bundle_hash:
+        raise ValueError("closed F2A report uses another selection bundle")
+    return F2AEvidence(
+        familiarity=bundle.results["familiarity"],
+        answerability=bundle.results["answerability"],
+        unsupported_answer=bundle.results["unsupported_answer"],
+        gates=bundle.gates,
+        sae_gates={},
+    )
+
+
+def _single_closed_metric_row(shard: Any) -> Mapping[str, Any]:
+    try:
+        payload = Path(shard.data_path).read_bytes()
+    except OSError as error:
+        raise ValueError("closed metrics artifact is unreadable") from error
+    if hashlib.sha256(payload).hexdigest() != shard.sha256:
+        raise ValueError("closed metrics artifact no longer matches its manifest")
+    lines = payload.splitlines()
+    if len(lines) != 1 or shard.row_count != 1:
+        raise ValueError("closed metrics artifact must contain exactly one row")
+    try:
+        row = json.loads(lines[0])
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("closed metrics artifact is not valid JSON") from error
+    if not isinstance(row, Mapping) or _canonical_json(row) != lines[0]:
+        raise ValueError("closed metrics artifact must be canonical JSON")
+    return row
+
+
+def _same_string_seal_from_record(
+    value: Any,
+) -> SameStringSealEvidence | None:
+    if value is None:
+        return None
+    return SameStringSealEvidence.from_record(value)
 
 
 @dataclass(frozen=True)

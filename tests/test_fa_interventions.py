@@ -445,16 +445,24 @@ def _hypothesis_gate(hypothesis, *, supported=True):
 
 def _probe_result_record(task, hypothesis, endpoint_input_sha256, *, supported=True):
     gate = _hypothesis_gate(hypothesis, supported=supported)
-    return {
-        "schema_version": 2,
+    record = {
+        "schema_version": 3,
         "task": task,
         "selection_hash": _canonical_hash({"task": task}),
         "authorization_sha256": "a" * 64,
         "endpoint_input_sha256": endpoint_input_sha256,
         "endpoint_input_identities_sha256": "b" * 64,
+        "endpoint_source_identities_sha256": "b" * 64,
         "test_ids": [f"{task}-example"],
         "test_row_sha256s": [_canonical_hash({"row": task})],
         "selected_feature_family": "static",
+        "selected_model_scope": {
+            "feature_family": "static",
+            "anchor": "user_prompt_end",
+            "layer": 12,
+            "claim_scope": "pre_output",
+            "selected_model_sha256": _canonical_hash({"model": task}),
+        },
         "metrics": {"status": "evaluable"},
         "model_metrics": {},
         "per_condition": {},
@@ -471,6 +479,7 @@ def _probe_result_record(task, hypothesis, endpoint_input_sha256, *, supported=T
         "null_results": [],
         "refit_performed": False,
     }
+    return record
 
 
 def _f2a_metrics_row(endpoint_input_sha256, *, supported=True):
@@ -501,6 +510,7 @@ def _f2a_metrics_row(endpoint_input_sha256, *, supported=True):
         "authorization_sha256": "c" * 64,
         "endpoint_input_sha256": endpoint_input_sha256,
         "endpoint_input_identities_sha256": "b" * 64,
+        "endpoint_source_identities_sha256": "b" * 64,
         "results": results,
         "gates": gates.to_record(),
         "refit_performed": False,
@@ -562,7 +572,7 @@ def _gate_evidence(tmp_path, phase, *, status="supported"):
                 "selection_manifest": selection_hash,
                 "authorization": row["result"]["authorization_sha256"],
                 "endpoint_input_sha256": endpoint_input.sha256,
-                "endpoint_input_identities_sha256": row["result"][
+                "endpoint_source_identities_sha256": row["result"][
                     "endpoint_input_identities_sha256"
                 ],
             }
