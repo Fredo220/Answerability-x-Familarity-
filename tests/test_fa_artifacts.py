@@ -667,6 +667,36 @@ def test_close_rejects_evaluated_marker_for_another_run(tmp_path, config):
         store.close_endpoint("probe_test")
 
 
+def test_read_evaluated_metrics_returns_only_verified_open_evaluation(tmp_path, config):
+    store, selection, metrics, _, _ = _evaluated_endpoint(tmp_path, config)
+
+    recovered = store.read_evaluated_metrics("probe_test", selection.manifest_path)
+
+    assert recovered == metrics
+    store.close_endpoint("probe_test")
+    with pytest.raises(ValueError, match="already closed"):
+        store.read_evaluated_metrics("probe_test", selection.manifest_path)
+
+
+def test_read_closed_metrics_returns_verified_hash_bound_endpoint_evidence(
+    tmp_path, config
+):
+    store, selection, metrics, _, _ = _evaluated_endpoint(tmp_path, config)
+    closed_path = store.close_endpoint("probe_test")
+
+    evidence = store.read_closed_metrics("probe_test", selection.manifest_path)
+
+    assert evidence.endpoint == "probe_test"
+    assert evidence.run_id == config.run_id
+    assert evidence.input_artifact == selection
+    assert evidence.metrics_artifact == metrics
+    assert evidence.preregistration_hash == parents()["preregistration"]
+    assert evidence.selection_manifest_hash == parents()["selection_manifest"]
+    assert evidence.closed_state_sha256 == hashlib.sha256(
+        closed_path.read_bytes()
+    ).hexdigest()
+
+
 def test_verify_rejects_an_intermediate_symlink(tmp_path, config):
     store = FAArtifactStore(tmp_path)
     sealed = store.write_completed_shard(

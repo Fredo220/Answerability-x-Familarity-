@@ -58,6 +58,19 @@ class UnlockReceipt:
 
 
 @dataclass(frozen=True)
+class ClosedEndpointMetrics:
+    """Verified input, metrics, and lineage for one CLOSED endpoint."""
+
+    endpoint: str
+    run_id: str
+    input_artifact: SealedShard
+    metrics_artifact: SealedShard
+    preregistration_hash: str
+    selection_manifest_hash: str
+    closed_state_sha256: str
+
+
+@dataclass(frozen=True)
 class _FileIdentity:
     device: int
     inode: int
@@ -391,6 +404,111 @@ class FAArtifactStore:
         }
         self._exclusive_write(evaluated_path, _canonical_json(record))
         return evaluated_path
+
+    def read_evaluated_metrics(
+        self, endpoint: str, manifest_path: str | Path
+    ) -> SealedShard:
+        """Return the verified metrics for an evaluated, not-yet-closed endpoint."""
+
+        endpoint = _endpoint(endpoint)
+        self.verify_endpoint_artifact(endpoint, manifest_path)
+        sealed_path = self._find_endpoint_path(endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        run_id = sealed["run_id"]
+        if self._destination_exists(self._endpoint_path(run_id, endpoint, "closed")):
+            raise ValueError(f"{endpoint} is already closed")
+        evaluated_path = self._endpoint_path(run_id, endpoint, "evaluated")
+        if not self._destination_exists(evaluated_path):
+            raise ValueError(f"{endpoint} is not evaluated")
+        evaluated, _ = self._read_endpoint_record(
+            evaluated_path, endpoint, "evaluated"
+        )
+        if evaluated["run_id"] != run_id:
+            raise ValueError("evaluated endpoint state belongs to another run")
+        unlocked_path = self._endpoint_path(run_id, endpoint, "unlocked_once")
+        unlocked, _ = self._read_endpoint_record(
+            unlocked_path, endpoint, "unlocked_once"
+        )
+        if (
+            unlocked["preregistration_hash"]
+            != sealed["parents"]["preregistration"]
+            or unlocked["selection_manifest_hash"]
+            != sealed["parents"]["selection_manifest"]
+        ):
+            raise ValueError("active unlock lease no longer matches the sealed endpoint")
+        if unlocked["lease_id"] != evaluated["lease_id"]:
+            raise ValueError("evaluated endpoint lease does not match the active unlock lease")
+        metrics_manifest = self._path_from_root_record(
+            evaluated.get("metrics_manifest_path"), "metrics manifest"
+        )
+        metrics = self.verify_shard(metrics_manifest)
+        if metrics.record_kind != "metrics":
+            raise ValueError("evaluated endpoint requires a metrics artifact")
+        if (
+            metrics.namespace != endpoint
+            or metrics.sha256 != evaluated.get("metrics_sha256")
+        ):
+            raise ValueError("evaluated endpoint metrics no longer verify")
+        if self._run_id_for_shard(metrics) != run_id:
+            raise ValueError("evaluated endpoint metrics must belong to the endpoint run")
+        return metrics
+
+    def read_closed_metrics(
+        self, endpoint: str, manifest_path: str | Path
+    ) -> ClosedEndpointMetrics:
+        """Return verified evidence for a CLOSED endpoint and its explicit input."""
+
+        endpoint = _endpoint(endpoint)
+        input_artifact = self.verify_endpoint_artifact(endpoint, manifest_path)
+        sealed_path = self._find_endpoint_path(endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        self._verify_endpoint_artifacts(sealed)
+        run_id = sealed["run_id"]
+        closed_path = self._endpoint_path(run_id, endpoint, "closed")
+        if not self._destination_exists(closed_path):
+            raise ValueError(f"{endpoint} is not closed")
+        closed, closed_bytes = self._read_endpoint_record(
+            closed_path, endpoint, "closed"
+        )
+        evaluated_path = self._endpoint_path(run_id, endpoint, "evaluated")
+        evaluated, evaluated_bytes = self._read_endpoint_record(
+            evaluated_path, endpoint, "evaluated"
+        )
+        if closed["evaluated_sha256"] != _sha256_bytes(evaluated_bytes):
+            raise ValueError("closed endpoint no longer binds its evaluated state")
+        unlocked_path = self._endpoint_path(run_id, endpoint, "unlocked_once")
+        unlocked, _ = self._read_endpoint_record(
+            unlocked_path, endpoint, "unlocked_once"
+        )
+        parents = _parents(sealed["parents"])
+        if (
+            unlocked["preregistration_hash"] != parents["preregistration"]
+            or unlocked["selection_manifest_hash"]
+            != parents["selection_manifest"]
+            or unlocked["lease_id"] != evaluated["lease_id"]
+        ):
+            raise ValueError("closed endpoint lease no longer matches its sealed lineage")
+        metrics_manifest = self._path_from_root_record(
+            evaluated.get("metrics_manifest_path"), "metrics manifest"
+        )
+        metrics = self.verify_shard(metrics_manifest)
+        if metrics.record_kind != "metrics":
+            raise ValueError("closed endpoint requires a metrics artifact")
+        if (
+            metrics.namespace != endpoint
+            or metrics.sha256 != evaluated.get("metrics_sha256")
+            or self._run_id_for_shard(metrics) != run_id
+        ):
+            raise ValueError("closed endpoint metrics no longer verify")
+        return ClosedEndpointMetrics(
+            endpoint=endpoint,
+            run_id=run_id,
+            input_artifact=input_artifact,
+            metrics_artifact=metrics,
+            preregistration_hash=parents["preregistration"],
+            selection_manifest_hash=parents["selection_manifest"],
+            closed_state_sha256=_sha256_bytes(closed_bytes),
+        )
 
     def close_endpoint(self, endpoint: str) -> Path:
         endpoint = _endpoint(endpoint)
