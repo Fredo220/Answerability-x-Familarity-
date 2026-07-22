@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -164,6 +165,8 @@ _SAME_STRING_FACTS = (
     ("prefers", "cardamom tea after lunch"),
     ("collects", "postcards from coastal towns"),
 )
+_TARGET_INTRO_MARKER = "__FA_TARGET_INTRO_SPAN_8F31C2__"
+_TARGET_QUERY_MARKER = "__FA_TARGET_QUERY_SPAN_5A74D9__"
 _PROHIBITED_EXPOSURE_CONCEPTS = frozenset(
     {
         "archive",
@@ -200,6 +203,31 @@ REGISTERED_POWER_GRID = RegisteredPowerGrid(
 )
 
 
+_FA_EXAMPLE_TEXT_FIELDS = (
+    "example_id",
+    "entity_unit_id",
+    "split",
+    "template_family",
+    "target_familiarity",
+    "distractor_familiarity",
+    "answerability",
+    "target_text",
+    "distractor_text",
+    "registry_code",
+    "expected_output",
+    "user_text",
+    "canonical_payload_sha256",
+    "target_entity_id",
+    "distractor_entity_id",
+    "entity_order",
+    "query_role",
+    "relation_order",
+    "code_position",
+    "block",
+    "exposure",
+)
+
+
 @dataclass(frozen=True)
 class FAExample:
     example_id: str
@@ -214,6 +242,8 @@ class FAExample:
     registry_code: str
     expected_output: str
     user_text: str
+    target_intro_span: tuple[int, int]
+    target_query_span: tuple[int, int]
     canonical_payload_sha256: str
     target_entity_id: str
     distractor_entity_id: str
@@ -230,6 +260,22 @@ class FAExample:
     def __post_init__(self) -> None:
         object.__setattr__(self, "rendered_token_ids", tuple(self.rendered_token_ids))
         object.__setattr__(self, "special_token_sequence", tuple(self.special_token_sequence))
+        for name in ("rendered_token_ids", "special_token_sequence"):
+            _require_nested_nfc(getattr(self, name), name)
+        for name in _FA_EXAMPLE_TEXT_FIELDS:
+            value = getattr(self, name)
+            if isinstance(value, str) and not unicodedata.is_normalized("NFC", value):
+                raise ValueError(f"{name} must use Unicode NFC normalization")
+        for name in ("target_intro_span", "target_query_span"):
+            span = getattr(self, name)
+            if (
+                not isinstance(span, Sequence)
+                or isinstance(span, (str, bytes))
+                or len(span) != 2
+                or any(type(value) is not int for value in span)
+            ):
+                raise ValueError("structured target spans must be integer pairs")
+            object.__setattr__(self, name, tuple(span))
         _require_text(self.example_id, "example_id")
         _require_text(self.entity_unit_id, "entity_unit_id")
         _require_text(self.target_entity_id, "target_entity_id")
@@ -270,6 +316,26 @@ class FAExample:
             raise ValueError("rendered_token_count must be positive")
         if self.rendered_token_count != len(self.rendered_token_ids):
             raise ValueError("rendered_token_count must match rendered_token_ids")
+        _validate_target_spans(
+            self.user_text,
+            self.target_text,
+            self.target_intro_span,
+            self.target_query_span,
+        )
+        expected_text, expected_intro, expected_query = _structured_user_text(
+            family=self.template_family,
+            target=self.target_text,
+            distractor=self.distractor_text,
+            answerability=self.answerability,
+            entity_order=self.entity_order,
+            registry_code=self.registry_code,
+            block=self.block,
+            exposure=self.exposure,
+        )
+        if self.user_text != expected_text:
+            raise ValueError("user_text does not match registered template semantics")
+        if (self.target_intro_span, self.target_query_span) != (expected_intro, expected_query):
+            raise ValueError("structured target spans do not match registered template semantics")
         canonical_sha256 = _example_sha256(self)
         if self.canonical_payload_sha256 != canonical_sha256:
             raise ValueError("canonical_payload_sha256 must derive from canonical content")
@@ -582,15 +648,17 @@ def _build_core_row(
         first_relation, first_value = distractor_relation, distractor_value
         second_relation, second_value = target_relation, target_value
         entity_order, query_role = "target_second", "second"
-    user_text = _normalize_prompt_punctuation(_TEMPLATE_TEXT[family].format(
+    user_text, target_intro_span, target_query_span = _render_template_with_target_spans(
+        family,
         first=first,
         second=second,
         first_relation=first_relation,
         first_value=first_value,
         second_relation=second_relation,
         second_value=second_value,
-        query=target,
-    ))
+        target=target,
+        target_role=query_role,
+    )
     if answerability == "code_absent":
         relation_order, code_position = "code_absent", "absent"
     else:
@@ -608,6 +676,8 @@ def _build_core_row(
         registry_code=code,
         expected_output=code if answerability == "target_bound" else "UNKNOWN",
         user_text=user_text,
+        target_intro_span=target_intro_span,
+        target_query_span=target_query_span,
         target_entity_id=target_id,
         distractor_entity_id=distractor_id,
         entity_order=entity_order,
@@ -626,23 +696,28 @@ def _build_same_string_row(
     code: str,
     tokenizer: Any | None,
 ) -> FAExample:
-    subject = match.synthetic_name if exposure == "high_exposure" else match.real_name
+    target = unicodedata.normalize("NFC", match.synthetic_name)
+    distractor = unicodedata.normalize("NFC", match.real_name)
+    subject = target if exposure == "high_exposure" else distractor
     prefix = " ".join(f"{subject} {relation} {value}." for relation, value in _SAME_STRING_FACTS)
     target_relation, target_value = (
         ("code", code) if answerability == "target_bound" else ("color", "amber")
     )
-    task = _normalize_prompt_punctuation(
-        _TEMPLATE_TEXT[family].format(
-            first=match.real_name,
-            second=match.synthetic_name,
-            first_relation="shape",
-            first_value="oval",
-            second_relation=target_relation,
-            second_value=target_value,
-            query=match.synthetic_name,
-        )
+    task, task_intro_span, task_query_span = _render_template_with_target_spans(
+        family,
+        first=distractor,
+        second=target,
+        first_relation="shape",
+        first_value="oval",
+        second_relation=target_relation,
+        second_value=target_value,
+        target=target,
+        target_role="second",
     )
-    user_text = f"{prefix} Task: {task}"
+    user_text = unicodedata.normalize("NFC", f"{prefix} Task: {task}")
+    task_offset = user_text.index(task)
+    target_intro_span = tuple(value + task_offset for value in task_intro_span)
+    target_query_span = tuple(value + task_offset for value in task_query_span)
     return _example(
         entity_unit_id=match.pair_id,
         split=match.split,
@@ -650,11 +725,13 @@ def _build_same_string_row(
         target_familiarity="matched_synthetic",
         distractor_familiarity="matched_synthetic",
         answerability=answerability,
-        target_text=match.synthetic_name,
-        distractor_text=match.real_name,
+        target_text=target,
+        distractor_text=distractor,
         registry_code=code,
         expected_output=code if answerability == "target_bound" else "UNKNOWN",
         user_text=user_text,
+        target_intro_span=target_intro_span,
+        target_query_span=target_query_span,
         target_entity_id=match.synthetic_candidate_id,
         distractor_entity_id=match.real_entity_id,
         entity_order="target_second",
@@ -683,6 +760,133 @@ def _example(*, tokenizer: Any | None, block: str = "factorial", exposure: str |
         canonical_payload_sha256=digest,
         **payload,
     )
+
+
+def _structured_user_text(
+    *,
+    family: str,
+    target: str,
+    distractor: str,
+    answerability: str,
+    entity_order: str,
+    registry_code: str,
+    block: str,
+    exposure: str | None,
+) -> tuple[str, tuple[int, int], tuple[int, int]]:
+    target = unicodedata.normalize("NFC", target)
+    distractor = unicodedata.normalize("NFC", distractor)
+    if block == "same_string":
+        bindings = {
+            "target_bound": (("code", registry_code), ("shape", "oval")),
+            "code_absent": (("color", "amber"), ("shape", "oval")),
+        }
+        if answerability not in bindings or entity_order != "target_second":
+            raise ValueError("same-string row does not match registered template semantics")
+    else:
+        bindings = {
+            "target_bound": (("code", registry_code), ("color", "amber")),
+            "distractor_bound": (("color", "amber"), ("code", registry_code)),
+            "code_absent": (("color", "amber"), ("shape", "oval")),
+        }
+    (target_relation, target_value), (distractor_relation, distractor_value) = bindings[
+        answerability
+    ]
+    if entity_order == "target_first":
+        first, second = target, distractor
+        first_relation, first_value = target_relation, target_value
+        second_relation, second_value = distractor_relation, distractor_value
+        target_role = "first"
+    else:
+        first, second = distractor, target
+        first_relation, first_value = distractor_relation, distractor_value
+        second_relation, second_value = target_relation, target_value
+        target_role = "second"
+    task, intro_span, query_span = _render_template_with_target_spans(
+        family,
+        first=first,
+        second=second,
+        first_relation=first_relation,
+        first_value=first_value,
+        second_relation=second_relation,
+        second_value=second_value,
+        target=target,
+        target_role=target_role,
+    )
+    if block == "factorial":
+        return task, intro_span, query_span
+    subject = target if exposure == "high_exposure" else distractor
+    prefix = " ".join(f"{subject} {relation} {value}." for relation, value in _SAME_STRING_FACTS)
+    offset = len(prefix) + len(" Task: ")
+    return (
+        f"{prefix} Task: {task}",
+        tuple(value + offset for value in intro_span),
+        tuple(value + offset for value in query_span),
+    )
+
+
+def _render_template_with_target_spans(
+    family: str,
+    *,
+    first: str,
+    second: str,
+    first_relation: str,
+    first_value: str,
+    second_relation: str,
+    second_value: str,
+    target: str,
+    target_role: str,
+) -> tuple[str, tuple[int, int], tuple[int, int]]:
+    first = unicodedata.normalize("NFC", first)
+    second = unicodedata.normalize("NFC", second)
+    first_relation = unicodedata.normalize("NFC", first_relation)
+    first_value = unicodedata.normalize("NFC", first_value)
+    second_relation = unicodedata.normalize("NFC", second_relation)
+    second_value = unicodedata.normalize("NFC", second_value)
+    target = unicodedata.normalize("NFC", target)
+    values = (first, second, first_relation, first_value, second_relation, second_value, target)
+    if any(marker in value for marker in (_TARGET_INTRO_MARKER, _TARGET_QUERY_MARKER) for value in values):
+        raise ValueError("prompt content collides with structured target span markers")
+    marked = unicodedata.normalize(
+        "NFC",
+        _normalize_prompt_punctuation(
+            _TEMPLATE_TEXT[family].format(
+                first=_TARGET_INTRO_MARKER if target_role == "first" else first,
+                second=_TARGET_INTRO_MARKER if target_role == "second" else second,
+                first_relation=first_relation,
+                first_value=first_value,
+                second_relation=second_relation,
+                second_value=second_value,
+                query=_TARGET_QUERY_MARKER,
+            )
+        ),
+    )
+    if marked.count(_TARGET_INTRO_MARKER) != 1 or marked.count(_TARGET_QUERY_MARKER) != 1:
+        raise ValueError("registered template must contain one target introduction and query slot")
+    intro_start = marked.index(_TARGET_INTRO_MARKER)
+    rendered = marked.replace(_TARGET_INTRO_MARKER, target, 1)
+    intro_span = (intro_start, intro_start + len(target))
+    query_start = rendered.index(_TARGET_QUERY_MARKER)
+    rendered = rendered.replace(_TARGET_QUERY_MARKER, target, 1)
+    query_span = (query_start, query_start + len(target))
+    _validate_target_spans(rendered, target, intro_span, query_span)
+    return rendered, intro_span, query_span
+
+
+def _validate_target_spans(
+    user_text: str,
+    target_text: str,
+    intro_span: tuple[int, int],
+    query_span: tuple[int, int],
+) -> None:
+    spans = (intro_span, query_span)
+    if any(
+        start < 0
+        or end <= start
+        or end > len(user_text)
+        or user_text[start:end] != target_text
+        for start, end in spans
+    ) or intro_span[1] > query_span[0]:
+        raise ValueError("structured target spans must identify ordered introduction and query roles")
 
 
 def _validate_matches(config: FAConfig, matches: Sequence[EntityMatch]) -> tuple[EntityMatch, ...]:
@@ -767,7 +971,8 @@ def _balanced_same_string_families(matches: Sequence[EntityMatch], seed: int) ->
 
 
 def _entity_text(match: EntityMatch, familiarity: str) -> str:
-    return match.real_name if familiarity == "screened_real" else match.synthetic_name
+    value = match.real_name if familiarity == "screened_real" else match.synthetic_name
+    return unicodedata.normalize("NFC", value)
 
 
 def _entity_id(match: EntityMatch, familiarity: str) -> str:
@@ -1492,6 +1697,8 @@ def _example_payload(row: FAExample) -> dict[str, Any]:
         "registry_code": row.registry_code,
         "expected_output": row.expected_output,
         "user_text": row.user_text,
+        "target_intro_span": list(row.target_intro_span),
+        "target_query_span": list(row.target_query_span),
         "target_entity_id": row.target_entity_id,
         "distractor_entity_id": row.distractor_entity_id,
         "entity_order": row.entity_order,
@@ -1527,3 +1734,17 @@ def _hash_int(*values: Any) -> int:
 def _require_text(value: object, field: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a nonempty string")
+
+
+def _require_nested_nfc(value: object, field: str) -> None:
+    if isinstance(value, str):
+        if not unicodedata.is_normalized("NFC", value):
+            raise ValueError(f"{field} strings must use Unicode NFC normalization")
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _require_nested_nfc(key, field)
+            _require_nested_nfc(item, field)
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        for item in value:
+            _require_nested_nfc(item, field)

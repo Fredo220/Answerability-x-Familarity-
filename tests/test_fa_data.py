@@ -4,7 +4,9 @@ from collections import Counter
 from dataclasses import FrozenInstanceError, replace
 from itertools import product
 import hashlib
+import json
 import math
+import unicodedata
 
 import pytest
 
@@ -16,6 +18,7 @@ from trajectory_extractor.fa_data import (
     TEST_TEMPLATE_FAMILIES,
     TRAIN_TEMPLATE_FAMILIES,
     VALIDATION_TEMPLATE_FAMILIES,
+    FAExample,
     FAManifest,
     PowerAudit,
     PowerCell,
@@ -157,6 +160,19 @@ def entity_unit(
         character_length_delta=0,
         character_tolerance=2,
         capitalization_pattern_equal=True,
+    )
+
+
+def accented_entity_unit(index: int = 0, *, normalization: str) -> EntityMatch:
+    real_name = unicodedata.normalize(normalization, "Jose\u0301 Vale10")
+    synthetic_name = unicodedata.normalize(normalization, "Rene\u0301 Hill10")
+    return replace(
+        entity_unit(index),
+        real_name=real_name,
+        synthetic_name=synthetic_name,
+        real_character_count=len(real_name),
+        synthetic_character_count=len(synthetic_name),
+        character_length_delta=len(synthetic_name) - len(real_name),
     )
 
 
@@ -562,6 +578,177 @@ def test_examples_and_manifests_are_immutable_and_content_addressed():
         rows[0].user_text = "changed"
     with pytest.raises(ValueError, match="canonical_payload_sha256"):
         replace(rows[0], canonical_payload_sha256="0" * 64)
+
+
+def test_examples_commit_to_immutable_structured_target_role_spans():
+    rows, matches = registered_examples()
+    row = rows[0]
+    payload = fa_data._example_payload(row)
+
+    assert row.user_text[slice(*row.target_intro_span)] == row.target_text
+    assert row.user_text[slice(*row.target_query_span)] == row.target_text
+    assert row.target_intro_span[1] <= row.target_query_span[0]
+    assert payload["target_intro_span"] == list(row.target_intro_span)
+    assert payload["target_query_span"] == list(row.target_query_span)
+    altered_payload = {**payload, "target_intro_span": list(row.target_query_span)}
+    assert fa_data._payload_sha256(altered_payload) != row.example_id
+    with pytest.raises(FrozenInstanceError):
+        row.target_intro_span = row.target_query_span
+
+    same_string = next(
+        item
+        for item in build_same_string_examples(config(), matches, tokenizer=FakeTokenizer())
+        if item.exposure == "high_exposure"
+    )
+    assert same_string.user_text[: same_string.target_intro_span[0]].count(
+        same_string.target_text
+    ) == 4
+    assert same_string.target_intro_span[0] > same_string.user_text.index(" Task: ")
+
+
+def test_exactly_two_target_substrings_cannot_override_structured_template_roles():
+    rows, _ = registered_examples()
+    row = next(item for item in rows if item.user_text.count(item.target_text) == 2)
+
+    with pytest.raises(ValueError, match="structured target spans"):
+        replace(
+            row,
+            target_intro_span=row.target_query_span,
+            target_query_span=row.target_intro_span,
+        )
+
+
+def test_same_string_prefix_occurrence_cannot_impersonate_target_introduction():
+    _rows, matches = registered_examples()
+    row = next(
+        item
+        for item in build_same_string_examples(config(), matches, tokenizer=FakeTokenizer())
+        if item.exposure == "high_exposure"
+    )
+    prefix_start = row.user_text.index(row.target_text)
+
+    with pytest.raises(ValueError, match="template semantics"):
+        replace(
+            row,
+            target_intro_span=(prefix_start, prefix_start + len(row.target_text)),
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("target_text", "distractor_text", "expected_output", "user_text"),
+)
+def test_fa_example_constructor_rejects_non_nfc_text_fields_from_loaded_records(field):
+    row = build_factorial_examples(
+        config(),
+        (accented_entity_unit(normalization="NFC"),),
+        tokenizer=FakeTokenizer(),
+    )[0]
+    payload = {
+        "example_id": row.example_id,
+        "canonical_payload_sha256": row.canonical_payload_sha256,
+        **fa_data._example_payload(row),
+    }
+    payload[field] = unicodedata.normalize("NFD", "Jos\u00e9")
+    loaded_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+
+    with pytest.raises(ValueError, match=rf"{field}.*Unicode NFC"):
+        FAExample(**loaded_payload)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("rendered_token_ids", "special_token_sequence"),
+)
+def test_fa_example_constructor_rejects_non_nfc_strings_in_token_sequences(field):
+    row = build_factorial_examples(
+        config(),
+        (accented_entity_unit(normalization="NFC"),),
+        tokenizer=FakeTokenizer(),
+    )[0]
+    payload = fa_data._example_payload(row)
+    payload[field][0] = unicodedata.normalize("NFD", "Jos\u00e9")
+    digest = fa_data._payload_sha256(payload)
+    loaded_payload = json.loads(
+        json.dumps(
+            {
+                "example_id": digest,
+                "canonical_payload_sha256": digest,
+                **payload,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    with pytest.raises(ValueError, match=rf"{field}.*Unicode NFC"):
+        FAExample(**loaded_payload)
+
+
+@pytest.mark.parametrize(
+    "exposure,expected_subject",
+    (("high_exposure", "target"), ("low_exposure", "distractor")),
+)
+def test_same_string_reconstruction_normalizes_nfd_subject_target_and_distractor(
+    exposure, expected_subject
+):
+    target = unicodedata.normalize("NFD", "Ren\u00e9 Hill10")
+    distractor = unicodedata.normalize("NFD", "Jos\u00e9 Vale10")
+
+    user_text, intro_span, query_span = fa_data._structured_user_text(
+        family="train_registry_direct",
+        target=target,
+        distractor=distractor,
+        answerability="target_bound",
+        entity_order="target_second",
+        registry_code="K7M2Q",
+        block="same_string",
+        exposure=exposure,
+    )
+
+    nfc_target = unicodedata.normalize("NFC", target)
+    nfc_distractor = unicodedata.normalize("NFC", distractor)
+    prefix, separator, task = user_text.partition(" Task: ")
+    subject = nfc_target if expected_subject == "target" else nfc_distractor
+    assert separator
+    assert unicodedata.is_normalized("NFC", user_text)
+    assert prefix.count(subject) == 4
+    assert nfc_target in task and nfc_distractor in task
+    assert user_text[slice(*intro_span)] == nfc_target
+    assert user_text[slice(*query_span)] == nfc_target
+
+
+def test_decomposed_entity_names_are_normalized_before_factorial_spans_and_hashes():
+    decomposed = (accented_entity_unit(normalization="NFD"),)
+    precomposed = (accented_entity_unit(normalization="NFC"),)
+
+    actual = build_factorial_examples(config(), decomposed, tokenizer=FakeTokenizer())
+    expected = build_factorial_examples(config(), precomposed, tokenizer=FakeTokenizer())
+
+    assert actual == expected
+    for row in actual:
+        assert unicodedata.is_normalized("NFC", row.target_text)
+        assert unicodedata.is_normalized("NFC", row.distractor_text)
+        assert unicodedata.is_normalized("NFC", row.user_text)
+        assert row.user_text[slice(*row.target_intro_span)] == row.target_text
+        assert row.user_text[slice(*row.target_query_span)] == row.target_text
+        assert row.canonical_payload_sha256 == fa_data._example_sha256(row)
+
+
+def test_decomposed_entity_names_are_normalized_before_same_string_spans_and_hashes():
+    decomposed = (accented_entity_unit(normalization="NFD"),)
+    precomposed = (accented_entity_unit(normalization="NFC"),)
+
+    actual = build_same_string_examples(config(), decomposed, tokenizer=FakeTokenizer())
+    expected = build_same_string_examples(config(), precomposed, tokenizer=FakeTokenizer())
+
+    assert actual == expected
+    for row in actual:
+        assert unicodedata.is_normalized("NFC", row.target_text)
+        assert unicodedata.is_normalized("NFC", row.distractor_text)
+        assert unicodedata.is_normalized("NFC", row.user_text)
+        assert row.user_text[slice(*row.target_intro_span)] == row.target_text
+        assert row.user_text[slice(*row.target_query_span)] == row.target_text
+        assert row.canonical_payload_sha256 == fa_data._example_sha256(row)
 
 
 def test_audit_covers_registered_controls_and_detects_lexical_tampering():
