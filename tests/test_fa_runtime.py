@@ -4,12 +4,16 @@ import json
 import hashlib
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import torch
 
 from trajectory_extractor.fa_artifacts import FAArtifactStore
 from trajectory_extractor.fa_config import FAConfig
+import trajectory_extractor.fa_runtime as runtime_module
 from trajectory_extractor.fa_runtime import (
+    HFModelRunner,
     load_pinned_tokenizer,
     resume_generation,
     run_generation_shard,
@@ -89,6 +93,76 @@ def pilot_manifest(active_config: FAConfig | None = None) -> Manifest:
 
 def store(tmp_path) -> FAArtifactStore:
     return FAArtifactStore(tmp_path)
+
+
+def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypatch):
+    active_config = config()
+    load_kwargs = {}
+
+    class FakeTokenizer:
+        pad_token_id = None
+        eos_token = "<eos>"
+        pad_token = None
+
+        def __init__(self):
+            self.calls = []
+            self.decode_calls = 0
+
+        def __call__(self, prompts, *, return_tensors, padding):
+            self.calls.append((tuple(prompts), return_tensors, padding))
+            return {"input_ids": torch.tensor([[1, 2]], dtype=torch.long)}
+
+        def batch_decode(self, values, *, skip_special_tokens):
+            assert tuple(values.shape) == (1, 1)
+            assert skip_special_tokens is True
+            self.decode_calls += 1
+            return [f"completion-{self.decode_calls}"]
+
+    class FakeModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.anchor = torch.nn.Parameter(torch.zeros(()), requires_grad=False)
+            self.generate_calls = 0
+
+        def generate(self, input_ids, **generation):
+            self.generate_calls += 1
+            suffix = torch.tensor([[99]], device=input_ids.device)
+            return torch.cat((input_ids, suffix), dim=1)
+
+    tokenizer = FakeTokenizer()
+    model = FakeModel()
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_pinned_tokenizer",
+        lambda supplied: SimpleNamespace(
+            tokenizer=tokenizer,
+            chat_template_sha256="f" * 64,
+        ),
+    )
+    import transformers
+
+    def load_model(model_id, **kwargs):
+        load_kwargs.update({"model_id": model_id, **kwargs})
+        return model
+
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        load_model,
+    )
+
+    runner = HFModelRunner(active_config)
+    completions = runner.generate(("one", "two", "three"), {"max_new_tokens": 1})
+
+    assert load_kwargs["model_id"] == active_config.model_id
+    assert load_kwargs["revision"] == active_config.model_revision
+    assert load_kwargs["torch_dtype"] == "auto"
+    assert load_kwargs["device_map"] == "auto"
+    assert all(call[0] in {("one",), ("two",), ("three",)} for call in tokenizer.calls)
+    assert all(call[2] is False for call in tokenizer.calls)
+    assert model.generate_calls == 3
+    assert completions == ["completion-1", "completion-2", "completion-3"]
 
 
 def replace_shard_payload(shard, payload: bytes) -> None:

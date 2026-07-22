@@ -118,6 +118,33 @@ class TrackingLogisticRegression(LogisticRegression):
         self.fit_ids: set[str] = set()
 
 
+def _production_cv_fixture(
+    *, incomplete_last_fold: bool = False, one_row_per_group: bool = False
+):
+    source = _rows("mechanism_train", task="unsupported_answer")
+    labels: list[int] = []
+    groups: list[str] = []
+    rows: list[ProbeRow] = []
+    for group_index in range(4):
+        group_labels = (group_index % 2,) if one_row_per_group else (0, 1)
+        if incomplete_last_fold and group_index == 3:
+            group_labels = (0, 0)
+        for label in group_labels:
+            row = source[len(rows)]
+            group = f"production-cv-group-{group_index}"
+            rows.append(replace(row, label=label, entity_id=group))
+            labels.append(label)
+            groups.append(group)
+    matrix = np.column_stack(
+        (
+            np.asarray(labels, dtype=np.float64),
+            np.arange(len(rows), dtype=np.float64),
+            np.zeros(len(rows), dtype=np.float64),
+        )
+    )
+    return tuple(rows), matrix, np.asarray(labels), tuple(groups)
+
+
 @lru_cache
 def _selection(*, task: str = "familiarity") -> SelectionManifest:
     return fit_selection(
@@ -349,6 +376,31 @@ def _score_null(
     )
 
 
+def _with_outcome_accounting(
+    result: probes.ProbeResult,
+    *,
+    total: int,
+    missing: int,
+    invalid: int,
+) -> probes.ProbeResult:
+    denominator = total - missing - invalid
+    classes = result.metrics.classes
+    quotient, remainder = divmod(denominator, len(classes))
+    class_counts = tuple(
+        (label, quotient + (index < remainder))
+        for index, label in enumerate(classes)
+    )
+    metrics = replace(
+        result.metrics,
+        total=total,
+        denominator=denominator,
+        missing=missing,
+        invalid=invalid,
+        class_counts=class_counts,
+    )
+    return replace(result, metrics=metrics)
+
+
 def test_registered_grid_is_exact_and_records_are_deeply_immutable():
     assert REGISTERED_LAYERS == tuple(range(26))
     assert PCA_OPTIONS == (None, 16, 32, 64)
@@ -386,6 +438,109 @@ def test_transform_and_estimator_fit_only_on_mechanism_train():
     assert tracked.fit_ids == {row.example_id for row in train}
     assert not tracked.fit_ids & {row.example_id for row in validation}
     assert selection.train_ids == tuple(sorted(row.example_id for row in train))
+
+
+def test_production_grouped_cv_succeeds_only_when_every_fold_is_evaluable(
+    monkeypatch,
+):
+    monkeypatch.setattr(probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", False)
+    rows, matrix, labels, groups = _production_cv_fixture()
+
+    selected = probes._select_hyperparams_by_grouped_cv(
+        matrix,
+        labels,
+        groups,
+        (0, 1),
+        (None,),
+        (1.0,),
+        (None,),
+        20260722,
+        rows=rows,
+        task="unsupported_answer",
+    )
+
+    assert selected == (None, 1.0, "LogisticRegression")
+
+
+def test_production_grouped_cv_rejects_a_candidate_with_any_incomplete_fold(
+    monkeypatch,
+):
+    monkeypatch.setattr(probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", False)
+    rows, matrix, labels, groups = _production_cv_fixture(
+        incomplete_last_fold=True
+    )
+
+    with pytest.raises(ValueError, match="every deterministic grouped-CV fold"):
+        probes._select_hyperparams_by_grouped_cv(
+            matrix,
+            labels,
+            groups,
+            (0, 1),
+            (None,),
+            (1.0,),
+            (None,),
+            20260722,
+            rows=rows,
+            task="unsupported_answer",
+        )
+
+
+def test_production_grouped_cv_fails_closed_when_no_fold_is_evaluable(
+    monkeypatch,
+):
+    monkeypatch.setattr(probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", False)
+    rows, matrix, labels, groups = _production_cv_fixture(one_row_per_group=True)
+
+    with pytest.raises(ValueError, match="every deterministic grouped-CV fold"):
+        probes._select_hyperparams_by_grouped_cv(
+            matrix,
+            labels,
+            groups,
+            (0, 1),
+            (None,),
+            (1.0,),
+            (None,),
+            20260722,
+            rows=rows,
+            task="unsupported_answer",
+        )
+
+
+def test_production_grouped_cv_fits_sae_selector_inside_each_training_fold(
+    monkeypatch,
+):
+    monkeypatch.setattr(probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", False)
+    rows, matrix, labels, groups = _production_cv_fixture()
+    original_selector = probes._fit_selector
+    selected_row_ids: list[tuple[int, ...]] = []
+
+    def tracked_selector(fold_matrix, family):
+        selected_row_ids.append(
+            tuple(sorted(int(value) for value in fold_matrix[:, 1]))
+        )
+        return original_selector(fold_matrix, family)
+
+    monkeypatch.setattr(probes, "_fit_selector", tracked_selector)
+
+    selected = probes._select_hyperparams_by_grouped_cv(
+        matrix,
+        labels,
+        groups,
+        (0, 1),
+        (None,),
+        (1.0,),
+        (None,),
+        20260722,
+        rows=rows,
+        task="unsupported_answer",
+        family="sae_1_sparse",
+    )
+
+    assert selected == (None, 1.0, "LogisticRegression")
+    assert set(selected_row_ids) == {
+        tuple(value for value in range(8) if value // 2 != held_out_fold)
+        for held_out_fold in range(4)
+    }
 
 
 def test_selection_persists_exact_registered_transfer_rotations():
@@ -515,6 +670,15 @@ def test_task_anchor_is_registered_and_output_proximal_is_control_only():
         for model in unsupported.models
         if model.anchor == "assistant_prefix_end"
     )
+
+
+@pytest.mark.parametrize("task", ("familiarity", "answerability"))
+def test_h3_h4_selection_freezes_an_internal_pre_output_model(task):
+    selection = _selection(task=task)
+    selected = selection.model_for(selection.selected_feature_family)
+
+    assert probes._internal_feature_value(task, selected) == 1.0
+    assert probes._registered_anchor_value(task, selected) == 1.0
 
 
 def test_probe_result_persists_selection_bound_model_scope_evidence(tmp_path):
@@ -936,8 +1100,8 @@ def test_test_result_includes_condition_domain_and_ood_worst_case_metrics(tmp_pa
     result = _evaluate(tmp_path, selection, _rows("probe_test"))
     assert set(result.per_condition) == {f"condition-{index}" for index in range(4)}
     assert result.worst_condition is not None
-    assert set(result.ood_transfer) == {"entity", "template", "relation", "domain"}
-    assert set(result.worst_ood_transfer) == {"entity", "template", "relation", "domain"}
+    assert set(result.ood_transfer) == {"entity", "template", "domain"}
+    assert set(result.worst_ood_transfer) == {"entity", "template", "domain"}
     assert result.ood_transfer["template"]
     assert result.ood_transfer["domain"]
 
@@ -1028,9 +1192,9 @@ def test_h5_and_h6_use_exact_registered_nested_models(tmp_path):
     assert h6_candidate.anchor != "assistant_prefix_end"
     assert h5_candidate.layer != 25
     assert h6_candidate.layer != 25
-    assert len(h5_baseline.scaler_mean) == 2
-    assert len(h5_candidate.scaler_mean) == 2 + 4
-    assert len(h6_candidate.scaler_mean) == 2 + 4 + 4 + 1
+    assert len(h5_baseline.scaler_mean) == 2 + 11
+    assert len(h5_candidate.scaler_mean) == 2 + 11 + 4
+    assert len(h6_candidate.scaler_mean) == 2 + 11 + 4 + 4 + 1
     result = _evaluate(tmp_path, selection, _rows("probe_test", task="unsupported_answer"))
     expected_h5 = (
         result.model_metrics[NESTED_H5_BASELINE].log_loss
@@ -1287,6 +1451,153 @@ def test_h3_h4_gates_use_registered_transfer_aggregation_not_pooled_metrics(tmp_
     )
 
 
+def test_h5_h6_gates_recompute_the_registered_nested_model_comparisons(tmp_path):
+    familiarity = _evaluate(
+        tmp_path / "familiarity-nested",
+        _selection(task="familiarity"),
+        _rows("probe_test", task="familiarity"),
+    )
+    answerability = _evaluate(
+        tmp_path / "answerability-nested",
+        _selection(task="answerability"),
+        _rows("probe_test", task="answerability"),
+    )
+    unsupported = _evaluate(
+        tmp_path / "unsupported-nested",
+        _selection(task="unsupported_answer"),
+        _rows("probe_test", task="unsupported_answer"),
+    )
+    model_metrics = dict(unsupported.model_metrics)
+    model_metrics[NESTED_H5_BASELINE] = replace(
+        model_metrics[NESTED_H5_BASELINE], log_loss=0.50
+    )
+    model_metrics[NESTED_H5_CANDIDATE] = replace(
+        model_metrics[NESTED_H5_CANDIDATE], log_loss=0.60
+    )
+    model_metrics[NESTED_H6_CANDIDATE] = replace(
+        model_metrics[NESTED_H6_CANDIDATE], log_loss=0.30
+    )
+    unsupported = replace(
+        unsupported,
+        model_metrics=model_metrics,
+        relative_h5_log_loss_improvement=0.90,
+        relative_h6_log_loss_improvement=-0.90,
+    )
+
+    gates = evaluate_f2a_gates(familiarity, answerability, unsupported)
+
+    assert gates.h5.criteria[0].observed == pytest.approx(-0.20)
+    assert gates.h5.status == "not_supported"
+    assert gates.h6.criteria[0].observed == pytest.approx(0.50)
+
+
+@pytest.mark.parametrize(
+    ("task", "hypothesis", "surface_anchor"),
+    (
+        ("familiarity", "H3", "target_intro_end"),
+        ("answerability", "H4", "user_prompt_end"),
+    ),
+)
+def test_h3_h4_surface_only_selection_cannot_satisfy_internal_feature_gate(
+    tmp_path, task, hypothesis, surface_anchor
+):
+    results = {
+        name: _evaluate(
+            tmp_path / f"internal-{name}",
+            _selection(task=name),
+            _rows("probe_test", task=name),
+        )
+        for name in probes.TASKS
+    }
+    results[task] = replace(
+        results[task],
+        selected_feature_family="surface",
+        selected_anchor=surface_anchor,
+        selected_layer=None,
+        claim_scope="pre_output",
+    )
+
+    gates = evaluate_f2a_gates(
+        results["familiarity"],
+        results["answerability"],
+        results["unsupported_answer"],
+    )
+    gate = gates.h3 if hypothesis == "H3" else gates.h4
+    criterion = next(
+        item
+        for item in gate.criteria
+        if item.name == "registered internal activation feature"
+    )
+
+    assert criterion.observed == 0.0
+    assert criterion.satisfied is False
+    assert gate.status != "supported"
+
+
+@pytest.mark.parametrize(
+    ("missing", "invalid", "expected_observed", "expected_satisfied"),
+    (
+        (1, 0, 0.95, True),
+        (0, 1, 0.95, True),
+        (2, 0, None, None),
+        (0, 2, None, None),
+    ),
+)
+def test_f2a_gate_applies_registered_missing_invalid_tolerance_fail_closed(
+    tmp_path, missing, invalid, expected_observed, expected_satisfied
+):
+    results = {
+        task: _evaluate(
+            tmp_path / f"accounting-{task}",
+            _selection(task=task),
+            _rows("probe_test", task=task),
+        )
+        for task in probes.TASKS
+    }
+    results["unsupported_answer"] = _with_outcome_accounting(
+        results["unsupported_answer"],
+        total=20,
+        missing=missing,
+        invalid=invalid,
+    )
+
+    gate = evaluate_f2a_gates(
+        results["familiarity"],
+        results["answerability"],
+        results["unsupported_answer"],
+    ).h5
+    criterion = next(
+        item for item in gate.criteria if item.name == "valid outcome fraction"
+    )
+
+    assert criterion.observed == expected_observed
+    assert criterion.satisfied is expected_satisfied
+    if expected_observed is None:
+        assert gate.status == "not_evaluable"
+        assert any("below registered minimum" in reason for reason in gate.reasons)
+
+
+def test_archive_code_relation_is_descriptive_not_a_split_holdout_gate():
+    train = tuple(
+        replace(row, relation_id="archive_code")
+        for row in _rows("mechanism_train", task="answerability")
+    )
+    validation = tuple(
+        replace(row, relation_id="archive_code")
+        for row in _rows("locked_validation", task="answerability")
+    )
+    probe_test = tuple(
+        replace(row, relation_id="archive_code")
+        for row in _rows("probe_test", task="answerability")
+    )
+
+    selection = fit_selection(train, validation)
+    probes._reject_test_group_leakage(selection, probe_test)
+
+    assert selection.train_relation_ids == ("archive_code",)
+    assert selection.validation_relation_ids == ("archive_code",)
+
+
 def test_h3_h4_h5_gates_require_bound_pre_output_scope(tmp_path):
     results = {
         task: _evaluate(
@@ -1459,6 +1770,68 @@ def test_evaluated_bundle_recovery_closes_without_rescoring_or_second_mark(
     assert isinstance(recovered, probes.ProbeBundleResult)
     assert store.endpoint_state("probe_test", manifest_path) == "closed"
     assert calls == {"mark": 1, "close": 2}
+
+
+def test_published_bundle_recovery_marks_and_closes_without_rescoring_or_rewrite(
+    tmp_path, monkeypatch
+):
+    selections = {task: _selection(task=task) for task in probes.TASKS}
+    rows_by_task = {task: _rows("probe_test", task=task) for task in probes.TASKS}
+    store, manifest_path, authorization = _bundle_authorization(
+        tmp_path, selections, rows_by_task
+    )
+    original_mark = FAArtifactStore.mark_evaluated
+    mark_calls = 0
+
+    def interrupted_mark(self, receipt, metrics_path):
+        nonlocal mark_calls
+        mark_calls += 1
+        if mark_calls == 1:
+            raise RuntimeError("interrupted after metrics publish")
+        return original_mark(self, receipt, metrics_path)
+
+    monkeypatch.setattr(FAArtifactStore, "mark_evaluated", interrupted_mark)
+    with pytest.raises(RuntimeError, match="interrupted after metrics publish"):
+        evaluate_probe_bundle_once(
+            selections,
+            authorization,
+            rows_by_task,
+            store=store,
+            endpoint_manifest_path=manifest_path,
+        )
+
+    assert store.endpoint_state("probe_test", manifest_path) == "unlocked_once"
+    metrics_manifests = tuple(
+        (tmp_path / "runs" / "familiarity_answerability").glob(
+            "**/probe-bundle-metrics-*.jsonl.manifest.json"
+        )
+    )
+    assert len(metrics_manifests) == 1
+
+    def forbidden_recalculation(*args, **kwargs):
+        raise AssertionError("published metrics recovery must not rescore protected rows")
+
+    def forbidden_rewrite(*args, **kwargs):
+        raise AssertionError("published metrics recovery must not rewrite its shard")
+
+    monkeypatch.setattr(probes, "_calculate_probe_result", forbidden_recalculation)
+    monkeypatch.setattr(FAArtifactStore, "write_completed_shard", forbidden_rewrite)
+    recovered = evaluate_probe_bundle_once(
+        selections,
+        authorization,
+        {},
+        store=FAArtifactStore(tmp_path),
+        endpoint_manifest_path=manifest_path,
+    )
+
+    assert isinstance(recovered, probes.ProbeBundleResult)
+    assert store.endpoint_state("probe_test", manifest_path) == "closed"
+    assert mark_calls == 2
+    assert tuple(
+        (tmp_path / "runs" / "familiarity_answerability").glob(
+            "**/probe-bundle-metrics-*.jsonl.manifest.json"
+        )
+    ) == metrics_manifests
 
 
 def test_selection_result_gates_and_bundle_have_strict_canonical_loaders(tmp_path):

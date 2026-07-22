@@ -322,6 +322,8 @@ def test_same_string_rows_fix_target_and_token_budget_and_use_one_balanced_famil
             ("low_exposure", "target_bound"),
             ("low_exposure", "code_absent"),
         }
+        assert {row.target_familiarity for row in unit_rows} == {"matched_synthetic"}
+        assert {row.distractor_familiarity for row in unit_rows} == {"screened_real"}
         assert len({row.template_family for row in unit_rows}) == 1
         by_answerability = {
             answerability: [row for row in unit_rows if row.answerability == answerability]
@@ -332,6 +334,32 @@ def test_same_string_rows_fix_target_and_token_budget_and_use_one_balanced_famil
             assert pair[0].special_token_sequence == pair[1].special_token_sequence
 
     assert not {row.example_id for row in factorial} & {row.example_id for row in rows}
+
+
+def test_complete_confirmatory_construction_requires_exact_domain_balance_in_every_split():
+    split_sequence = (
+        ["mechanism_train"] * 64
+        + ["locked_validation"] * 32
+        + ["behavior_test"] * 48
+        + ["probe_test"] * 24
+        + ["intervention_test"] * 24
+    )
+    domains = ("person", "place", "organization", "creative_work")
+    matches = tuple(
+        entity_unit(
+            index,
+            split=split,
+            coarse_type=(
+                "place"
+                if split == "behavior_test" and index == 96
+                else domains[index % 4]
+            ),
+        )
+        for index, split in enumerate(split_sequence)
+    )
+
+    with pytest.raises(ValueError, match="exactly balanced across the four"):
+        build_factorial_examples(config(), matches, tokenizer=FakeTokenizer())
 
 
 def test_same_string_exposure_prefixes_are_neutral_unrelated_and_target_matched():

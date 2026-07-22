@@ -21,7 +21,7 @@ import numpy as np
 
 from trajectory_extractor.fa_activations import ActivationRecord
 from trajectory_extractor.fa_config import FAConfig
-from trajectory_extractor.fa_data import FAExample
+from trajectory_extractor.fa_data import FAExample, REGISTERED_ENTITY_DOMAINS
 from trajectory_extractor.fa_probes import OUTPUT_CONTROL_SCHEMA_SHA256, ProbeRow
 
 
@@ -69,12 +69,6 @@ _NUMERIC_SURFACE_FEATURE_NAMES = (
     "code_is_first",
     "code_is_second",
     "code_is_absent",
-)
-REGISTERED_ENTITY_DOMAINS = (
-    "person",
-    "place",
-    "organization",
-    "creative_work",
 )
 REGISTERED_PROMPT_TEMPLATES = (
     "train_registry_direct",
@@ -253,6 +247,55 @@ class OutputEvidence:
     @property
     def sha256(self) -> str:
         return hashlib.sha256(self.canonical_bytes).hexdigest()
+
+    @classmethod
+    def from_record(cls, value: Mapping[str, Any]) -> "OutputEvidence":
+        expected = {
+            "example_id",
+            "source_sha256",
+            "target_code",
+            "unknown_suffix",
+            "target_logp",
+            "unknown_logp",
+            "prompt_utf8_hex",
+            "rendered_prompt_sha256",
+            "prompt_input_ids",
+            "target_token_ids",
+            "unknown_token_ids",
+            "model_id",
+            "model_revision",
+            "tokenizer_id",
+            "tokenizer_revision",
+            "tokenizer_config_sha256",
+            "chat_template_sha256",
+            "config_sha256",
+        }
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise ValueError("output evidence record has an invalid schema")
+        try:
+            prompt_bytes = bytes.fromhex(value["prompt_utf8_hex"])
+            return cls(
+                example_id=value["example_id"],
+                source_sha256=value["source_sha256"],
+                target_code=value["target_code"],
+                unknown_suffix=value["unknown_suffix"],
+                target_logp=value["target_logp"],
+                unknown_logp=value["unknown_logp"],
+                prompt_bytes=prompt_bytes,
+                rendered_prompt_sha256=value["rendered_prompt_sha256"],
+                prompt_input_ids=tuple(value["prompt_input_ids"]),
+                target_token_ids=tuple(value["target_token_ids"]),
+                unknown_token_ids=tuple(value["unknown_token_ids"]),
+                model_id=value["model_id"],
+                model_revision=value["model_revision"],
+                tokenizer_id=value["tokenizer_id"],
+                tokenizer_revision=value["tokenizer_revision"],
+                tokenizer_config_sha256=value["tokenizer_config_sha256"],
+                chat_template_sha256=value["chat_template_sha256"],
+                config_sha256=value["config_sha256"],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("output evidence record has invalid values") from error
 
 
 @dataclass(frozen=True)
@@ -683,6 +726,8 @@ def build_probe_row(
 ) -> ProbeRow:
     """Build a validated ProbeRow after all feature values have already been fixed."""
     _validate_feature_binding(example, activation, features, metadata)
+    if example.block == "same_string":
+        raise ValueError("same_string context-exposure controls are not primary F2A probe rows")
     surface_features = _probe_surface_feature_vector(example, metadata)
     if task == "familiarity":
         label: int | str = int(example.target_familiarity == "screened_real")
@@ -761,6 +806,94 @@ def build_probe_rows(
     return tuple(sorted(rows, key=lambda row: (row.example_id, row.sha256)))
 
 
+def materialize_probe_rows(
+    examples: Sequence[FAExample],
+    activations: Sequence[ActivationRecord],
+    scorer: ExactSequenceScorer,
+    metadata_manifest: Mapping[str, Any],
+    *,
+    unsupported_outcomes: Mapping[str, UnsupportedAnswerOutcome],
+) -> tuple[tuple[ProbeRow, ...], tuple[OutputEvidence, ...]]:
+    """Build all registered task rows from evidence-bearing source records."""
+
+    prepared = tuple(examples)
+    if not prepared or len({row.example_id for row in prepared}) != len(prepared):
+        raise ValueError("materialization requires unique nonempty examples")
+    activation_by_id = {row.example_id: row for row in activations}
+    if len(activation_by_id) != len(tuple(activations)) or set(activation_by_id) != {
+        row.example_id for row in prepared
+    }:
+        raise ValueError("activation records do not match the exact example IDs")
+    if not isinstance(scorer, ExactSequenceScorer):
+        raise ValueError("materialization requires an exact sequence scorer")
+    expected_unsupported = {
+        row.example_id
+        for row in prepared
+        if row.answerability in {"distractor_bound", "code_absent"}
+    }
+    if set(unsupported_outcomes) != expected_unsupported or any(
+        outcome.example_id != example_id
+        for example_id, outcome in unsupported_outcomes.items()
+    ):
+        raise ValueError("unsupported outcomes do not match the evidence-absent examples")
+
+    rows: list[ProbeRow] = []
+    evidence: list[OutputEvidence] = []
+    for example in sorted(prepared, key=lambda row: row.example_id):
+        activation = activation_by_id[example.example_id]
+        output = scorer.score(example)
+        features = FeatureEvidence.from_records(
+            example,
+            activation,
+            output,
+            output.config_sha256,
+        )
+        metadata = VerifiedDomainRelation.from_manifest(
+            metadata_manifest,
+            example_id=example.example_id,
+            entity_id=example.entity_unit_id,
+            template_id=example.template_family,
+        )
+        if example.block == "same_string":
+            _validate_feature_binding(example, activation, features, metadata)
+            evidence.append(output)
+            continue
+        rows.append(
+            build_probe_row(
+                example,
+                activation,
+                features,
+                metadata,
+                task="familiarity",
+            )
+        )
+        rows.append(
+            build_probe_row(
+                example,
+                activation,
+                features,
+                metadata,
+                task="answerability",
+            )
+        )
+        if example.example_id in unsupported_outcomes:
+            rows.append(
+                build_probe_row(
+                    example,
+                    activation,
+                    features,
+                    metadata,
+                    task="unsupported_answer",
+                    outcome=unsupported_outcomes[example.example_id],
+                )
+            )
+        evidence.append(output)
+    return (
+        tuple(sorted(rows, key=lambda row: (row.task, row.example_id, row.sha256))),
+        tuple(evidence),
+    )
+
+
 def _validate_provenance(
     example: FAExample,
     activation: ActivationRecord,
@@ -800,7 +933,11 @@ def _validate_feature_binding(
     if not isinstance(features, FeatureEvidence) or not isinstance(metadata, VerifiedDomainRelation):
         raise ValueError("probe row requires FeatureEvidence and verified domain/relation metadata")
     _validate_provenance(example, activation, features.output_evidence, features.config_sha256)
-    if metadata.entity_id != example.entity_unit_id or metadata.template_id != example.template_family:
+    if (
+        metadata.entity_id != example.entity_unit_id
+        or metadata.template_id != example.template_family
+        or metadata.condition != example.block
+    ):
         raise ValueError("verified metadata does not bind to the exact example metadata")
     checks = (
         features.example_id == example.example_id == activation.example_id == metadata.example_id,

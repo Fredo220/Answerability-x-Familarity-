@@ -104,8 +104,10 @@ class ScoredResponse:
             raise ValueError("response markers must be boolean")
         if type(self.sampling_weight) is not int or self.sampling_weight <= 0:
             raise ValueError("sampling_weight must be positive")
-        if self.answer_attempt != int(self.outcome is not OutcomeClass.ABSTENTION):
-            raise ValueError("answer_attempt must follow the frozen abstention rule")
+        if self.answer_attempt != int(
+            self.completed and self.outcome is not OutcomeClass.ABSTENTION
+        ):
+            raise ValueError("answer_attempt must follow the frozen completed-response rule")
         if self.valid_format != (self.outcome is not OutcomeClass.INVALID_FORMAT):
             raise ValueError("valid_format must agree with outcome")
 
@@ -477,7 +479,7 @@ def score_response(
         raise ValueError("registered_codes must contain the example registry_code")
     normalized = "" if text is None else unicodedata.normalize("NFC", text).strip()
     marked = infrastructure_marked or _contains_infrastructure_marker(normalized)
-    completed = text is not None and not marked
+    completed = text is not None and not marked and not truncated
     if marked or truncated or text is None:
         outcome = OutcomeClass.INVALID_FORMAT
     elif normalized == "UNKNOWN":
@@ -497,7 +499,7 @@ def score_response(
         raw_output=text,
         normalized_output=normalized,
         outcome=outcome,
-        answer_attempt=int(outcome is not OutcomeClass.ABSTENTION),
+        answer_attempt=int(completed and outcome is not OutcomeClass.ABSTENTION),
         valid_format=outcome is not OutcomeClass.INVALID_FORMAT,
         completed=completed,
         infrastructure_marked=marked,
@@ -641,10 +643,10 @@ def _estimate(
     reasons = [f"missing_cell:{cell[0]}:{cell[1]}:{cell[2]}" for cell in missing]
     if require_completion:
         reasons.extend(
-            f"completion<0.95:{target}:{distractor}:{answerability}"
+            f"completion<1.0:{target}:{distractor}:{answerability}"
             for target, distractor, answerability in primary_cells
             if denominators[(target, distractor, answerability)]
-            and completion[(target, distractor, answerability)] < 0.95
+            and completion[(target, distractor, answerability)] < 1.0
         )
     interaction = None if missing else _h1_interaction(rates)
     # Keep primary attempt rates separately from exact-target accuracy in one internal map.

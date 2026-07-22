@@ -4,13 +4,15 @@ import hashlib
 import json
 from contextlib import AbstractContextManager
 from dataclasses import replace
+from functools import lru_cache
 from types import MappingProxyType
 
 import numpy as np
 import pytest
 
 import trajectory_extractor.fa_interventions as interventions_module
-from trajectory_extractor.fa_artifacts import FAArtifactStore
+import trajectory_extractor.fa_probes as probes_module
+from trajectory_extractor.fa_artifacts import FAArtifactStore, UnlockReceipt
 from trajectory_extractor.fa_config import (
     CONFIRMATORY_CHAT_TEMPLATE_SHA256,
     CONFIRMATORY_MODEL_ID,
@@ -41,7 +43,20 @@ from trajectory_extractor.fa_interventions import (
     verify_gate_result_artifact,
     verify_validation_control_artifact,
 )
-from trajectory_extractor.fa_probes import F2AGates, GateCriterion, HypothesisGate
+from trajectory_extractor.fa_probes import (
+    OUTPUT_CONTROL_SCHEMA_SHA256,
+    TARGET_FAMILIARITY_CONDITIONS,
+    CrossedBootstrapInterval,
+    NullSelectionResult,
+    ProbeBundleResult,
+    ProbeRow,
+    ProbeSourceIdentity,
+    ProbeTestAuthorization,
+    SelectionManifest,
+    evaluate_f2a_gates,
+    f2a_selection_bundle_hash,
+    fit_selection,
+)
 from trajectory_extractor.fa_scoring import (
     BehavioralMetrics,
     BootstrapDistribution,
@@ -436,89 +451,250 @@ def _f1_metrics_row(endpoint_input_sha256, *, supported=True):
     }
 
 
-def _hypothesis_gate(hypothesis, *, supported=True):
-    return HypothesisGate(
-        hypothesis,
-        (GateCriterion(f"{hypothesis.lower()}_criterion", 1.0 if supported else 0.0, 0.5, ">="),),
+@lru_cache(maxsize=None)
+def _f2a_probe_rows(split, task):
+    prefixes = {
+        "mechanism_train": "tr",
+        "locked_validation": "va",
+        "probe_test": "te",
+    }
+    prefix = prefixes[split]
+    answerability_classes = ("target_bound", "distractor_bound", "code_absent")
+    rows = []
+    for index in range(12):
+        answerability = answerability_classes[(index // 4) % 3]
+        if task == "unsupported_answer" and answerability == "target_bound":
+            continue
+        target_familiarity = TARGET_FAMILIARITY_CONDITIONS[index % 2]
+        distractor_familiarity = TARGET_FAMILIARITY_CONDITIONS[(index // 2) % 2]
+        if task == "answerability":
+            label = answerability
+            signal = float(answerability_classes.index(label) - 1) * 2.0
+        elif task == "familiarity":
+            label = int(target_familiarity == "screened_real")
+            signal = -2.0 if label == 0 else 2.0
+        else:
+            label = index % 2
+            signal = -2.0 if label == 0 else 2.0
+        residual = np.zeros((3, 26, 4), dtype=np.float64)
+        residual[:, :, 0] = signal
+        residual[:, :, 1] = np.arange(26, dtype=np.float64)
+        identity = f"{prefix}-{task}-{index}"
+        rows.append(
+            ProbeRow(
+                example_id=f"{prefix}-example-{index}",
+                split=split,
+                task=task,
+                label=label,
+                entity_id=f"{prefix}-entity-{(index // 2) % 2}",
+                template_id=f"{prefix}-template-0",
+                relation_id=f"{prefix}-relation-{index // 4}",
+                domain=REGISTERED_DOMAINS[(index // 2) % 4],
+                condition=f"condition-{(index // 2) % 4}",
+                answerability_condition=answerability,
+                target_familiarity_condition=target_familiarity,
+                distractor_familiarity_condition=distractor_familiarity,
+                surface_features=(signal, float(index % 3)),
+                output_margin_features=tuple([signal] + [float(index % 3)] * 10),
+                residual_features=residual,
+                sae_features=None,
+                outcome_status="valid",
+                source_sha256=_canonical_hash({"source": identity}),
+                activation_sha256=_canonical_hash({"activation": identity}),
+                metadata_manifest_sha256=_canonical_hash({"metadata_manifest": identity}),
+                metadata_row_sha256=_canonical_hash({"metadata_row": identity}),
+                output_control_schema_sha256=OUTPUT_CONTROL_SCHEMA_SHA256,
+                output_evidence_sha256=_canonical_hash({"output_evidence": identity}),
+            )
+        )
+    return tuple(rows)
+
+
+@lru_cache(maxsize=1)
+def _f2a_selections():
+    previous_fast = probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS
+    probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS = True
+    try:
+        return {
+            task: fit_selection(
+                _f2a_probe_rows("mechanism_train", task),
+                _f2a_probe_rows("locked_validation", task),
+            )
+            for task in probes_module.TASKS
+        }
+    finally:
+        probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS = previous_fast
+
+
+PROBE_SELECTION_SHA256 = f2a_selection_bundle_hash(_f2a_selections())
+
+
+def _f2a_source_identities(rows):
+    return tuple(ProbeSourceIdentity.from_row(row) for row in rows)
+
+
+def _scored_label_null(selection, result, rows, seed):
+    provenance = {"kind": "label_permutation", "seed": seed, "config": {"test": True}}
+    null_selection = replace(selection, null_provenance=provenance)
+    config = {"kind": "label_permutation", "seed": seed, "transform": {"test": True}}
+    identities = _f2a_source_identities(rows)
+    transfer = replace(
+        result.cross_condition_transfer,
+        rotations=tuple(
+            replace(rotation, metrics=replace(rotation.metrics, auroc=0.0))
+            for rotation in result.cross_condition_transfer.rotations
+        ),
+    )
+    return NullSelectionResult(
+        kind="label_permutation",
+        seed=seed,
+        config=config,
+        config_sha256=_canonical_hash(config),
+        selection=null_selection,
+        max_norm_error=0.0,
+        test_source_identities=identities,
+        test_transform={"seed": seed, "row_count": len(identities)},
+        test_ids=result.test_ids,
+        test_row_sha256s=result.test_row_sha256s,
+        test_metrics=replace(result.metrics, auroc=0.0),
+        test_model_metrics={},
+        test_cross_condition_transfer=transfer,
     )
 
 
-def _probe_result_record(task, hypothesis, endpoint_input_sha256, *, supported=True):
-    gate = _hypothesis_gate(hypothesis, supported=supported)
-    record = {
-        "schema_version": 3,
-        "task": task,
-        "selection_hash": _canonical_hash({"task": task}),
-        "authorization_sha256": "a" * 64,
-        "endpoint_input_sha256": endpoint_input_sha256,
-        "endpoint_input_identities_sha256": "b" * 64,
-        "endpoint_source_identities_sha256": "b" * 64,
-        "test_ids": [f"{task}-example"],
-        "test_row_sha256s": [_canonical_hash({"row": task})],
-        "selected_feature_family": "static",
-        "selected_model_scope": {
-            "feature_family": "static",
-            "anchor": "user_prompt_end",
-            "layer": 12,
-            "claim_scope": "pre_output",
-            "selected_model_sha256": _canonical_hash({"model": task}),
-        },
-        "metrics": {"status": "evaluable"},
-        "model_metrics": {},
-        "per_condition": {},
-        "worst_condition": None,
-        "ood_transfer": {},
-        "worst_ood_transfer": {},
-        "cross_condition_transfer": None,
-        "relative_h5_log_loss_improvement": 0.10,
-        "relative_h6_log_loss_improvement": 0.02,
-        "crossed_auroc_95": None,
-        "h5_absolute_log_loss_difference_95": None,
-        "h6_absolute_log_loss_difference_95": None,
-        "primary_gate": gate.to_record(),
-        "null_results": [],
-        "refit_performed": False,
+@lru_cache(maxsize=None)
+def _canonical_f2a_metrics_row(endpoint_input_sha256, *, supported=True):
+    selections = _f2a_selections()
+    bundle_hash = f2a_selection_bundle_hash(selections)
+    authorization = ProbeTestAuthorization.from_unlock_receipt(
+        UnlockReceipt(
+            endpoint="probe_test",
+            lease_id="a" * 32,
+            state="unlocked_once",
+            preregistration_hash=PREREGISTRATION_SHA256,
+            selection_manifest_hash=bundle_hash,
+        )
+    )
+    previous_draws = probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS
+    probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS = 80
+    try:
+        results = {}
+        for task, selection in selections.items():
+            rows = _f2a_probe_rows("probe_test", task)
+            identities = probes_module._canonical_source_identities(
+                _f2a_source_identities(rows),
+                field_name="F2A verifier fixture identities",
+            )
+            results[task] = probes_module._calculate_probe_result(
+                selection,
+                authorization,
+                rows,
+                endpoint_input_sha256=endpoint_input_sha256,
+                endpoint_source_identities_sha256=probes_module._source_identity_digest(
+                    identities
+                ),
+                expected_source_identities=identities,
+            )
+    finally:
+        probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS = previous_draws
+
+    for task in ("familiarity", "answerability"):
+        rows = _f2a_probe_rows("probe_test", task)
+        results[task] = replace(
+            results[task],
+            null_results=tuple(
+                _scored_label_null(selections[task], results[task], rows, seed)
+                for seed in range(2026072201, 2026072240)
+            ),
+        )
+    results["unsupported_answer"] = replace(
+        results["unsupported_answer"],
+        relative_h5_log_loss_improvement=0.10 if supported else 0.0,
+        h5_absolute_log_loss_difference_95=CrossedBootstrapInterval(0.01, 0.05),
+    )
+    gates = evaluate_f2a_gates(
+        results["familiarity"],
+        results["answerability"],
+        results["unsupported_answer"],
+    )
+    results = {
+        "familiarity": replace(results["familiarity"], primary_gate=gates.h3),
+        "answerability": replace(results["answerability"], primary_gate=gates.h4),
+        "unsupported_answer": replace(
+            results["unsupported_answer"], primary_gate=gates.h5
+        ),
     }
-    return record
+    gates = evaluate_f2a_gates(
+        results["familiarity"],
+        results["answerability"],
+        results["unsupported_answer"],
+    )
+    expected_status = "supported" if supported else "not_supported"
+    assert gates.status == expected_status
+    identity_bundle = _canonical_hash(
+        {
+            task: results[task].endpoint_input_identities_sha256
+            for task in probes_module.TASKS
+        }
+    )
+    bundle = ProbeBundleResult(
+        schema_version=1,
+        selection_bundle_hash=bundle_hash,
+        authorization_sha256=results["familiarity"].authorization_sha256,
+        endpoint_input_sha256=endpoint_input_sha256,
+        endpoint_input_identities_sha256=identity_bundle,
+        results=results,
+        gates=gates,
+    )
+    return {"kind": "metrics", "metric_type": "f2a_bundle", "result": bundle.to_record()}
+
+
+def _write_f2a_selection_artifact(store, endpoint_input_sha256):
+    selections = _f2a_selections()
+    bundle_hash = f2a_selection_bundle_hash(selections)
+    row = {
+        "kind": "selection_manifest",
+        "schema_version": 1,
+        "config_sha256": CONFIG_SHA256,
+        "selection_bundle_hash": bundle_hash,
+        "probe_test_prompt_sha256": endpoint_input_sha256,
+        "probe_test_task_identities_sha256": "7" * 64,
+        "selection_mode": "smoke_rehearsal",
+        "selections": {
+            task: selections[task].to_record() for task in probes_module.TASKS
+        },
+        "null_selections": {task: [] for task in probes_module.TASKS},
+    }
+    store.write_completed_shard(
+        "gate-run",
+        "locked_validation",
+        "f2a-selection",
+        [row],
+        {
+            "config_sha256": CONFIG_SHA256,
+            "selection_bundle_hash": bundle_hash,
+        },
+        record_kind="selection_manifest",
+    )
 
 
 def _f2a_metrics_row(endpoint_input_sha256, *, supported=True):
-    results = {
-        "familiarity": _probe_result_record(
-            "familiarity", "H3", endpoint_input_sha256, supported=supported
-        ),
-        "answerability": _probe_result_record(
-            "answerability", "H4", endpoint_input_sha256, supported=supported
-        ),
-        "unsupported_answer": _probe_result_record(
-            "unsupported_answer", "H5", endpoint_input_sha256, supported=supported
-        ),
-    }
-    gates = F2AGates(
-        familiarity_result_sha256=_canonical_hash(results["familiarity"]),
-        answerability_result_sha256=_canonical_hash(results["answerability"]),
-        unsupported_result_sha256=_canonical_hash(results["unsupported_answer"]),
-        holm_adjusted_p={"H3": 0.01, "H4": 0.02},
-        h3=_hypothesis_gate("H3", supported=supported),
-        h4=_hypothesis_gate("H4", supported=supported),
-        h5=_hypothesis_gate("H5", supported=supported),
-        h6=_hypothesis_gate("H6", supported=True),
+    row = json.loads(
+        json.dumps(_canonical_f2a_metrics_row(endpoint_input_sha256, supported=supported))
     )
-    result = {
-        "schema_version": 1,
-        "selection_bundle_hash": PROBE_SELECTION_SHA256,
-        "authorization_sha256": "c" * 64,
-        "endpoint_input_sha256": endpoint_input_sha256,
-        "endpoint_input_identities_sha256": "b" * 64,
-        "endpoint_source_identities_sha256": "b" * 64,
-        "results": results,
-        "gates": gates.to_record(),
-        "refit_performed": False,
-    }
-    return {"kind": "metrics", "metric_type": "f2a_bundle", "result": result}
+    result = row["result"]
+    for task in ("familiarity", "answerability"):
+        result["results"][task]["cross_condition_transfer"] = None
+    result["gates"]["familiarity_result_sha256"] = _canonical_hash(
+        result["results"]["familiarity"]
+    )
+    result["gates"]["answerability_result_sha256"] = _canonical_hash(
+        result["results"]["answerability"]
+    )
+    return row
 
 
-def _gate_evidence(tmp_path, phase, *, status="supported"):
+def _gate_evidence(tmp_path, phase, *, status="supported", forged_f2a=False):
     supported = status == "supported"
     root = tmp_path / f"gate-evidence-{status}"
     store = FAArtifactStore(root)
@@ -543,6 +719,8 @@ def _gate_evidence(tmp_path, phase, *, status="supported"):
         selection_hash = (
             "8" * 64 if phase == "F1" else PROBE_SELECTION_SHA256
         )
+        if phase == "F2A":
+            _write_f2a_selection_artifact(store, endpoint_input.sha256)
         store.seal_endpoint(
             endpoint,
             [endpoint_input],
@@ -557,7 +735,13 @@ def _gate_evidence(tmp_path, phase, *, status="supported"):
         row = (
             _f1_metrics_row(endpoint_input.sha256, supported=supported)
             if phase == "F1"
-            else _f2a_metrics_row(endpoint_input.sha256, supported=supported)
+            else (
+                _f2a_metrics_row(endpoint_input.sha256, supported=supported)
+                if forged_f2a
+                else _canonical_f2a_metrics_row(
+                    endpoint_input.sha256, supported=supported
+                )
+            )
         )
         lineage = (
             {
@@ -1136,7 +1320,13 @@ class _Executor:
         )
 
 
-def _evaluate(tmp_path, *, executor=None, pairs_transform=None):
+def _evaluate(
+    tmp_path,
+    *,
+    executor=None,
+    pairs_transform=None,
+    full_bootstrap=False,
+):
     selection = _selection(tmp_path)
     store, prompts, activations, unrelated, pairs, unrelated_prompts = (
         _sealed_intervention_endpoint(tmp_path, selection)
@@ -1144,17 +1334,25 @@ def _evaluate(tmp_path, *, executor=None, pairs_transform=None):
     if pairs_transform is not None:
         pairs = pairs_transform(pairs)
     adapter = executor or _Executor()
-    result = evaluate_intervention_test_once(
-        selection,
-        store,
-        endpoint_manifest_path=prompts.manifest_path,
-        activation_manifest_path=activations.manifest_path,
-        unrelated_manifest_path=unrelated.manifest_path,
-        test_pairs=pairs,
-        unrelated_prompts=unrelated_prompts,
-        executor=adapter,
-        confirmatory_pins=PINS,
-    )
+    previous_replicates = interventions_module._H7_BOOTSTRAP_REPLICATES
+    if not full_bootstrap:
+        # With two Holm-adjusted directions, 20 draws cannot produce a
+        # corrected p-value below 0.05: 2 * (1 / 21) > 0.05.
+        interventions_module._H7_BOOTSTRAP_REPLICATES = 99
+    try:
+        result = evaluate_intervention_test_once(
+            selection,
+            store,
+            endpoint_manifest_path=prompts.manifest_path,
+            activation_manifest_path=activations.manifest_path,
+            unrelated_manifest_path=unrelated.manifest_path,
+            test_pairs=pairs,
+            unrelated_prompts=unrelated_prompts,
+            executor=adapter,
+            confirmatory_pins=PINS,
+        )
+    finally:
+        interventions_module._H7_BOOTSTRAP_REPLICATES = previous_replicates
     return result, store, prompts, activations, unrelated, pairs, unrelated_prompts, adapter
 
 
@@ -1276,6 +1474,13 @@ def test_selection_uses_verified_gate_artifacts_and_persists_hash_lineage(tmp_pa
             f2a_evidence=f2a,
             control_source=_control_source(tmp_path),
         )
+
+
+def test_gate_verifier_rejects_forged_f2a_without_cross_condition_transfer(
+    tmp_path,
+):
+    with pytest.raises(ValueError, match="cross-condition|reciprocal"):
+        _gate_evidence(tmp_path, "F2A", forged_f2a=True)
 
 
 def test_gate_verifier_rejects_self_authored_validation_evidence(tmp_path):
@@ -1412,7 +1617,7 @@ def test_executor_cannot_inject_independent_outcome_booleans(tmp_path):
 
 
 def test_confirmatory_evaluation_persists_raw_before_bootstrap_metrics(tmp_path):
-    result, store, _, _, _, _, _, _ = _evaluate(tmp_path)
+    result, store, _, _, _, _, _, _ = _evaluate(tmp_path, full_bootstrap=True)
     shards = store.resume_verified_shards("intervention-run", "intervention_test")
     raw = next(shard for shard in shards if shard.record_kind == "raw_intervention_outcomes")
     metrics = next(shard for shard in shards if shard.record_kind == "metrics")
@@ -1925,7 +2130,7 @@ def test_site_and_no_intervention_controls_execute_exact_registered_plan(tmp_pat
 def test_bootstrap_records_complete_requested_valid_and_discarded_draw_accounting(
     tmp_path,
 ):
-    result, *_ = _evaluate(tmp_path)
+    result, *_ = _evaluate(tmp_path, full_bootstrap=True)
     summary = result.metrics.bootstrap_summary
     assert summary["requested_draws"] == 10_000
     assert type(summary["valid_draws"]) is int and summary["valid_draws"] > 0
@@ -1943,6 +2148,7 @@ def test_evaluated_intervention_endpoint_recovers_without_reexecution(
     store, prompts, activations, unrelated, pairs, unrelated_prompts = (
         _sealed_intervention_endpoint(tmp_path, selection)
     )
+    monkeypatch.setattr(interventions_module, "_H7_BOOTSTRAP_REPLICATES", 99)
     executor = _Executor()
     original_close = store.close_endpoint
 

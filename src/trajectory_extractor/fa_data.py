@@ -56,6 +56,12 @@ TEST_TEMPLATE_FAMILIES = BEHAVIOR_TEMPLATE_FAMILIES
 CONFIRMATORY_POWER_SIMULATIONS = 2000
 CONFIRMATORY_POWER_SEED = 20260722
 _CONFIRMATORY_POWER_CELLS = 180
+REGISTERED_ENTITY_DOMAINS = (
+    "person",
+    "place",
+    "organization",
+    "creative_work",
+)
 _CODE = re.compile(r"K[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}\Z")
 _FAMILIES_BY_SPLIT = {
     "mechanism_train": TRAIN_TEMPLATE_FAMILIES,
@@ -294,6 +300,11 @@ class FAExample:
             raise ValueError("block is invalid")
         if self.block == "same_string" and self.exposure not in {"high_exposure", "low_exposure"}:
             raise ValueError("same_string rows require registered exposure")
+        if self.block == "same_string" and (
+            self.target_familiarity != "matched_synthetic"
+            or self.distractor_familiarity != "screened_real"
+        ):
+            raise ValueError("same_string rows require contextual-exposure familiarity metadata")
         if self.block == "factorial" and self.exposure is not None:
             raise ValueError("factorial rows cannot have exposure")
         for field in ("target_text", "distractor_text", "expected_output", "user_text"):
@@ -723,7 +734,7 @@ def _build_same_string_row(
         split=match.split,
         template_family=family,
         target_familiarity="matched_synthetic",
-        distractor_familiarity="matched_synthetic",
+        distractor_familiarity="screened_real",
         answerability=answerability,
         target_text=target,
         distractor_text=distractor,
@@ -899,6 +910,23 @@ def _validate_matches(config: FAConfig, matches: Sequence[EntityMatch]) -> tuple
         raise ValueError("matches use an unregistered data split")
     if config.profile == "confirmatory" and any(match.split in {"pilot", "circuit_dev"} for match in prepared):
         raise ValueError("confirmatory construction cannot use non-confirmatory namespaces")
+    if (
+        config.profile == "confirmatory"
+        and Counter(match.split for match in prepared) == Counter(config.split_counts)
+    ):
+        for split, split_count in config.split_counts.items():
+            if split_count % len(REGISTERED_ENTITY_DOMAINS):
+                raise ValueError("confirmatory split counts must be divisible by four domains")
+            quota = split_count // len(REGISTERED_ENTITY_DOMAINS)
+            observed = Counter(
+                match.coarse_type for match in prepared if match.split == split
+            )
+            expected = Counter({domain: quota for domain in REGISTERED_ENTITY_DOMAINS})
+            if observed != expected:
+                raise ValueError(
+                    "each confirmatory split must be exactly balanced across the four "
+                    "registered entity domains"
+                )
     return tuple(sorted(prepared, key=lambda match: (match.split, match.pair_id)))
 
 
@@ -1545,7 +1573,7 @@ def _is_complete_confirmatory_design(config: FAConfig, rows: Sequence[FAExample]
             or any(row.template_family not in families for row in same_string)
             or any(
                 row.target_familiarity != "matched_synthetic"
-                or row.distractor_familiarity != "matched_synthetic"
+                or row.distractor_familiarity != "screened_real"
                 or row.entity_order != "target_second"
                 or row.query_role != "second"
                 for row in same_string

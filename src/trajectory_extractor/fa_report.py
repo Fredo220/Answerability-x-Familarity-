@@ -11,6 +11,7 @@ import secrets
 import stat
 import sys
 import ctypes
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,7 @@ from trajectory_extractor.fa_probes import (
     ProbeResult,
     SAEGate,
     SelectionManifest,
+    TASKS,
     evaluate_f2a_gates,
 )
 from trajectory_extractor.fa_scoring import (
@@ -91,6 +93,8 @@ class F1Evidence:
     metrics: BehavioralMetrics
     bootstrap: BootstrapDistribution
     gate: BehavioralGate
+    scored_rows: tuple[Mapping[str, Any], ...]
+    producer_evidence_sha256: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.metrics, BehavioralMetrics):
@@ -99,17 +103,33 @@ class F1Evidence:
             raise ValueError("F1 evidence requires BootstrapDistribution")
         if not isinstance(self.gate, BehavioralGate):
             raise ValueError("F1 evidence requires BehavioralGate")
+        if not isinstance(self.scored_rows, tuple) or any(
+            not isinstance(row, Mapping) for row in self.scored_rows
+        ):
+            raise ValueError("F1 evidence requires canonical scored rows")
+        canonical_rows = tuple(
+            json.loads(_canonical_json(row)) for row in self.scored_rows
+        )
+        object.__setattr__(self, "scored_rows", canonical_rows)
+        _sha256_value(
+            self.producer_evidence_sha256, "F1 producer_evidence_sha256"
+        )
+        if self.producer_evidence_sha256 != hashlib.sha256(
+            _canonical_json(self.to_record())
+        ).hexdigest():
+            raise ValueError("F1 producer evidence hash does not match its payload")
 
     def to_record(self) -> Mapping[str, Any]:
         return {
             "metrics": self.metrics.to_record(),
             "bootstrap": self.bootstrap.to_record(),
             "gate": self.gate.to_record(),
+            "scored_rows": [dict(row) for row in self.scored_rows],
         }
 
     @property
     def sha256(self) -> str:
-        return hashlib.sha256(_canonical_json(self.to_record())).hexdigest()
+        return self.producer_evidence_sha256
 
 
 @dataclass(frozen=True)
@@ -120,6 +140,7 @@ class F2AEvidence:
     answerability: ProbeResult
     unsupported_answer: ProbeResult
     gates: F2AGates
+    producer_bundle: ProbeBundleResult
     sae_gates: Mapping[str, SAEGate]
 
     def __post_init__(self) -> None:
@@ -134,6 +155,8 @@ class F2AEvidence:
             raise ValueError("F2A evidence has incorrect probe tasks")
         if not isinstance(self.gates, F2AGates):
             raise ValueError("F2A evidence requires F2AGates")
+        if not isinstance(self.producer_bundle, ProbeBundleResult):
+            raise ValueError("F2A evidence requires the canonical producer bundle")
         if (
             self.gates.familiarity_result_sha256 != self.familiarity.sha256
             or self.gates.answerability_result_sha256 != self.answerability.sha256
@@ -145,6 +168,16 @@ class F2AEvidence:
             raise ValueError(
                 "stored F2A gates do not match canonical F2A gate recomputation"
             )
+        if (
+            self.producer_bundle.results["familiarity"].sha256
+            != self.familiarity.sha256
+            or self.producer_bundle.results["answerability"].sha256
+            != self.answerability.sha256
+            or self.producer_bundle.results["unsupported_answer"].sha256
+            != self.unsupported_answer.sha256
+            or self.producer_bundle.gates.sha256 != self.gates.sha256
+        ):
+            raise ValueError("F2A producer bundle does not match the supplied evidence")
         if not isinstance(self.sae_gates, Mapping) or any(
             not isinstance(name, str) or not name or not isinstance(gate, SAEGate)
             for name, gate in self.sae_gates.items()
@@ -154,10 +187,7 @@ class F2AEvidence:
 
     def to_record(self) -> Mapping[str, Any]:
         return {
-            "familiarity": self.familiarity.to_record(),
-            "answerability": self.answerability.to_record(),
-            "unsupported_answer": self.unsupported_answer.to_record(),
-            "gates": self.gates.to_record(),
+            "producer_bundle": self.producer_bundle.to_record(),
             "sae_gates": {
                 name: gate.to_record() for name, gate in self.sae_gates.items()
             },
@@ -165,7 +195,7 @@ class F2AEvidence:
 
     @property
     def sha256(self) -> str:
-        return hashlib.sha256(_canonical_json(self.to_record())).hexdigest()
+        return self.producer_bundle.sha256
 
 
 def load_closed_f1_evidence(
@@ -195,7 +225,13 @@ def load_closed_f1_evidence(
         raise ValueError("closed F1 gate does not match report-time recomputation")
     if verified.config_sha256 != gate.config_hash:
         raise ValueError("closed F1 verifier and report evidence disagree")
-    return F1Evidence(metrics=metrics, bootstrap=bootstrap, gate=gate)
+    return F1Evidence(
+        metrics=metrics,
+        bootstrap=bootstrap,
+        gate=gate,
+        scored_rows=tuple(row["scored_rows"]),
+        producer_evidence_sha256=row["evidence_sha256"],
+    )
 
 
 def load_closed_f2a_evidence(
@@ -219,6 +255,7 @@ def load_closed_f2a_evidence(
         answerability=bundle.results["answerability"],
         unsupported_answer=bundle.results["unsupported_answer"],
         gates=bundle.gates,
+        producer_bundle=bundle,
         sae_gates={},
     )
 
@@ -403,7 +440,7 @@ def recompute_claim_ladder(
     h4 = _probe_claim(f2a, "H4", "answerability")
     h5 = _h5_claim(f2a)
     h6 = _h6_claim(f2a)
-    h7, h8 = _intervention_claims(f2b, h1, h3, h4)
+    h7, h8 = _intervention_claims(f2b, h1, h3, h4, h5)
     f3 = _circuit_claim(circuit, h3, h4, h5, h7)
     return {
         "H1": h1,
@@ -433,17 +470,10 @@ def build_report(
         f2b=f2b,
         circuit=circuit,
     )
-    report_inputs = _report_input_metadata_record(
-        behavior=behavior,
-        f2a=f2a,
-        f2b=f2b,
-        circuit=circuit,
-    )
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# Familiarity vs. Answerability Evidence Report",
-        f"<!-- fa-report-inputs:{_compact_json(report_inputs)} -->",
         "",
         "This report is generated from canonical metrics. It does not treat stored claim booleans as evidence.",
         "",
@@ -627,10 +657,19 @@ def build_report(
             "",
             "## Claim Boundary",
             "",
-            "Supported results are local to the registered model, prompts, anchors, and endpoints. They do not establish human-like intuition, universal truth representations, general metacognition, or jailbreak prevention.",
+            "Supported results are local to the registered model, entity set, prompt families, anchors, and endpoints. They do not establish a universal causal account of hallucination or generalization beyond the registered task.",
             "",
         ]
     )
+    report_body = "\n".join(lines).encode("utf-8")
+    report_inputs = _report_input_metadata_record(
+        behavior=behavior,
+        f2a=f2a,
+        f2b=f2b,
+        circuit=circuit,
+        report_body_sha256=hashlib.sha256(report_body).hexdigest(),
+    )
+    lines.insert(1, f"<!-- fa-report-inputs:{_compact_json(report_inputs)} -->")
     destination.write_text("\n".join(lines), encoding="utf-8")
     return destination
 
@@ -641,25 +680,22 @@ def _report_input_metadata_record(
     f2a: F2AEvidence | None,
     f2b: InterventionTestResult | None,
     circuit: CircuitGateEvidence | None,
+    report_body_sha256: str,
 ) -> dict[str, Any]:
+    _sha256_value(report_body_sha256, "report_body_sha256")
     hashes: dict[str, str] = {}
     if behavior is not None:
         hashes["F1"] = behavior.sha256
     if f2a is not None:
-        core = {
-            "familiarity": f2a.familiarity.to_record(),
-            "answerability": f2a.answerability.to_record(),
-            "unsupported_answer": f2a.unsupported_answer.to_record(),
-            "gates": f2a.gates.to_record(),
-        }
-        hashes["F2A"] = hashlib.sha256(_canonical_json(core)).hexdigest()
+        hashes["F2A"] = f2a.sha256
     if f2b is not None:
         hashes["F2B"] = f2b.result_sha256
     if circuit is not None:
         hashes["F3"] = circuit.sha256
     bundle = {
-        "schema_version": 1,
+        "schema_version": 2,
         "phase_evidence_sha256": dict(sorted(hashes.items())),
+        "report_body_sha256": report_body_sha256,
     }
     return {
         **bundle,
@@ -678,6 +714,9 @@ def build_release_bundle(
     preregistration_hash: str,
     artifact_store: FAArtifactStore | None = None,
     core_endpoint_manifests: Mapping[str, str | Path] | None = None,
+    f2a_selection_manifest: str | Path | None = None,
+    behavior_evidence: F1Evidence | None = None,
+    f2a_evidence: F2AEvidence | None = None,
     retrieval_records: Sequence[Mapping[str, str]] = (),
 ) -> Path:
     """Build a no-clobber release from hashed files and verified FA artifacts."""
@@ -707,11 +746,30 @@ def build_release_bundle(
         core_endpoint_manifests,
         allowlist,
         preregistration_hash,
+        config_hash,
+    )
+    _verify_release_core_evidence(
+        behavior_evidence,
+        f2a_evidence,
+        core_endpoints,
+        config_hash,
+    )
+    selection_evidence = _verify_release_selection_evidence(
+        artifact_store,
+        f2a_selection_manifest,
+        allowlist,
+        f2a_evidence,
+        config_hash,
+        core_endpoints,
     )
     source_descriptor = _open_directory_descriptor(source, "source_root")
     try:
         report_inputs = _verify_report_inputs_at_descriptor(
-            source_descriptor, allowlist, core_endpoints
+            source_descriptor,
+            allowlist,
+            core_endpoints,
+            behavior_evidence,
+            f2a_evidence,
         )
     except BaseException:
         os.close(source_descriptor)
@@ -764,10 +822,11 @@ def build_release_bundle(
                 raise ValueError(f"release copy hash mismatch: {relative_name}")
             files[relative.as_posix()] = {"sha256": actual, "bytes": len(payload)}
         identity = {
-            "schema_version": 4,
+            "schema_version": 5,
             "files": files,
             "source_manifests": source_manifests,
             "core_endpoints": core_endpoints,
+            "selection_evidence": selection_evidence,
             "report_inputs": report_inputs,
             "config_hash": config_hash,
             "preregistration_hash": preregistration_hash,
@@ -806,7 +865,11 @@ def build_release_bundle(
     return destination
 
 
-def verify_release_bundle(path: str | Path) -> bool:
+def verify_release_bundle(
+    path: str | Path, *, expected_top_level_sha256: str | None = None
+) -> bool:
+    """Verify bundle consistency and, when supplied, an external trust anchor."""
+
     root = Path(path).absolute()
     if not root.is_dir() or root.is_symlink():
         return False
@@ -817,6 +880,7 @@ def verify_release_bundle(path: str | Path) -> bool:
             "files",
             "source_manifests",
             "core_endpoints",
+            "selection_evidence",
             "report_inputs",
             "config_hash",
             "preregistration_hash",
@@ -825,7 +889,7 @@ def verify_release_bundle(path: str | Path) -> bool:
         }:
             return False
         files = manifest["files"]
-        if manifest["schema_version"] != 4 or not isinstance(files, dict):
+        if manifest["schema_version"] != 5 or not isinstance(files, dict):
             return False
         _sha256_value(manifest["config_hash"], "config_hash")
         _sha256_value(manifest["preregistration_hash"], "preregistration_hash")
@@ -838,6 +902,15 @@ def verify_release_bundle(path: str | Path) -> bool:
             manifest["core_endpoints"], files, source_manifests
         ):
             return False
+        if not _valid_release_selection_evidence(
+            root,
+            manifest["selection_evidence"],
+            manifest["core_endpoints"],
+            files,
+            source_manifests,
+            manifest["config_hash"],
+        ):
+            return False
         if not _valid_release_report_inputs(
             root,
             manifest["report_inputs"],
@@ -847,10 +920,11 @@ def verify_release_bundle(path: str | Path) -> bool:
             return False
         _normalize_retrieval_records(manifest["retrieval_records"])
         identity = {
-            "schema_version": 4,
+            "schema_version": 5,
             "files": files,
             "source_manifests": manifest["source_manifests"],
             "core_endpoints": manifest["core_endpoints"],
+            "selection_evidence": manifest["selection_evidence"],
             "report_inputs": manifest["report_inputs"],
             "config_hash": manifest["config_hash"],
             "preregistration_hash": manifest["preregistration_hash"],
@@ -859,6 +933,10 @@ def verify_release_bundle(path: str | Path) -> bool:
         top_hash = hashlib.sha256(_canonical_json(identity)).hexdigest()
         if manifest["top_level_sha256"] != top_hash:
             return False
+        if expected_top_level_sha256 is not None:
+            _sha256_value(expected_top_level_sha256, "expected_top_level_sha256")
+            if not secrets.compare_digest(expected_top_level_sha256, top_hash):
+                return False
         checksum = _read_regular_bytes_at(root, Path("MANIFEST.sha256"), "manifest checksum").decode("ascii")
         if checksum != f"{top_hash}  MANIFEST.json\n":
             return False
@@ -1051,7 +1129,7 @@ def build_registered_figures(
             axis.text(
                 0.5,
                 0.5,
-                "F2B not gated: F1/H3/H4 prerequisite gates did not pass",
+                "F2B not gated: F1/H3/H4/H5 prerequisite gates did not pass",
                 transform=axis.transAxes,
                 ha="center",
                 va="center",
@@ -1361,14 +1439,14 @@ def _f2a_null_provenance_reasons(evidence: F2AEvidence) -> tuple[str, ...]:
 
 
 def _h5_selection_scope_reasons(result: ProbeResult) -> tuple[str, ...]:
-    fields = ("selected_anchor", "selected_layer", "selected_claim_scope")
+    fields = ("selected_anchor", "selected_layer", "claim_scope")
     if not any(hasattr(result, field) for field in fields):
         return ()
     if not all(hasattr(result, field) for field in fields):
         return ("selection-scope evidence is incomplete",)
     anchor = getattr(result, "selected_anchor")
     layer = getattr(result, "selected_layer")
-    claim_scope = getattr(result, "selected_claim_scope")
+    claim_scope = getattr(result, "claim_scope")
     reasons = []
     if claim_scope != "pre_output":
         reasons.append("selected claim scope is not pre_output")
@@ -1401,10 +1479,20 @@ def _canonical_intervention_gates(
     if metrics.average_effect < 0.05:
         h7_reasons.append("average bidirectional effect is below 0.05")
     for name, effects in sorted(metrics.control_effects.items()):
+        if metrics.high_to_low_effect <= effects[0]:
+            h7_reasons.append(f"high-to-low effect does not beat {name}")
+        if metrics.low_to_high_effect <= effects[1]:
+            h7_reasons.append(f"low-to-high effect does not beat {name}")
+    for name in ("norm_matched_random", "cross_entity"):
+        effects = metrics.control_effects[name]
         if metrics.high_to_low_effect - effects[0] < 0.02:
-            h7_reasons.append(f"high-to-low effect does not beat {name} by 0.02")
+            h7_reasons.append(
+                f"high-to-low effect does not beat {name} by the registered 0.02 margin"
+            )
         if metrics.low_to_high_effect - effects[1] < 0.02:
-            h7_reasons.append(f"low-to-high effect does not beat {name} by 0.02")
+            h7_reasons.append(
+                f"low-to-high effect does not beat {name} by the registered 0.02 margin"
+            )
     if any(domain not in _REGISTERED_DOMAINS for domain in metrics.passing_domains):
         h7_reasons.append("passing domains contain an unregistered domain")
     if set(metrics.observed_domains) != _REGISTERED_DOMAINS:
@@ -1435,8 +1523,11 @@ def _canonical_intervention_gates(
     h8_reasons: list[str] = []
     if metrics.completed_fraction < 0.95:
         h8_reasons.append("completed fraction is below 0.95")
-    if metrics.target_bound_accuracy_change < -0.05:
-        h8_reasons.append("target-bound accuracy loss exceeds 0.05")
+    for direction, change in metrics.target_bound_accuracy_change_by_direction.items():
+        if change < -0.05:
+            h8_reasons.append(
+                f"{direction} target-bound accuracy loss exceeds 0.05"
+            )
     for direction, change in metrics.unrelated_refusal_change_by_direction.items():
         if abs(change) > 0.03:
             h8_reasons.append(
@@ -1462,6 +1553,10 @@ def _intervention_evidence_completeness_reasons(
     if set(metrics.control_effects) != set(REQUIRED_CAUSAL_CONTROLS):
         reasons.append("complete registered causal-control evidence is missing")
     for name, values in (
+        (
+            "target-bound accuracy directional evidence",
+            metrics.target_bound_accuracy_change_by_direction,
+        ),
         (
             "unrelated-refusal directional evidence",
             metrics.unrelated_refusal_change_by_direction,
@@ -1602,15 +1697,15 @@ def _intervention_evidence_completeness_reasons(
     return tuple(reasons)
 
 
-def _intervention_claims(result, h1, h3, h4):
+def _intervention_claims(result, h1, h3, h4, h5):
     if result is None:
         skipped = ClaimDecision("skipped", "The gated causal study was not run", ())
         return skipped, skipped
-    if any(claim.status != "supported" for claim in (h1, h3, h4)):
+    if any(claim.status != "supported" for claim in (h1, h3, h4, h5)):
         skipped = ClaimDecision(
             "skipped_by_gate",
             "The causal endpoint is not interpretable because prerequisite gates did not pass",
-            ("F1/H3/H4 gate failure",),
+            ("F1/H3/H4/H5 gate failure",),
         )
         return skipped, skipped
     h7_status, h7_reasons, h8_status, h8_reasons = _canonical_intervention_gates(
@@ -1910,6 +2005,7 @@ def _verify_core_endpoint_evidence(
     endpoint_manifests: Mapping[str, str | Path],
     allowlist: Mapping[str, str],
     preregistration_hash: str,
+    config_hash: str,
 ) -> Mapping[str, Mapping[str, Any]]:
     if not isinstance(endpoint_manifests, Mapping) or set(endpoint_manifests) != {
         "behavior_test",
@@ -1925,6 +2021,25 @@ def _verify_core_endpoint_evidence(
         input_shard = store.verify_endpoint_artifact(endpoint, manifest_path)
         if store.endpoint_state(endpoint, manifest_path) != "closed":
             raise ValueError(f"core endpoint {endpoint} is not closed")
+        input_sidecar = json.loads(
+            store._read_regular_bytes(
+                input_shard.manifest_path, "core input manifest"
+            )
+        )
+        lineage = input_sidecar.get("lineage")
+        if not isinstance(lineage, Mapping) or lineage.get("config_sha256") != config_hash:
+            raise ValueError("core endpoint config hash does not match release")
+        task_source_identities_sha256 = lineage.get("task_source_identities_sha256")
+        if endpoint == "probe_test":
+            _sha256_value(
+                task_source_identities_sha256,
+                "probe_test task_source_identities_sha256",
+            )
+        elif task_source_identities_sha256 is not None:
+            _sha256_value(
+                task_source_identities_sha256,
+                "behavior_test task_source_identities_sha256",
+            )
         sealed_path = store._find_endpoint_path(endpoint, "sealed")
         sealed, _ = store._read_endpoint_record(sealed_path, endpoint, "sealed")
         if sealed["parents"]["preregistration"] != preregistration_hash:
@@ -1977,6 +2092,7 @@ def _verify_core_endpoint_evidence(
             if hashlib.sha256(payload).hexdigest() != expected:
                 raise ValueError(f"release allowlist hash mismatch for {relative}")
         records[endpoint] = {
+            "run_id": input_sidecar.get("run_id"),
             "input_manifest": input_shard.manifest_path.relative_to(store.root).as_posix(),
             "input_sha256": input_shard.sha256,
             "metrics_manifest": metrics_shard.manifest_path.relative_to(store.root).as_posix(),
@@ -1984,8 +2100,163 @@ def _verify_core_endpoint_evidence(
             "closed_state_sha256": hashlib.sha256(closed_bytes).hexdigest(),
             "phase": phase,
             "evidence_sha256": evidence_sha256,
+            "task_source_identities_sha256": task_source_identities_sha256,
         }
+    run_ids = {record["run_id"] for record in records.values()}
+    if len(run_ids) != 1 or None in run_ids:
+        raise ValueError("core endpoints must belong to the same run")
     return records
+
+
+def _verify_release_core_evidence(
+    behavior: F1Evidence | None,
+    f2a: F2AEvidence | None,
+    core_endpoints: Mapping[str, Mapping[str, Any]],
+    config_hash: str,
+) -> None:
+    if not isinstance(behavior, F1Evidence) or not isinstance(f2a, F2AEvidence):
+        raise ValueError("release requires canonical typed F1 and F2A evidence")
+    if behavior.gate.config_hash != config_hash:
+        raise ValueError("F1 evidence config hash does not match release")
+    expected = {"F1": behavior.sha256, "F2A": f2a.sha256}
+    observed = {
+        record["phase"]: record["evidence_sha256"]
+        for record in core_endpoints.values()
+    }
+    if observed != expected:
+        raise ValueError("typed core evidence does not match closed endpoints")
+
+
+def _verify_release_selection_evidence(
+    store: FAArtifactStore,
+    manifest_path: str | Path | None,
+    allowlist: Mapping[str, str],
+    f2a: F2AEvidence | None,
+    config_hash: str,
+    core_endpoints: Mapping[str, Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    if not isinstance(f2a, F2AEvidence) or manifest_path is None:
+        raise ValueError("release requires the frozen F2A selection manifest")
+    supplied = Path(manifest_path)
+    path = supplied if supplied.is_absolute() else store.root / supplied
+    shard = store.verify_shard(path)
+    if shard.record_kind != "selection_manifest" or shard.namespace != "locked_validation":
+        raise ValueError("release F2A selection artifact has the wrong kind or namespace")
+    relative_data = shard.data_path.relative_to(store.root).as_posix()
+    relative_manifest = shard.manifest_path.relative_to(store.root).as_posix()
+    payload = store._read_regular_bytes(shard.data_path, "release F2A selection")
+    sidecar = store._read_regular_bytes(shard.manifest_path, "release F2A selection sidecar")
+    if allowlist.get(relative_data) != hashlib.sha256(payload).hexdigest() or allowlist.get(
+        relative_manifest
+    ) != hashlib.sha256(sidecar).hexdigest():
+        raise ValueError("release allowlist omits or mismatches F2A selection provenance")
+    record, selection_hashes, bundle_hash = _parse_release_selection_payload(
+        payload, config_hash
+    )
+    expected_hashes = {
+        task: f2a.producer_bundle.results[task].selection_hash for task in TASKS
+    }
+    if selection_hashes != expected_hashes:
+        raise ValueError("F2A selection records do not match the evaluated probe models")
+    if bundle_hash != f2a.producer_bundle.selection_bundle_hash:
+        raise ValueError("F2A selection bundle does not match the closed evaluation")
+    probe_endpoint = core_endpoints.get("probe_test")
+    if (
+        not isinstance(probe_endpoint, Mapping)
+        or record["probe_test_prompt_sha256"] != probe_endpoint.get("input_sha256")
+        or record["probe_test_task_identities_sha256"]
+        != probe_endpoint.get("task_source_identities_sha256")
+    ):
+        raise ValueError("F2A selection provenance does not match the closed probe input")
+    return {
+        "data_path": relative_data,
+        "data_sha256": shard.sha256,
+        "manifest_path": relative_manifest,
+        "manifest_sha256": hashlib.sha256(sidecar).hexdigest(),
+        "selection_bundle_hash": bundle_hash,
+        "task_selection_sha256s": selection_hashes,
+        "selection_mode": record["selection_mode"],
+    }
+
+
+def _parse_release_selection_payload(
+    payload: bytes, config_hash: str
+) -> tuple[Mapping[str, Any], dict[str, str], str]:
+    lines = payload.splitlines()
+    if len(lines) != 1:
+        raise ValueError("release F2A selection must contain exactly one record")
+    try:
+        record = json.loads(lines[0])
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("release F2A selection is not valid JSON") from error
+    expected = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "selection_bundle_hash",
+        "probe_test_prompt_sha256",
+        "probe_test_task_identities_sha256",
+        "selection_mode",
+        "selections",
+        "null_selections",
+    }
+    if (
+        not isinstance(record, Mapping)
+        or set(record) != expected
+        or _canonical_json(record) != lines[0]
+        or record.get("kind") != "selection_manifest"
+        or record.get("schema_version") != 1
+        or record.get("config_sha256") != config_hash
+    ):
+        raise ValueError("release F2A selection has an invalid canonical schema")
+    selections = record["selections"]
+    nulls = record["null_selections"]
+    if (
+        not isinstance(selections, Mapping)
+        or set(selections) != set(TASKS)
+        or any(not isinstance(selections[task], Mapping) for task in TASKS)
+        or not isinstance(nulls, Mapping)
+        or set(nulls) != set(TASKS)
+        or any(not isinstance(nulls[task], list) for task in TASKS)
+    ):
+        raise ValueError("release F2A selection lacks complete task provenance")
+    for name in (
+        "selection_bundle_hash",
+        "probe_test_prompt_sha256",
+        "probe_test_task_identities_sha256",
+    ):
+        _sha256_value(record[name], name)
+    try:
+        typed_selections = {
+            task: SelectionManifest.from_record(selections[task]) for task in TASKS
+        }
+        typed_nulls = {
+            task: tuple(NullSelectionResult.from_record(item) for item in nulls[task])
+            for task in TASKS
+        }
+    except (TypeError, ValueError) as error:
+        raise ValueError("release F2A selection contains invalid typed provenance") from error
+    selection_hashes = {
+        task: typed_selections[task].sha256 for task in TASKS
+    }
+    bundle_hash = hashlib.sha256(_canonical_json(selection_hashes)).hexdigest()
+    if record["selection_bundle_hash"] != bundle_hash:
+        raise ValueError("release F2A selection bundle hash does not verify")
+    if record["selection_mode"] not in {"registered_confirmatory", "smoke_rehearsal"}:
+        raise ValueError("release F2A selection mode is invalid")
+    expected_null_count = (
+        396 if record["selection_mode"] == "registered_confirmatory" else 4
+    )
+    if any(
+        len(typed_nulls[task]) != expected_null_count
+        or any(
+            item.selection.task != task or item.test_metrics is not None
+            for item in typed_nulls[task]
+        )
+        for task in TASKS
+    ):
+        raise ValueError("release F2A null selection count or state is invalid")
+    return record, selection_hashes, bundle_hash
 
 
 def _closed_endpoint_phase_hash(
@@ -2006,43 +2277,62 @@ def _closed_endpoint_phase_hash(
         raise ValueError("closed endpoint metrics require exactly one evidence record")
     record = records[0]
     if endpoint == "behavior_test":
-        if record.get("kind") != "metrics" or any(
-            name not in record for name in ("metrics", "bootstrap", "gate")
+        expected = {
+            "kind",
+            "phase",
+            "metrics",
+            "bootstrap",
+            "gate",
+            "scored_rows",
+            "evidence_sha256",
+        }
+        if (
+            set(record) != expected
+            or record.get("kind") != "metrics"
+            or record.get("phase") != "F1"
+            or not isinstance(record.get("scored_rows"), list)
         ):
             raise ValueError("behavior metrics lack canonical F1 evidence")
         evidence = {
             "metrics": record["metrics"],
             "bootstrap": record["bootstrap"],
             "gate": record["gate"],
+            "scored_rows": record["scored_rows"],
         }
-        return "F1", hashlib.sha256(_canonical_json(evidence)).hexdigest()
+        evidence_sha256 = hashlib.sha256(_canonical_json(evidence)).hexdigest()
+        if record["evidence_sha256"] != evidence_sha256:
+            raise ValueError("F1 producer evidence hash does not match its payload")
+        return "F1", evidence_sha256
     if endpoint == "probe_test":
-        if record.get("kind") != "metrics":
+        if set(record) != {"kind", "metric_type", "result"} or (
+            record.get("kind") != "metrics"
+            or record.get("metric_type") != "f2a_bundle"
+        ):
             raise ValueError("probe metrics lack canonical F2A evidence")
-        if record.get("metric_type") == "f2a_bundle":
-            bundle = record.get("result")
-            if not isinstance(bundle, Mapping):
-                raise ValueError("F2A bundle result is missing")
-            results = bundle.get("results")
-            gates = bundle.get("gates")
-            if not isinstance(results, Mapping) or not isinstance(gates, Mapping):
-                raise ValueError("F2A bundle core records are missing")
-            evidence = {
-                "familiarity": results.get("familiarity"),
-                "answerability": results.get("answerability"),
-                "unsupported_answer": results.get("unsupported_answer"),
-                "gates": gates,
-            }
-        else:
-            evidence = {
-                "familiarity": record.get("familiarity"),
-                "answerability": record.get("answerability"),
-                "unsupported_answer": record.get("unsupported_answer"),
-                "gates": record.get("gates"),
-            }
-        if any(not isinstance(value, Mapping) for value in evidence.values()):
+        bundle = record["result"]
+        expected_bundle = {
+            "schema_version",
+            "selection_bundle_hash",
+            "authorization_sha256",
+            "endpoint_input_sha256",
+            "endpoint_input_identities_sha256",
+            "endpoint_source_identities_sha256",
+            "results",
+            "gates",
+            "refit_performed",
+        }
+        if not isinstance(bundle, Mapping) or set(bundle) != expected_bundle:
             raise ValueError("probe metrics lack complete canonical F2A evidence")
-        return "F2A", hashlib.sha256(_canonical_json(evidence)).hexdigest()
+        if (
+            bundle["schema_version"] != 1
+            or bundle["refit_performed"] is not False
+            or not isinstance(bundle["results"], Mapping)
+            or set(bundle["results"])
+            != {"familiarity", "answerability", "unsupported_answer"}
+            or not isinstance(bundle["gates"], Mapping)
+        ):
+            raise ValueError("probe metrics lack complete canonical F2A evidence")
+        return "F2A", hashlib.sha256(_canonical_json(bundle)).hexdigest()
     raise ValueError("endpoint has no registered report phase")
 
 
@@ -2065,10 +2355,11 @@ def _parse_report_input_metadata(payload: bytes) -> dict[str, Any] | None:
     if not isinstance(metadata, dict) or set(metadata) != {
         "schema_version",
         "phase_evidence_sha256",
+        "report_body_sha256",
         "report_input_bundle_sha256",
     }:
         raise ValueError("report input metadata has an invalid schema")
-    if metadata["schema_version"] != 1 or not isinstance(
+    if metadata["schema_version"] != 2 or not isinstance(
         metadata["phase_evidence_sha256"], dict
     ):
         raise ValueError("report input metadata has an invalid schema")
@@ -2079,9 +2370,19 @@ def _parse_report_input_metadata(payload: bytes) -> dict[str, Any] | None:
         raise ValueError("report input phases are invalid")
     for phase, digest in phases.items():
         _sha256_value(digest, f"report {phase} evidence hash")
+    _sha256_value(metadata["report_body_sha256"], "report body hash")
+    metadata_line = (matches[0] + "\n").encode("utf-8")
+    if payload.count(metadata_line) != 1:
+        raise ValueError("report metadata line is not canonically delimited")
+    report_body_sha256 = hashlib.sha256(
+        payload.replace(metadata_line, b"", 1)
+    ).hexdigest()
+    if metadata["report_body_sha256"] != report_body_sha256:
+        raise ValueError("report body hash does not match the complete report body")
     bundle = {
-        "schema_version": 1,
+        "schema_version": 2,
         "phase_evidence_sha256": phases,
+        "report_body_sha256": metadata["report_body_sha256"],
     }
     expected = hashlib.sha256(_canonical_json(bundle)).hexdigest()
     if metadata["report_input_bundle_sha256"] != expected:
@@ -2093,6 +2394,8 @@ def _verify_report_inputs_at_descriptor(
     source_descriptor: int,
     allowlist: Mapping[str, str],
     core_endpoints: Mapping[str, Mapping[str, Any]],
+    behavior: F1Evidence,
+    f2a: F2AEvidence,
 ) -> Mapping[str, Any]:
     candidates = []
     for name, expected_sha256 in sorted(allowlist.items()):
@@ -2106,16 +2409,26 @@ def _verify_report_inputs_at_descriptor(
             raise ValueError(f"release source hash mismatch: {name}")
         metadata = _parse_report_input_metadata(payload)
         if metadata is not None:
-            candidates.append((relative.as_posix(), metadata))
+            candidates.append((relative.as_posix(), metadata, payload))
     if len(candidates) != 1:
         raise ValueError("release requires exactly one hash-bound generated report")
-    report_path, metadata = candidates[0]
+    report_path, metadata, report_payload = candidates[0]
     expected_phases = {
         record["phase"]: record["evidence_sha256"]
         for record in core_endpoints.values()
     }
     if metadata["phase_evidence_sha256"] != expected_phases:
         raise ValueError("report evidence does not match released closed endpoints")
+    with tempfile.TemporaryDirectory(prefix="fa-report-verify-") as directory:
+        expected_report = build_report(
+            behavior=behavior,
+            f2a=f2a,
+            f2b=None,
+            circuit=None,
+            output=Path(directory) / "report.md",
+        ).read_bytes()
+    if report_payload != expected_report:
+        raise ValueError("release report is not the canonical report for closed evidence")
     return {"report_path": report_path, **metadata}
 
 
@@ -2129,6 +2442,7 @@ def _valid_release_report_inputs(
         "report_path",
         "schema_version",
         "phase_evidence_sha256",
+        "report_body_sha256",
         "report_input_bundle_sha256",
     }:
         return False
@@ -2147,6 +2461,96 @@ def _valid_release_report_inputs(
         for record in core_endpoints.values()
     }
     return metadata["phase_evidence_sha256"] == expected_phases
+
+
+def _valid_release_selection_evidence(
+    root: Path,
+    value: Any,
+    core_endpoints: Mapping[str, Any],
+    files: Mapping[str, Any],
+    source_manifests: Mapping[str, Any],
+    config_hash: str,
+) -> bool:
+    expected_fields = {
+        "data_path",
+        "data_sha256",
+        "manifest_path",
+        "manifest_sha256",
+        "selection_bundle_hash",
+        "task_selection_sha256s",
+        "selection_mode",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_fields:
+        return False
+    data_path = value["data_path"]
+    manifest_path = value["manifest_path"]
+    if (
+        not isinstance(data_path, str)
+        or not isinstance(manifest_path, str)
+        or data_path not in files
+        or manifest_path not in files
+        or manifest_path not in source_manifests
+        or not isinstance(files[data_path], Mapping)
+        or not isinstance(files[manifest_path], Mapping)
+        or not isinstance(source_manifests[manifest_path], Mapping)
+    ):
+        return False
+    try:
+        payload = _read_regular_bytes_at(
+            root, _safe_relative(data_path), "release F2A selection"
+        )
+        _record, selection_hashes, bundle_hash = _parse_release_selection_payload(
+            payload, config_hash
+        )
+    except (OSError, ValueError):
+        return False
+    if (
+        value["data_sha256"] != hashlib.sha256(payload).hexdigest()
+        or value["data_sha256"] != files[data_path].get("sha256")
+        or value["manifest_sha256"] != files[manifest_path].get("sha256")
+        or source_manifests[manifest_path].get("shard_sha256") != value["data_sha256"]
+        or value["selection_bundle_hash"] != bundle_hash
+        or value["task_selection_sha256s"] != selection_hashes
+        or value["selection_mode"] != _record["selection_mode"]
+    ):
+        return False
+    probe = core_endpoints.get("probe_test")
+    if not isinstance(probe, Mapping):
+        return False
+    if (
+        _record["probe_test_prompt_sha256"] != probe.get("input_sha256")
+        or _record["probe_test_task_identities_sha256"]
+        != probe.get("task_source_identities_sha256")
+    ):
+        return False
+    metrics_manifest = probe.get("metrics_manifest")
+    if not isinstance(metrics_manifest, str) or not metrics_manifest.endswith(
+        ".jsonl.manifest.json"
+    ):
+        return False
+    metrics_path = metrics_manifest.removesuffix(".manifest.json")
+    if metrics_path not in files or metrics_manifest not in source_manifests:
+        return False
+    try:
+        metric_lines = _read_regular_bytes_at(
+            root, _safe_relative(metrics_path), "release F2A metrics"
+        ).splitlines()
+        metric = json.loads(metric_lines[0]) if len(metric_lines) == 1 else None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return False
+    result = metric.get("result") if isinstance(metric, Mapping) else None
+    results = result.get("results") if isinstance(result, Mapping) else None
+    if (
+        not isinstance(results, Mapping)
+        or set(results) != set(TASKS)
+        or result.get("selection_bundle_hash") != bundle_hash
+    ):
+        return False
+    return all(
+        isinstance(results[task], Mapping)
+        and results[task].get("selection_hash") == selection_hashes[task]
+        for task in TASKS
+    )
 
 
 def _valid_source_manifest_records(
@@ -2180,6 +2584,7 @@ def _valid_release_core_endpoint_records(
     }:
         return False
     required = {
+        "run_id",
         "input_manifest",
         "input_sha256",
         "metrics_manifest",
@@ -2187,10 +2592,13 @@ def _valid_release_core_endpoint_records(
         "closed_state_sha256",
         "phase",
         "evidence_sha256",
+        "task_source_identities_sha256",
     }
     try:
         for endpoint, record in value.items():
             if not isinstance(record, Mapping) or set(record) != required:
+                return False
+            if not isinstance(record["run_id"], str) or not record["run_id"]:
                 return False
             if not str(record["input_manifest"]).endswith(".jsonl.manifest.json"):
                 return False
@@ -2214,9 +2622,19 @@ def _valid_release_core_endpoint_records(
             if record["phase"] != expected_phase:
                 return False
             _sha256_value(record["evidence_sha256"], f"{endpoint} evidence_sha256")
+            if endpoint == "probe_test":
+                _sha256_value(
+                    record["task_source_identities_sha256"],
+                    "probe_test task_source_identities_sha256",
+                )
+            elif record["task_source_identities_sha256"] is not None:
+                _sha256_value(
+                    record["task_source_identities_sha256"],
+                    "behavior_test task_source_identities_sha256",
+                )
     except (TypeError, ValueError):
         return False
-    return True
+    return len({record["run_id"] for record in value.values()}) == 1
 
 
 def _directory_open_flags() -> int:

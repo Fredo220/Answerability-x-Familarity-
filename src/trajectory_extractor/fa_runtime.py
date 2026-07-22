@@ -73,7 +73,11 @@ class HFModelRunner:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.chat_template_sha256 = prepared.chat_template_sha256
         self.model = AutoModelForCausalLM.from_pretrained(
-            config.model_id, revision=config.model_revision, low_cpu_mem_usage=True
+            config.model_id,
+            revision=config.model_revision,
+            low_cpu_mem_usage=True,
+            torch_dtype="auto",
+            device_map="auto",
         )
         self.model.eval()
 
@@ -83,11 +87,26 @@ class HFModelRunner:
         )
 
     def generate(self, prompts: Sequence[str], generation: Mapping[str, Any]) -> Sequence[str]:
-        encoded = self.tokenizer(list(prompts), return_tensors="pt", padding=True)
-        with self._torch.no_grad():
-            generated = self.model.generate(**encoded, **dict(generation))
-        prompt_length = encoded["input_ids"].shape[1]
-        return self.tokenizer.batch_decode(generated[:, prompt_length:], skip_special_tokens=True)
+        completions: list[str] = []
+        try:
+            input_device = next(self.model.parameters()).device
+        except StopIteration:
+            input_device = self._torch.device("cpu")
+        for prompt in prompts:
+            encoded = self.tokenizer([prompt], return_tensors="pt", padding=False)
+            encoded = {
+                name: tensor.to(input_device) for name, tensor in encoded.items()
+            }
+            with self._torch.inference_mode():
+                generated = self.model.generate(**encoded, **dict(generation))
+            prompt_length = encoded["input_ids"].shape[1]
+            decoded = self.tokenizer.batch_decode(
+                generated[:, prompt_length:], skip_special_tokens=True
+            )
+            if len(decoded) != 1 or not isinstance(decoded[0], str):
+                raise RuntimeError("model returned an invalid microbatch completion")
+            completions.append(decoded[0])
+        return completions
 
 
 def resume_generation(

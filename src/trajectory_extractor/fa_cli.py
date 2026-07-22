@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 
 from trajectory_extractor.fa_activations import (
     HFSelectedPositionRunner,
+    load_activation_records,
     write_activation_shard,
 )
 from trajectory_extractor.fa_artifacts import FAArtifactStore
@@ -32,6 +33,7 @@ from trajectory_extractor.fa_data import (
 from trajectory_extractor.fa_entities import (
     CandidateEntity,
     EntityMatch,
+    NaturalnessAudit,
     NaturalnessRating,
     SyntheticCandidate,
     audit_naturalness_manifest,
@@ -56,6 +58,13 @@ from trajectory_extractor.fa_report import (
     load_closed_f1_evidence,
     load_closed_f2a_evidence,
 )
+from trajectory_extractor.fa_features import (
+    HFTeacherForcedScorer,
+    OutputEvidence,
+    REGISTERED_ENTITY_DOMAINS,
+    UnsupportedAnswerOutcome,
+    materialize_probe_rows,
+)
 from trajectory_extractor.fa_probes import (
     TASKS,
     NullSelectionResult,
@@ -73,7 +82,7 @@ from trajectory_extractor.fa_probes import (
 FA_COMMANDS = (
     "fa-screen-entities", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
-    "fa-extract-activations", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
+    "fa-extract-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
@@ -81,6 +90,7 @@ _IMPLEMENTED = frozenset(
     (
         *FA_COMMANDS[:6],
         "fa-extract-activations",
+        "fa-materialize-probe-rows",
         "fa-fit-probes",
         "fa-seal-behavior-test",
         "fa-seal-selection",
@@ -112,6 +122,8 @@ _BEHAVIOR_GATE = behavioral_gate
 _PROBE_SELECTOR = fit_selection
 _PROBE_NULL_SELECTOR = run_full_selection_nulls
 _PROBE_BUNDLE_EVALUATOR = evaluate_probe_bundle_once
+_PROBE_SCORER_FACTORY = HFTeacherForcedScorer.from_config
+_PROBE_ROW_MATERIALIZER = materialize_probe_rows
 
 
 @dataclass(frozen=True)
@@ -142,6 +154,19 @@ class VerifiedF2ASelectionBundle:
     probe_test_task_identities_sha256: str
     shard_manifest_path: Path
     shard_sha256: str
+
+
+class _RecordedOutputScorer:
+    """Replay immutable exact-sequence evidence without loading the model again."""
+
+    def __init__(self, evidence: Mapping[str, OutputEvidence]) -> None:
+        self._evidence = dict(evidence)
+
+    def score(self, example: FAExample) -> OutputEvidence:
+        try:
+            return self._evidence[example.example_id]
+        except KeyError as error:
+            raise ValueError("recorded output evidence is missing an example") from error
 
 
 def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
@@ -176,6 +201,16 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     activations.add_argument("--layers")
     activations.add_argument("--resume", action="store_true")
+    materialize = parsers["fa-materialize-probe-rows"]
+    materialize.add_argument("--manifest", required=True)
+    materialize.add_argument("--metadata-manifest", required=True)
+    materialize.add_argument("--shard-id", required=True)
+    materialize.add_argument(
+        "--namespace",
+        choices=("mechanism_train", "locked_validation"),
+        required=True,
+    )
+    materialize.add_argument("--resume", action="store_true")
     fit_probes = parsers["fa-fit-probes"]
     fit_probes.add_argument("--train-rows-manifest", required=True)
     fit_probes.add_argument("--validation-rows-manifest", required=True)
@@ -186,14 +221,14 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     seal_selection = parsers["fa-seal-selection"]
     seal_selection.add_argument("--selection-manifest", required=True)
     seal_selection.add_argument("--probe-test-manifest", required=True)
-    seal_selection.add_argument("--probe-rows-manifest", required=True)
     behavior_test = parsers["fa-evaluate-behavior-test"]
     behavior_test.add_argument("--manifest", required=True)
     behavior_test.add_argument("--shard-id", required=True)
     probe_test = parsers["fa-evaluate-probe-test"]
     probe_test.add_argument("--selection-manifest", required=True)
     probe_test.add_argument("--probe-test-manifest", required=True)
-    probe_test.add_argument("--probe-rows-manifest", required=True)
+    probe_test.add_argument("--metadata-manifest", required=True)
+    probe_test.add_argument("--shard-id", required=True)
     report = parsers["fa-build-report"]
     report.add_argument("--behavior-test-manifest")
     report.add_argument("--probe-test-manifest")
@@ -236,6 +271,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _run_generation(config, root, args)
         elif command == "fa-extract-activations":
             payload = _extract_activations(config, root, args)
+        elif command == "fa-materialize-probe-rows":
+            payload = _materialize_probe_rows(config, root, args)
         elif command == "fa-fit-probes":
             payload = _fit_probes(config, root, args)
         elif command == "fa-seal-behavior-test":
@@ -298,7 +335,8 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
         result = score_screening(candidate, completions.get(candidate.entity_id, ()))
         if result.qualifies:
             qualified.append(candidate)
-    matches = match_synthetic_entities(qualified, synthetic, _WhitespaceTokenizer())
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
+    matches = match_synthetic_entities(qualified, synthetic, prepared.tokenizer)
     path = _write_manifest(root, config.run_id, "screened_matches", [asdict(row) for row in matches])
     return {"status": "screened", "manifest": str(path), "count": len(matches)}
 
@@ -326,9 +364,8 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         audit = audit_naturalness_manifest(matches, ratings)
         if not audit.accepted_pair_ids:
             raise ValueError("confirmatory construction requires accepted naturalness pairs")
-        accepted = frozenset(audit.accepted_pair_ids)
         audited_matches = matches
-        matches = tuple(match for match in matches if match.pair_id in accepted)
+        matches = _select_confirmatory_matches(config, matches, audit)
         naturalness_shard = _write_naturalness_audit(
             store, config, audited_matches, audit, ratings, ratings_shard
         )
@@ -348,6 +385,13 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         )
     manifest = build_manifest(config, rows, power_audit=power_audit)
     tokenizer_pin = _write_tokenizer_pin(store, config, prepared, manifest.manifest_sha256)
+    probe_metadata = _write_probe_metadata(
+        store,
+        config,
+        manifest.manifest_sha256,
+        matches,
+        rows,
+    )
     capabilities = {}
     for namespace in sorted({row.split for row in rows}):
         namespace_rows = tuple(row for row in rows if row.split == namespace)
@@ -372,6 +416,7 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
             "count": len(rows),
             "manifest_sha256": manifest.manifest_sha256,
             "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path),
+            "probe_metadata_manifest": str(probe_metadata.manifest_path),
         }
 
     assert power_shard is not None and gate is not None
@@ -416,6 +461,7 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path),
         "naturalness_audit_manifest": str(naturalness_shard.manifest_path),
         "naturalness_audit_sha256": naturalness_shard.sha256,
+        "probe_metadata_manifest": str(probe_metadata.manifest_path),
     }
 
 
@@ -463,8 +509,54 @@ def _audit_manifest(config: FAConfig, root: Path, args: argparse.Namespace) -> d
     manifest = _load_manifest(FAArtifactStore(root), args.manifest, config)
     factorial = tuple(row for row in manifest.examples if row.block == "factorial")
     same_string = tuple(row for row in manifest.examples if row.block == "same_string")
-    audit = audit_dataset(factorial, same_string, tokenizer=_WhitespaceTokenizer())
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
+    audit = audit_dataset(factorial, same_string, tokenizer=prepared.tokenizer)
     return {"status": "passed" if audit.passed else "failed", "checks": dict(audit.checks), "violations": list(audit.violations)}
+
+
+def _select_confirmatory_matches(
+    config: FAConfig,
+    matches: Sequence[EntityMatch],
+    audit: NaturalnessAudit,
+) -> tuple[EntityMatch, ...]:
+    """Fill every registered split/domain quota from accepted pairs in hash order."""
+
+    if config.profile != "confirmatory":
+        raise ValueError("reserve selection requires the confirmatory config")
+    accepted = frozenset(audit.accepted_pair_ids)
+    if accepted & frozenset(audit.excluded_pair_ids):
+        raise ValueError("naturalness audit has overlapping accepted and excluded pairs")
+    by_pair = {match.pair_id: match for match in matches}
+    if len(by_pair) != len(tuple(matches)) or not accepted.issubset(by_pair):
+        raise ValueError("naturalness audit does not match the sealed pair manifest")
+
+    selected: list[EntityMatch] = []
+    domain_count = len(REGISTERED_ENTITY_DOMAINS)
+    for split, split_count in sorted(config.split_counts.items()):
+        if split_count % domain_count:
+            raise ValueError("confirmatory split counts must be divisible by four domains")
+        quota = split_count // domain_count
+        for domain in REGISTERED_ENTITY_DOMAINS:
+            candidates = sorted(
+                (
+                    match
+                    for match in matches
+                    if match.pair_id in accepted
+                    and match.split == split
+                    and match.coarse_type == domain
+                ),
+                key=lambda match: (
+                    hashlib.sha256(match.pair_id.encode("utf-8")).hexdigest(),
+                    match.pair_id,
+                ),
+            )
+            if len(candidates) < quota:
+                raise ValueError(
+                    f"naturalness exclusions leave fewer than {quota} accepted "
+                    f"pairs for {split}/{domain}"
+                )
+            selected.extend(candidates[:quota])
+    return tuple(sorted(selected, key=lambda match: (match.split, match.pair_id)))
 
 
 def _run_generation(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -559,6 +651,237 @@ def _extract_activations(
     }
 
 
+def _materialize_probe_rows(
+    config: FAConfig,
+    root: Path,
+    args: argparse.Namespace,
+    *,
+    authorization: ProbeTestAuthorization | None = None,
+) -> dict[str, Any]:
+    """Generate, extract, and seal compact evidence for all registered F2A tasks."""
+
+    store = FAArtifactStore(root)
+    manifest = _load_manifest(store, args.manifest, config)
+    if manifest.namespace != args.namespace:
+        raise ValueError("probe materialization manifest uses another namespace")
+    if args.namespace == "probe_test":
+        if not isinstance(authorization, ProbeTestAuthorization):
+            raise ValueError(
+                "probe_test materialization requires an active one-use authorization"
+            )
+        if store.endpoint_state("probe_test", manifest.shard_manifest_path) != "unlocked_once":
+            raise ValueError("probe_test must be unlocked before materialization")
+    elif authorization is not None:
+        raise ValueError("probe authorization is valid only for probe_test materialization")
+    metadata, metadata_shard = _load_probe_metadata_manifest(
+        store,
+        args.metadata_manifest,
+        config,
+        expected_full_manifest_sha256=manifest.full_manifest_sha256,
+        expected_example_ids=frozenset(row.example_id for row in manifest.examples),
+    )
+    shard_id = _safe_cli_id(args.shard_id, "probe materialization shard-id")
+    if args.resume:
+        resumed = _resume_probe_materialization(
+            store,
+            config,
+            manifest,
+            metadata_shard,
+            shard_id=shard_id,
+            namespace=args.namespace,
+            authorization=authorization,
+        )
+        if resumed is not None:
+            return resumed
+    model_runner = HFModelRunner(config)
+    validate_runner_binding(
+        model_runner,
+        config,
+        expected_chat_template_sha256=manifest.chat_template_sha256,
+    )
+
+    generation_shard = run_generation_shard(
+        model_runner,
+        manifest,
+        store,
+        f"{shard_id}-generation",
+        config=config,
+        namespace=args.namespace,
+    )
+    generation_records = _load_verified_generation_sidecar(
+        store, generation_shard.manifest_path, manifest, config
+    )
+    if not all(record["status"] == "completed" for record in generation_records):
+        exception_classes = sorted(
+            {
+                str(record.get("exception_class"))
+                for record in generation_records
+                if record["status"] == "infrastructure_failure"
+            }
+        )
+        return {
+            "status": "infrastructure_failure",
+            "error": {
+                "message": "probe generation failed; retry the same materialization transaction",
+                "type": ",".join(exception_classes) or "InfrastructureFailure",
+            },
+            "generation_manifest": str(generation_shard.manifest_path),
+        }
+
+    activation_runner = _ACTIVATION_RUNNER_FACTORY(
+        model_runner.model,
+        model_runner.tokenizer,
+        model_id=config.model_id,
+        model_revision=config.model_revision,
+        tokenizer_revision=config.tokenizer_revision,
+    )
+    activation_destination = (
+        root.absolute()
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "activations"
+        / args.namespace
+        / f"{shard_id}.npz"
+    )
+    activation_shard = _ACTIVATION_SHARD_WRITER(
+        activation_runner,
+        manifest.examples,
+        tuple(range(26)),
+        destination=activation_destination,
+    )
+    activations = load_activation_records(activation_shard.manifest_path)
+    scored = _score_rows(generation_records, manifest)
+    unsupported_outcomes = _unsupported_outcomes(scored, manifest.examples)
+    scorer = _PROBE_SCORER_FACTORY(
+        model_runner.model, model_runner.tokenizer, config
+    )
+    rows, output_evidence = _PROBE_ROW_MATERIALIZER(
+        manifest.examples,
+        activations,
+        scorer,
+        metadata,
+        unsupported_outcomes=unsupported_outcomes,
+    )
+
+    activation_by_id = {row.example_id: row for row in activations}
+    output_by_id = {row.example_id: row for row in output_evidence}
+    compact_records = tuple(
+        {
+            "kind": "probe_rows",
+            "schema_version": 2,
+            "example_id": example.example_id,
+            "source_sha256": example.canonical_payload_sha256,
+            "activation_sha256": activation_by_id[example.example_id].activation_sha256,
+            "output_evidence_sha256": output_by_id[example.example_id].sha256,
+            "output_evidence": dict(output_by_id[example.example_id].canonical_payload),
+            "unsupported_outcome": (
+                None
+                if example.example_id not in unsupported_outcomes
+                else asdict(unsupported_outcomes[example.example_id])
+            ),
+        }
+        for example in sorted(manifest.examples, key=lambda row: row.example_id)
+    )
+    task_identities = _task_source_identity_records(manifest.examples)
+    lineage = {
+        "config_sha256": config.config_hash,
+        "prompt_manifest": str(manifest.shard_manifest_path.relative_to(store.root)),
+        "prompt_manifest_sha256": manifest.shard_sha256,
+        "generation_sidecar_manifest": str(
+            generation_shard.manifest_path.relative_to(store.root)
+        ),
+        "generation_sidecar_sha256": generation_shard.sha256,
+        "activation_manifest": str(
+            activation_shard.manifest_path.relative_to(store.root)
+        ),
+        "activation_manifest_sha256": _file_sha256(
+            activation_shard.manifest_path
+        ),
+        "activation_request_sha256": activation_shard.request_sha256,
+        "activation_npz_sha256": activation_shard.npz_sha256,
+        "activation_index_sha256": activation_shard.index_sha256,
+        "metadata_manifest": str(metadata_shard.manifest_path.relative_to(store.root)),
+        "metadata_manifest_sha256": metadata_shard.sha256,
+        "task_source_identities_sha256": _sha256_json(task_identities),
+        "materialization_schema_sha256": _probe_materialization_schema_sha256(),
+    }
+    if authorization is not None:
+        lineage["probe_authorization_sha256"] = authorization.sha256
+    probe_shard = _write_or_resume_records(
+        store,
+        run_id=config.run_id,
+        namespace=args.namespace,
+        shard_id=shard_id,
+        rows=compact_records,
+        lineage=lineage,
+        record_kind="probe_rows",
+        allow_resume=bool(args.resume),
+    )
+    return {
+        "status": "materialized",
+        "probe_rows_manifest": str(probe_shard.manifest_path),
+        "generation_manifest": str(generation_shard.manifest_path),
+        "activation_manifest": str(activation_shard.manifest_path),
+        "example_count": len(manifest.examples),
+        "probe_row_count": len(rows),
+        "compact_evidence_count": len(compact_records),
+    }
+
+
+def _resume_probe_materialization(
+    store: FAArtifactStore,
+    config: FAConfig,
+    prompt: VerifiedPromptManifest,
+    metadata_shard: Any,
+    *,
+    shard_id: str,
+    namespace: str,
+    authorization: ProbeTestAuthorization | None,
+) -> dict[str, Any] | None:
+    candidate = (
+        store.root
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "shards"
+        / namespace
+        / f"{shard_id}.jsonl.manifest.json"
+    )
+    if not candidate.exists():
+        return None
+    shard = _require_verified_shard_kind(
+        store, candidate, "probe_rows", "resumed probe rows manifest"
+    )
+    if shard.namespace != namespace:
+        raise ValueError("resumed probe rows use another namespace")
+    expected_lineage = {
+        "config_sha256": config.config_hash,
+        "prompt_manifest_sha256": prompt.shard_sha256,
+        "metadata_manifest_sha256": metadata_shard.sha256,
+        "materialization_schema_sha256": _probe_materialization_schema_sha256(),
+    }
+    if authorization is not None:
+        expected_lineage["probe_authorization_sha256"] = authorization.sha256
+    _verify_shard_lineage(shard, expected_lineage)
+    records = _read_json_rows(shard.data_path)
+    rows = _reconstruct_compact_probe_rows(
+        store,
+        shard,
+        records,
+        config,
+        expected_namespace=namespace,
+        authorization=authorization,
+    )
+    return {
+        "status": "recovered",
+        "probe_rows_manifest": str(shard.manifest_path),
+        "example_count": len(prompt.examples),
+        "probe_row_count": len(rows),
+        "compact_evidence_count": len(records),
+    }
+
+
 def _registered_extraction_layers(config: FAConfig, raw: str | None) -> tuple[int, ...]:
     registered = tuple(range(26))
     if config.profile == "confirmatory":
@@ -588,6 +911,59 @@ def _safe_cli_id(value: object, field: str) -> str:
     if value in {".", ".."} or ".." in value:
         raise ValueError(f"{field} is invalid")
     return value
+
+def _unsupported_outcomes(
+    scored: Sequence[Any], examples: Sequence[FAExample]
+) -> dict[str, UnsupportedAnswerOutcome]:
+    scored_by_id = {row.example_id: row for row in scored}
+    if len(scored_by_id) != len(tuple(scored)):
+        raise ValueError("scored outputs contain duplicate example IDs")
+    expected_ids = {row.example_id for row in examples}
+    if set(scored_by_id) != expected_ids:
+        raise ValueError("scored outputs do not match the exact example IDs")
+    result: dict[str, UnsupportedAnswerOutcome] = {}
+    for example in examples:
+        if example.answerability not in {"distractor_bound", "code_absent"}:
+            continue
+        scored_row = scored_by_id[example.example_id]
+        status = (
+            "missing"
+            if not scored_row.completed
+            else "valid" if scored_row.valid_format else "invalid"
+        )
+        result[example.example_id] = UnsupportedAnswerOutcome(
+            example.example_id,
+            scored_row.answer_attempt,
+            status,
+        )
+    return result
+
+
+def _probe_materialization_schema_sha256() -> str:
+    return _sha256_json(
+        {
+            "schema_version": 2,
+            "record_fields": [
+                "activation_sha256",
+                "example_id",
+                "kind",
+                "output_evidence",
+                "output_evidence_sha256",
+                "schema_version",
+                "source_sha256",
+                "unsupported_outcome",
+            ],
+            "reconstruction": "prompt+activation+metadata+generation+exact_output_evidence",
+        }
+    )
+
+
+def _file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _fit_probes(
@@ -706,28 +1082,9 @@ def _seal_probe_selection(
         task_identities
     ):
         raise ValueError("selection bundle does not bind probe_test task identities")
-    probe_rows_shard = _require_verified_shard_kind(
-        store,
-        args.probe_rows_manifest,
-        "probe_rows",
-        "verified protected probe rows manifest",
-    )
-    if probe_rows_shard.namespace != "probe_test":
-        raise ValueError("protected probe rows must use the probe_test namespace")
-    _verify_artifact_run_id(probe_rows_shard.manifest_path, config.run_id)
-    _verify_shard_lineage(
-        probe_rows_shard,
-        {
-            "config_sha256": config.config_hash,
-            "prompt_manifest_sha256": prompt_shard.sha256,
-            "task_source_identities_sha256": _task_source_identities_sha256(
-                task_identities
-            ),
-        },
-    )
     sealed_path = store.seal_endpoint(
         "probe_test",
-        (prompt_shard, probe_rows_shard),
+        (prompt_shard,),
         {
             "preregistration": hashlib.sha256(
                 _PREREGISTRATION_PATH.read_bytes()
@@ -831,11 +1188,6 @@ def _evaluate_probe_test(
     ):
         raise ValueError("selection bundle does not bind probe_test task identities")
     store.verify_endpoint_artifact("probe_test", prompt_shard.manifest_path)
-    probe_rows_shard = store.verify_endpoint_artifact(
-        "probe_test", args.probe_rows_manifest
-    )
-    if probe_rows_shard.record_kind != "probe_rows":
-        raise ValueError("sealed probe test rows have the wrong record kind")
     state = store.endpoint_state("probe_test", prompt_shard.manifest_path)
     if state == "closed":
         closed = store.read_closed_metrics(
@@ -851,9 +1203,28 @@ def _evaluate_probe_test(
         "probe_test", prompt_shard.manifest_path
     )
     authorization = ProbeTestAuthorization.from_unlock_receipt(receipt)
+    materialized = _materialize_probe_rows(
+        config,
+        root,
+        argparse.Namespace(
+            manifest=str(prompt_shard.manifest_path),
+            metadata_manifest=args.metadata_manifest,
+            namespace="probe_test",
+            shard_id=args.shard_id,
+            resume=True,
+        ),
+        authorization=authorization,
+    )
+    if materialized["status"] == "infrastructure_failure":
+        return {
+            **materialized,
+            "endpoint_state": "unlocked_once",
+            "selection_bundle_hash": selection.selection_bundle_hash,
+        }
+    probe_rows_manifest = materialized["probe_rows_manifest"]
     rows, _ = _load_probe_rows_manifest(
         store,
-        probe_rows_shard.manifest_path,
+        probe_rows_manifest,
         config,
         expected_namespace="probe_test",
         authorization=authorization,
@@ -896,6 +1267,10 @@ def _build_evidence_report(
         )
 
     store = FAArtifactStore(root)
+    if behavior_manifest is not None:
+        _verify_artifact_run_id(Path(behavior_manifest), config.run_id)
+    if probe_manifest is not None:
+        _verify_artifact_run_id(Path(probe_manifest), config.run_id)
     behavior = (
         None
         if behavior_manifest is None
@@ -951,6 +1326,75 @@ def _root_scoped_output(root: Path, value: object) -> Path:
     return destination
 
 
+def _load_probe_metadata_manifest(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+    *,
+    expected_full_manifest_sha256: str,
+    expected_example_ids: frozenset[str],
+) -> tuple[dict[str, Any], Any]:
+    shard = _require_verified_shard_kind(
+        store, path, "probe_metadata", "verified probe metadata manifest"
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    rows = _read_json_rows(shard.data_path)
+    if len(rows) != 1:
+        raise ValueError("probe metadata manifest must contain one record")
+    record = rows[0]
+    expected = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "full_manifest_sha256",
+        "manifest_revision",
+        "rows",
+    }
+    if (
+        set(record) != expected
+        or record.get("kind") != "probe_metadata"
+        or record.get("schema_version") != 1
+        or record.get("config_sha256") != config.config_hash
+        or record.get("full_manifest_sha256") != expected_full_manifest_sha256
+    ):
+        raise ValueError("probe metadata manifest identity is invalid")
+    metadata_rows = record.get("rows")
+    if not isinstance(metadata_rows, list) or not metadata_rows:
+        raise ValueError("probe metadata rows are missing")
+    expected_row_schema = {
+        "example_id",
+        "entity_id",
+        "template_id",
+        "relation_id",
+        "domain",
+        "condition",
+    }
+    if any(set(row) != expected_row_schema for row in metadata_rows):
+        raise ValueError("probe metadata row schema is invalid")
+    observed_ids = [row.get("example_id") for row in metadata_rows]
+    if len(set(observed_ids)) != len(observed_ids) or not expected_example_ids.issubset(
+        observed_ids
+    ):
+        raise ValueError("probe metadata does not cover the exact prompt examples")
+    metadata = {
+        "manifest_revision": record["manifest_revision"],
+        "rows": [
+            row for row in metadata_rows if row["example_id"] in expected_example_ids
+        ],
+    }
+    if {row["example_id"] for row in metadata["rows"]} != expected_example_ids:
+        raise ValueError("probe metadata subset does not match prompt examples")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": expected_full_manifest_sha256,
+            "metadata_sha256": _sha256_json(record),
+        },
+    )
+    return metadata, shard
+
+
 def _load_probe_rows_manifest(
     store: FAArtifactStore,
     path: str | Path,
@@ -982,12 +1426,37 @@ def _load_probe_rows_manifest(
         )
     _verify_shard_lineage(shard, expected_lineage)
     raw_rows = _read_json_rows(shard.data_path)
-    if any(
-        set(record) != {"kind", "row"} or record.get("kind") != "probe_rows"
+    compact_schema = {
+        "kind",
+        "schema_version",
+        "example_id",
+        "source_sha256",
+        "activation_sha256",
+        "output_evidence_sha256",
+        "output_evidence",
+        "unsupported_outcome",
+    }
+    if raw_rows and all(
+        set(record) == compact_schema
+        and record.get("kind") == "probe_rows"
+        and record.get("schema_version") == 2
         for record in raw_rows
     ):
-        raise ValueError("probe rows artifact has an invalid wrapper schema")
-    rows = tuple(ProbeRow.from_record(record["row"]) for record in raw_rows)
+        rows = _reconstruct_compact_probe_rows(
+            store,
+            shard,
+            raw_rows,
+            config,
+            expected_namespace=expected_namespace,
+            authorization=authorization,
+        )
+    else:
+        if config.profile != "smoke" or any(
+            set(record) != {"kind", "row"} or record.get("kind") != "probe_rows"
+            for record in raw_rows
+        ):
+            raise ValueError("probe rows artifact has an invalid wrapper schema")
+        rows = tuple(ProbeRow.from_record(record["row"]) for record in raw_rows)
     by_task = _probe_rows_by_task(rows)
     if expected_task_identities is not None:
         for task in TASKS:
@@ -1005,6 +1474,119 @@ def _load_probe_rows_manifest(
                     f"{task} probe rows do not match the sealed task identities"
                 )
     return rows, shard
+
+
+def _reconstruct_compact_probe_rows(
+    store: FAArtifactStore,
+    shard: Any,
+    records: Sequence[Mapping[str, Any]],
+    config: FAConfig,
+    *,
+    expected_namespace: str,
+    authorization: ProbeTestAuthorization | None = None,
+) -> tuple[ProbeRow, ...]:
+    sidecar = _read_json_object(shard.manifest_path)
+    lineage = sidecar.get("lineage")
+    if not isinstance(lineage, dict):
+        raise ValueError("compact probe evidence lineage is invalid")
+    expected_schema = _probe_materialization_schema_sha256()
+    if lineage.get("materialization_schema_sha256") != expected_schema:
+        raise ValueError("compact probe evidence schema hash does not verify")
+    if expected_namespace == "probe_test" and (
+        not isinstance(authorization, ProbeTestAuthorization)
+        or lineage.get("probe_authorization_sha256") != authorization.sha256
+    ):
+        raise ValueError("compact probe evidence is not bound to this probe authorization")
+
+    prompt_path = _artifact_path_from_record(
+        store, lineage.get("prompt_manifest"), "probe prompt manifest"
+    )
+    prompt = _load_manifest(store, prompt_path, config)
+    if prompt.namespace != expected_namespace or prompt.shard_sha256 != lineage.get(
+        "prompt_manifest_sha256"
+    ):
+        raise ValueError("compact probe evidence does not bind its prompt capability")
+    metadata_path = _artifact_path_from_record(
+        store, lineage.get("metadata_manifest"), "probe metadata manifest"
+    )
+    metadata, metadata_shard = _load_probe_metadata_manifest(
+        store,
+        metadata_path,
+        config,
+        expected_full_manifest_sha256=prompt.full_manifest_sha256,
+        expected_example_ids=frozenset(row.example_id for row in prompt.examples),
+    )
+    if metadata_shard.sha256 != lineage.get("metadata_manifest_sha256"):
+        raise ValueError("compact probe evidence metadata hash does not verify")
+
+    activation_path = _artifact_path_from_record(
+        store, lineage.get("activation_manifest"), "probe activation manifest"
+    )
+    if _file_sha256(activation_path) != lineage.get("activation_manifest_sha256"):
+        raise ValueError("compact probe activation manifest hash does not verify")
+    activations = load_activation_records(activation_path)
+    activation_by_id = {row.example_id: row for row in activations}
+    if (
+        len(activation_by_id) != len(activations)
+        or set(activation_by_id) != {row.example_id for row in prompt.examples}
+    ):
+        raise ValueError("compact probe activations do not match prompt examples")
+    activation_manifest = _read_json_object(activation_path)
+    for name, key in (
+        ("request_sha256", "activation_request_sha256"),
+        ("npz_sha256", "activation_npz_sha256"),
+        ("index_sha256", "activation_index_sha256"),
+    ):
+        if activation_manifest.get(name) != lineage.get(key):
+            raise ValueError(f"compact probe evidence does not bind {key}")
+
+    generation_path = _artifact_path_from_record(
+        store,
+        lineage.get("generation_sidecar_manifest"),
+        "probe generation sidecar",
+    )
+    generation_shard = _require_generation_sidecar_manifest(store, generation_path)
+    if generation_shard.sha256 != lineage.get("generation_sidecar_sha256"):
+        raise ValueError("compact probe generation hash does not verify")
+    scored = _score_rows(
+        _load_verified_generation_sidecar(store, generation_path, prompt, config),
+        prompt,
+    )
+    outcomes = _unsupported_outcomes(scored, prompt.examples)
+
+    expected_ids = tuple(sorted(row.example_id for row in prompt.examples))
+    observed_ids = tuple(sorted(str(record.get("example_id")) for record in records))
+    if observed_ids != expected_ids or len(set(observed_ids)) != len(observed_ids):
+        raise ValueError("compact probe evidence does not match exact prompt IDs")
+    outputs: dict[str, OutputEvidence] = {}
+    for record in records:
+        example_id = record["example_id"]
+        output = OutputEvidence.from_record(record["output_evidence"])
+        activation = activation_by_id[example_id]
+        outcome = outcomes.get(example_id)
+        stored_outcome = record.get("unsupported_outcome")
+        expected_outcome = None if outcome is None else asdict(outcome)
+        if (
+            record["source_sha256"] != output.source_sha256
+            or record["activation_sha256"] != activation.activation_sha256
+            or record["output_evidence_sha256"] != output.sha256
+            or stored_outcome != expected_outcome
+        ):
+            raise ValueError("compact probe evidence record does not verify")
+        outputs[example_id] = output
+
+    rows, rebuilt_outputs = _PROBE_ROW_MATERIALIZER(
+        prompt.examples,
+        activations,
+        _RecordedOutputScorer(outputs),
+        metadata,
+        unsupported_outcomes=outcomes,
+    )
+    if {row.sha256 for row in rebuilt_outputs} != {
+        row.sha256 for row in outputs.values()
+    }:
+        raise ValueError("compact output evidence reconstruction is incomplete")
+    return rows
 
 
 def _probe_rows_by_task(
@@ -1336,6 +1918,60 @@ def _write_or_resume_single_record(
         ):
             raise ValueError(
                 "existing single-record artifact does not match this transaction"
+            )
+        return existing
+
+
+def _write_or_resume_records(
+    store: FAArtifactStore,
+    *,
+    run_id: str,
+    namespace: str,
+    shard_id: str,
+    rows: Sequence[Mapping[str, Any]],
+    lineage: Mapping[str, Any],
+    record_kind: str,
+    allow_resume: bool,
+):
+    canonical_rows = tuple(dict(row) for row in rows)
+    try:
+        return store.write_completed_shard(
+            run_id,
+            namespace,
+            shard_id,
+            canonical_rows,
+            dict(lineage),
+            record_kind=record_kind,
+        )
+    except FileExistsError:
+        if not allow_resume:
+            raise
+        candidate = (
+            store.root
+            / "runs"
+            / "familiarity_answerability"
+            / run_id
+            / "shards"
+            / namespace
+            / f"{shard_id}.jsonl.manifest.json"
+        )
+        existing = store.verify_shard(candidate)
+        expected = b"".join(
+            json.dumps(
+                row, allow_nan=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            + b"\n"
+            for row in canonical_rows
+        )
+        sidecar = _read_json_object(existing.manifest_path)
+        if (
+            existing.record_kind != record_kind
+            or existing.row_count != len(canonical_rows)
+            or existing.sha256 != hashlib.sha256(expected).hexdigest()
+            or sidecar.get("lineage") != dict(lineage)
+        ):
+            raise ValueError(
+                "existing multi-record artifact does not match this transaction"
             )
         return existing
 
@@ -1828,6 +2464,48 @@ def _write_naturalness_audit(
             "ratings_sha256": ratings_shard.sha256,
         },
         record_kind="naturalness_audit",
+    )
+
+
+def _write_probe_metadata(store, config, full_manifest_sha256, matches, examples):
+    domain_by_pair = {match.pair_id: match.coarse_type for match in matches}
+    if len(domain_by_pair) != len(tuple(matches)):
+        raise ValueError("probe metadata requires unique matched entity pairs")
+    if any(domain not in REGISTERED_ENTITY_DOMAINS for domain in domain_by_pair.values()):
+        raise ValueError("probe metadata contains an unregistered entity domain")
+    metadata_rows = [
+        {
+            "example_id": example.example_id,
+            "entity_id": example.entity_unit_id,
+            "template_id": example.template_family,
+            "relation_id": "archive_code",
+            "domain": domain_by_pair[example.entity_unit_id],
+            "condition": example.block,
+        }
+        for example in sorted(examples, key=lambda row: row.example_id)
+    ]
+    if len({row["example_id"] for row in metadata_rows}) != len(metadata_rows):
+        raise ValueError("probe metadata contains duplicate example IDs")
+    row = {
+        "kind": "probe_metadata",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "full_manifest_sha256": full_manifest_sha256,
+        "manifest_revision": "2026-07-22",
+        "rows": metadata_rows,
+    }
+    metadata_sha256 = _sha256_json(row)
+    return store.write_completed_shard(
+        config.run_id,
+        "mechanism_train" if config.profile == "confirmatory" else "pilot",
+        f"probe-metadata-{metadata_sha256[:16]}",
+        (row,),
+        {
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": full_manifest_sha256,
+            "metadata_sha256": metadata_sha256,
+        },
+        record_kind="probe_metadata",
     )
 
 
@@ -2531,13 +3209,3 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_json_safe(item) for item in value]
     return value
-
-
-class _WhitespaceTokenizer:
-    all_special_ids = ()
-
-    def encode(self, text: str, add_special_tokens: bool = False):
-        return text.split()
-
-    def apply_chat_template(self, messages, *, tokenize: bool, add_generation_prompt: bool):
-        return self.encode(messages[0]["content"])

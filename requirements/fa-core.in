@@ -1,0 +1,14 @@
+# Direct requirements for the confirmatory F1 + F2A Colab environment.
+accelerate==1.12.0
+certifi==2026.6.17
+ipykernel==6.29.5
+jsonschema==4.26.0
+matplotlib==3.11.0
+numpy==1.26.4
+pandas==2.2.3
+pytest==9.1.1
+safetensors==0.8.0
+scikit-learn==1.4.2
+sentencepiece==0.2.1
+torch==2.7.1
+transformers==4.57.1

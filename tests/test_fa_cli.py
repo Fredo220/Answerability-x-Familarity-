@@ -23,7 +23,8 @@ from trajectory_extractor.fa_data import (
     PowerCell,
     build_factorial_examples,
 )
-from trajectory_extractor.fa_entities import EntityMatch, NaturalnessRating
+from trajectory_extractor.fa_entities import EntityMatch, NaturalnessAudit, NaturalnessRating
+from trajectory_extractor.fa_features import OutputEvidence
 from trajectory_extractor.fa_runtime import run_generation_shard
 from trajectory_extractor.fa_probes import (
     OUTPUT_CONTROL_SCHEMA_SHA256,
@@ -88,6 +89,170 @@ def install_fake_tokenizer(monkeypatch):
         "_TOKENIZER_LOADER",
         lambda model_id, *, revision: FakeTokenizer(),
     )
+
+
+def confirmatory_reserve_matches(config, *, reserve_per_cell=1):
+    base = EntityMatch(**MATCH)
+    domains = ("person", "place", "organization", "creative_work")
+    rows = []
+    index = 100
+    for split, split_count in config.split_counts.items():
+        quota = split_count // len(domains)
+        for domain in domains:
+            for _ in range(quota + reserve_per_cell):
+                real_name = f"Old Vale {index}"
+                synthetic_name = f"New Vale {index}"
+                rows.append(
+                    replace(
+                        base,
+                        pair_id=f"Q{index}--syn-{index}",
+                        real_entity_id=f"Q{index}",
+                        real_qid=f"Q{index}",
+                        synthetic_candidate_id=f"syn-{index}",
+                        real_name=real_name,
+                        synthetic_name=synthetic_name,
+                        coarse_type=domain,
+                        split=split,
+                        real_word_count=3,
+                        synthetic_word_count=3,
+                        real_character_count=len(real_name),
+                        synthetic_character_count=len(synthetic_name),
+                    )
+                )
+                index += 1
+    return tuple(rows)
+
+
+def test_screening_matching_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
+    config = FAConfig.from_json(CONFIG_PATH)
+    sentinel = object()
+    candidate = {
+        "entity_id": "Q90",
+        "qid": "Q90",
+        "name": "Old Vale",
+        "coarse_type": "place",
+        "split": "pilot",
+        "source_query": "registered-query-v1",
+        "source_provenance": "CC0-1.0",
+        "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
+    }
+    synthetic = {
+        "candidate_id": "syn-90",
+        "name": "New Vale",
+        "coarse_type": "place",
+        "split": "pilot",
+        "generator_revision": "names-v1",
+    }
+    monkeypatch.setattr(
+        fa_cli,
+        "_read_json_rows",
+        lambda path: [candidate] if path.name == "candidates.json" else [synthetic],
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_read_json_object",
+        lambda _path: {"Q90": ["alpha", "beta", "gamma"]},
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=sentinel),
+    )
+    observed = []
+    monkeypatch.setattr(
+        fa_cli,
+        "match_synthetic_entities",
+        lambda qualified, candidates, tokenizer: observed.append(tokenizer) or (),
+    )
+
+    payload = fa_cli._screen_entities(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            candidates_manifest=Path("candidates.json"),
+            synthetic_manifest=Path("synthetic.json"),
+            screening_manifest=Path("screening.json"),
+        ),
+    )
+
+    assert payload["status"] == "screened"
+    assert observed == [sentinel]
+
+
+def test_dataset_audit_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
+    config = FAConfig.from_json(CONFIG_PATH)
+    sentinel = object()
+    rows = (
+        SimpleNamespace(block="factorial"),
+        SimpleNamespace(block="same_string"),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_manifest",
+        lambda *args, **kwargs: SimpleNamespace(examples=rows),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=sentinel),
+    )
+    observed = []
+    monkeypatch.setattr(
+        fa_cli,
+        "audit_dataset",
+        lambda factorial, same_string, *, tokenizer: observed.append(tokenizer)
+        or SimpleNamespace(passed=True, checks={"tokenizer": True}, violations=()),
+    )
+
+    payload = fa_cli._audit_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(manifest=tmp_path / "manifest.json"),
+    )
+
+    assert payload["status"] == "passed"
+    assert observed == [sentinel]
+
+
+def test_confirmatory_reserve_selection_is_balanced_deterministic_and_excludes_rejected():
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    config = FAConfig.from_json(config_path)
+    matches = confirmatory_reserve_matches(config)
+    rejected = matches[0].pair_id
+    accepted = tuple(match.pair_id for match in matches if match.pair_id != rejected)
+    audit = NaturalnessAudit(
+        accepted_pair_ids=accepted,
+        excluded_pair_ids=(rejected,),
+        third_rater_pair_ids=(),
+        decisions={
+            match.pair_id: "excluded_malformed" if match.pair_id == rejected else "accepted"
+            for match in matches
+        },
+    )
+
+    selected = fa_cli._select_confirmatory_matches(config, matches, audit)
+    reversed_selected = fa_cli._select_confirmatory_matches(config, tuple(reversed(matches)), audit)
+
+    assert selected == reversed_selected
+    assert len(selected) == sum(config.split_counts.values())
+    assert rejected not in {match.pair_id for match in selected}
+    for split, split_count in config.split_counts.items():
+        expected = split_count // 4
+        assert {
+            domain: sum(
+                match.split == split and match.coarse_type == domain for match in selected
+            )
+            for domain in ("person", "place", "organization", "creative_work")
+        } == {
+            "person": expected,
+            "place": expected,
+            "organization": expected,
+            "creative_work": expected,
+        }
 
 
 def sha256_json(value):
@@ -345,6 +510,35 @@ def test_activation_parser_requires_explicit_manifest_namespace_and_shard(tmp_pa
     assert args.resume is True
 
 
+def test_probe_materialization_parser_requires_both_capabilities(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    args = parser.parse_args(
+        [
+            "fa-materialize-probe-rows",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(tmp_path / "prompts.jsonl.manifest.json"),
+            "--metadata-manifest",
+            str(tmp_path / "metadata.jsonl.manifest.json"),
+            "--namespace",
+            "locked_validation",
+            "--shard-id",
+            "probe-evidence",
+            "--resume",
+        ]
+    )
+
+    assert args.namespace == "locked_validation"
+    assert args.shard_id == "probe-evidence"
+    assert args.resume is True
+
+
 def test_activation_cli_wires_verified_prompt_to_resumable_writer(
     tmp_path, capsys, monkeypatch
 ):
@@ -456,6 +650,207 @@ def test_generic_activation_cli_rejects_protected_namespace_before_model_load(
     assert exit_code == 2
     assert payload["status"] == "error"
     assert "protected test namespaces" in payload["error"]["message"]
+
+
+def test_probe_materialization_writes_compact_provenance_bound_evidence(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    examples, prompts = prompt_capability(tmp_path, config, "locked_validation")
+    metadata = fa_cli._write_probe_metadata(
+        FAArtifactStore(tmp_path),
+        config,
+        "b" * 64,
+        (EntityMatch(**MATCH),),
+        examples,
+    )
+
+    class FakeModelRunner:
+        def __init__(self, supplied):
+            self.model = object()
+            self.tokenizer = object()
+            self.model_id = supplied.model_id
+            self.model_revision = supplied.model_revision
+            self.tokenizer_revision = supplied.tokenizer_revision
+            self.chat_template_sha256 = CHAT_TEMPLATE_SHA256
+
+        def generate(self, rendered, generation):
+            return ["UNKNOWN" for _ in rendered]
+
+    def fake_activation_writer(runner, supplied, layers, *, destination):
+        assert tuple(layers) == tuple(range(26))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path = destination.with_suffix(".manifest.json")
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "request_sha256": "1" * 64,
+                    "npz_sha256": "2" * 64,
+                    "index_sha256": "3" * 64,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(
+            manifest_path=manifest_path,
+            request_sha256="1" * 64,
+            npz_sha256="2" * 64,
+            index_sha256="3" * 64,
+        )
+
+    activation_records = tuple(
+        SimpleNamespace(
+            example_id=example.example_id,
+            activation_sha256=sha256_json({"activation": example.example_id}),
+        )
+        for example in examples
+    )
+    output_evidence = tuple(
+        OutputEvidence(
+            example_id=example.example_id,
+            source_sha256=example.canonical_payload_sha256,
+            target_code=example.registry_code,
+            unknown_suffix="UNKNOWN",
+            target_logp=-2.0,
+            unknown_logp=-1.0,
+            prompt_bytes=f"prompt:{example.example_id}".encode("utf-8"),
+            rendered_prompt_sha256=hashlib.sha256(
+                f"prompt:{example.example_id}".encode("utf-8")
+            ).hexdigest(),
+            prompt_input_ids=(1,),
+            target_token_ids=(2,),
+            unknown_token_ids=(3,),
+            model_id=config.model_id,
+            model_revision=config.model_revision,
+            tokenizer_id=config.model_id,
+            tokenizer_revision=config.tokenizer_revision,
+            tokenizer_config_sha256="4" * 64,
+            chat_template_sha256=CHAT_TEMPLATE_SHA256,
+            config_sha256=config.config_hash,
+        )
+        for example in sorted(examples, key=lambda row: row.example_id)
+    )
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeModelRunner)
+    monkeypatch.setattr(
+        fa_cli, "_ACTIVATION_RUNNER_FACTORY", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(fa_cli, "_ACTIVATION_SHARD_WRITER", fake_activation_writer)
+    monkeypatch.setattr(fa_cli, "load_activation_records", lambda path: activation_records)
+    monkeypatch.setattr(fa_cli, "_PROBE_SCORER_FACTORY", lambda *args: object())
+    monkeypatch.setattr(
+        fa_cli,
+        "_PROBE_ROW_MATERIALIZER",
+        lambda supplied, activations, scorer, metadata, *, unsupported_outcomes: (
+            probe_rows_for_examples(supplied),
+            output_evidence,
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "fa-materialize-probe-rows",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--metadata-manifest",
+            str(metadata.manifest_path),
+            "--namespace",
+            "locked_validation",
+            "--shard-id",
+            "probe-evidence",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["status"] == "materialized"
+    assert payload["compact_evidence_count"] == len(examples)
+    shard = FAArtifactStore(tmp_path).verify_shard(payload["probe_rows_manifest"])
+    compact = fa_cli._read_json_rows(shard.data_path)
+    assert all(row["schema_version"] == 2 for row in compact)
+    assert all("residual_features" not in row for row in compact)
+    lineage = json.loads(shard.manifest_path.read_text(encoding="utf-8"))["lineage"]
+    assert lineage["prompt_manifest_sha256"] == prompts.sha256
+    assert lineage["metadata_manifest_sha256"] == metadata.sha256
+    assert lineage["materialization_schema_sha256"] == (
+        fa_cli._probe_materialization_schema_sha256()
+    )
+    reconstructed, _ = fa_cli._load_probe_rows_manifest(
+        FAArtifactStore(tmp_path),
+        shard.manifest_path,
+        config,
+        expected_namespace="locked_validation",
+    )
+    assert len(reconstructed) == len(probe_rows_for_examples(examples))
+
+    class MustNotReloadModel:
+        def __init__(self, supplied):
+            raise AssertionError("verified probe evidence resume must not reload the model")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotReloadModel)
+    resume_code = cli.main(
+        [
+            "fa-materialize-probe-rows",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--metadata-manifest",
+            str(metadata.manifest_path),
+            "--namespace",
+            "locked_validation",
+            "--shard-id",
+            "probe-evidence",
+            "--resume",
+        ]
+    )
+    resumed = json.loads(capsys.readouterr().out)
+    assert resume_code == 0
+    assert resumed["status"] == "recovered"
+    assert resumed["probe_rows_manifest"] == payload["probe_rows_manifest"]
+
+
+def test_public_probe_materialization_rejects_probe_test_before_model_load(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompt = prompt_capability(tmp_path, config, "probe_test")
+
+    class MustNotReloadModel:
+        def __init__(self, supplied):
+            raise AssertionError("protected evidence must not load before endpoint unlock")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotReloadModel)
+    with pytest.raises(SystemExit) as raised:
+        cli.main(
+            [
+                "fa-materialize-probe-rows",
+                "--config",
+                str(CONFIG_PATH),
+                "--root",
+                str(tmp_path),
+                "--manifest",
+                str(prompt.manifest_path),
+                "--metadata-manifest",
+                str(tmp_path / "unused.json"),
+                "--namespace",
+                "probe_test",
+                "--shard-id",
+                "forbidden",
+            ]
+        )
+    payload = json.loads(capsys.readouterr().out)
+    assert raised.value.code == 2
+    assert payload["error"]["type"] == "ArgumentError"
 
 
 def test_behavior_test_command_closes_one_use_endpoint_with_canonical_metrics(
@@ -667,12 +1062,42 @@ def test_protected_probe_rows_open_only_after_authorization_and_match_task_ident
     assert [row.to_record() for row in loaded] == [row.to_record() for row in rows]
 
 
-def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
+def test_core_cli_closes_f1_and_f2a_reports_and_recovers_atomically(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(fa_probes, "_TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS", True)
     monkeypatch.setattr(fa_probes, "_BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS", 80)
     config = FAConfig.from_json(CONFIG_PATH)
+    _, behavior_prompt = prompt_capability(tmp_path, config, "behavior_test")
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeRunner)
+
+    def smoke_behavior_gate(metrics, bootstrap, **kwargs):
+        from trajectory_extractor.fa_scoring import (
+            CONFIRMATORY_THRESHOLDS,
+            behavioral_gate,
+        )
+
+        return behavioral_gate(
+            metrics,
+            bootstrap,
+            **{**kwargs, "thresholds": CONFIRMATORY_THRESHOLDS},
+        )
+
+    monkeypatch.setattr(fa_cli, "_BEHAVIOR_GATE", smoke_behavior_gate)
+    behavior_sealed = fa_cli._seal_behavior_test(
+        config,
+        tmp_path,
+        SimpleNamespace(behavior_test_manifest=behavior_prompt.manifest_path),
+    )
+    behavior_evaluated = fa_cli._evaluate_behavior_test(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            manifest=behavior_prompt.manifest_path,
+            shard_id="behavior-smoke",
+        ),
+    )
+
     train = write_probe_rows_artifact(
         tmp_path,
         config,
@@ -763,13 +1188,28 @@ def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
             ),
         },
     )
+
+    def materialize_after_unlock(supplied_config, supplied_root, args, *, authorization):
+        assert supplied_config == config
+        assert supplied_root == tmp_path
+        assert isinstance(authorization, ProbeTestAuthorization)
+        assert args.namespace == "probe_test"
+        assert args.manifest == str(prompt.manifest_path)
+        assert FAArtifactStore(tmp_path).endpoint_state(
+            "probe_test", prompt.manifest_path
+        ) == "unlocked_once"
+        return {
+            "status": "materialized",
+            "probe_rows_manifest": str(test_rows.manifest_path),
+        }
+
+    monkeypatch.setattr(fa_cli, "_materialize_probe_rows", materialize_after_unlock)
     sealed = fa_cli._seal_probe_selection(
         config,
         tmp_path,
         SimpleNamespace(
             selection_manifest=payload["selection_manifest"],
             probe_test_manifest=prompt.manifest_path,
-            probe_rows_manifest=test_rows.manifest_path,
         ),
     )
     evaluated = fa_cli._evaluate_probe_test(
@@ -778,7 +1218,8 @@ def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
         SimpleNamespace(
             selection_manifest=payload["selection_manifest"],
             probe_test_manifest=prompt.manifest_path,
-            probe_rows_manifest=test_rows.manifest_path,
+            metadata_manifest="unused-by-smoke-materializer",
+            shard_id="probe-test-smoke",
         ),
     )
     recovered = fa_cli._evaluate_probe_test(
@@ -787,20 +1228,23 @@ def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
         SimpleNamespace(
             selection_manifest=payload["selection_manifest"],
             probe_test_manifest=prompt.manifest_path,
-            probe_rows_manifest=test_rows.manifest_path,
+            metadata_manifest="unused-on-closed-recovery",
+            shard_id="probe-test-smoke",
         ),
     )
     report = fa_cli._build_evidence_report(
         config,
         tmp_path,
         SimpleNamespace(
-            behavior_test_manifest=None,
+            behavior_test_manifest=behavior_prompt.manifest_path,
             probe_test_manifest=prompt.manifest_path,
             selection_manifest=payload["selection_manifest"],
             output="reports/f2a-smoke.md",
         ),
     )
 
+    assert behavior_sealed["endpoint_state"] == "sealed"
+    assert behavior_evaluated["endpoint_state"] == "closed"
     assert sealed["endpoint_state"] == "sealed"
     assert evaluated["status"] == "evaluated"
     assert evaluated["endpoint_state"] == "closed"
@@ -810,7 +1254,7 @@ def test_f2a_cli_selects_seals_evaluates_and_recovers_atomically(
     report_text = (tmp_path / "reports" / "f2a-smoke.md").read_text(
         encoding="utf-8"
     )
-    assert "F1: unavailable" in report_text
+    assert "F1: evaluated" in report_text
     assert "F2A: evaluated" in report_text
     assert "F2B: skipped" in report_text
 
@@ -1373,6 +1817,15 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
                 canonical_payload_sha256=sha256_json({"namespace": namespace}),
                 split=namespace,
                 answerability="code_absent",
+                entity_unit_id="Q1--syn-1",
+                template_family={
+                    "mechanism_train": "train_registry_direct",
+                    "locked_validation": "validation_archive_direct",
+                    "behavior_test": "behavior_catalog_direct",
+                    "probe_test": "probe_index_direct",
+                    "intervention_test": "intervention_register_direct",
+                }[namespace],
+                block="factorial",
             )
         for namespace in config.split_counts
     )
@@ -1411,6 +1864,11 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
         fa_cli,
         "build_manifest",
         lambda *args, **kwargs: SimpleNamespace(manifest_sha256="f" * 64),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_select_confirmatory_matches",
+        lambda _config, selected, _audit: tuple(selected),
     )
 
     def must_not_seal(*args, **kwargs):
@@ -1709,4 +2167,35 @@ def test_prompt_capability_writer_enforces_profile_specific_human_audit(tmp_path
             (example,),
             confirmatory.chat_template_sha256,
             pin,
+        )
+
+
+def test_report_rejects_evidence_sidecar_from_another_run_before_loading(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    foreign_manifest = tmp_path / "foreign.manifest.json"
+    foreign_manifest.write_text(
+        json.dumps({"run_id": "another-run"}) + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        fa_cli,
+        "load_closed_f1_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("foreign evidence must be rejected before loading")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="does not belong to the registered smoke run"):
+        fa_cli._build_evidence_report(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                behavior_test_manifest=str(foreign_manifest),
+                probe_test_manifest=None,
+                selection_manifest=None,
+                output="report.md",
+            ),
         )

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trajectory-extractor"
 version = "0.1.0"
-description = "CPU-first feature-dynamics study for LLM concept mixing and jailbreaks."
+description = "Leakage-resistant Familiarity vs. Answerability study for language models."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [

@@ -73,6 +73,14 @@ DEFAULT_FEATURE_FAMILIES = REGISTERED_BASELINES + (
     NESTED_H5_CANDIDATE,
     NESTED_H6_CANDIDATE,
 )
+PRIMARY_INTERNAL_FAMILIES = frozenset(
+    {
+        "residual_static",
+        "static_plus_dynamics",
+        "final_layer_excluded",
+        *SAE_FAMILIES,
+    }
+)
 TASKS = ("familiarity", "answerability", "unsupported_answer")
 ANSWERABILITY_CLASSES = ("target_bound", "distractor_bound", "code_absent")
 TARGET_FAMILIARITY_CONDITIONS = ("screened_real", "matched_synthetic")
@@ -883,7 +891,6 @@ def fit_selection(
         raise ValueError("train/validation example leakage")
     _reject_group_overlap(train, validation, "entity_id", "entity leakage")
     _reject_group_overlap(train, validation, "template_id", "template leakage")
-    _reject_group_overlap(train, validation, "relation_id", "relation leakage")
     _require_registered_domains(train, "train_rows")
     _require_registered_domains(validation, "validation_rows")
     tasks = {row.task for row in (*train, *validation)}
@@ -948,14 +955,11 @@ def fit_selection(
                     continue
                 raw_train = _feature_matrix(train, family, anchor, layer)
                 raw_validation = _feature_matrix(validation, family, anchor, layer)
-                selector = _fit_selector(raw_train, family)
-                selected_train = raw_train[:, selector]
-                selected_validation = raw_validation[:, selector]
                 train_labels = np.asarray([row.label for row in train])
                 validation_labels = np.asarray([row.label for row in validation])
                 train_groups = tuple(row.entity_id for row in train)
                 selected_hyperparams = _select_hyperparams_by_grouped_cv(
-                    selected_train,
+                    raw_train,
                     train_labels,
                     train_groups,
                     classes,
@@ -965,7 +969,11 @@ def fit_selection(
                     seed,
                     rows=train,
                     task=task,
+                    family=family,
                 )
+                selector = _fit_selector(raw_train, family)
+                selected_train = raw_train[:, selector]
+                selected_validation = raw_validation[:, selector]
                 for pca_count in pca_values:
                     if pca_count is not None and pca_count > min(selected_train.shape):
                         for c_value in c_values:
@@ -1158,10 +1166,18 @@ def fit_selection(
         for claim_scope in ("pre_output", "output_proximal_control")
         if (family, claim_scope) in best_by_family
     )
-    selected = min(
-        (model for model in models if model.claim_scope == "pre_output"),
-        key=_candidate_rank,
-    ).feature_family
+    primary_models = tuple(
+        model
+        for model in models
+        if model.claim_scope == "pre_output"
+        and (
+            task == "unsupported_answer"
+            or model.feature_family in PRIMARY_INTERNAL_FAMILIES
+        )
+    )
+    if not primary_models:
+        raise ValueError("no eligible internal pre-output model for the registered task")
+    selected = min(primary_models, key=_candidate_rank).feature_family
     return SelectionManifest(
         schema_version=2,
         task=task,
@@ -1207,6 +1223,7 @@ def _select_hyperparams_by_grouped_cv(
     *,
     rows: Sequence[ProbeRow],
     task: str,
+    family: str = "surface",
 ) -> tuple[int | None, float, str]:
     if _TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS:
         return (None, float(c_values[0]), _estimator_name(prototypes[0]))
@@ -1238,8 +1255,10 @@ def _select_hyperparams_by_grouped_cv(
                             train_mask = ~held_out
                         if not np.any(train_mask) or set(labels[train_mask].tolist()) != set(classes):
                             break
-                        scaler = StandardScaler().fit(matrix[train_mask])
-                        fold_train = scaler.transform(matrix[train_mask])
+                        selector = _fit_selector(matrix[train_mask], family)
+                        fold_train_matrix = matrix[train_mask][:, selector]
+                        scaler = StandardScaler().fit(fold_train_matrix)
+                        fold_train = scaler.transform(fold_train_matrix)
                         pca: PCA | None = None
                         if pca_count is not None:
                             if pca_count > min(fold_train.shape):
@@ -1271,7 +1290,9 @@ def _select_hyperparams_by_grouped_cv(
                             )
                             if not np.any(validation_mask):
                                 break
-                            fold_validation = scaler.transform(matrix[validation_mask])
+                            fold_validation = scaler.transform(
+                                matrix[validation_mask][:, selector]
+                            )
                             if pca is not None:
                                 fold_validation = pca.transform(fold_validation)
                             probabilities = _class_probabilities(
@@ -1291,7 +1312,7 @@ def _select_hyperparams_by_grouped_cv(
                         rotation_losses.append(float(np.mean(condition_losses)))
                     if len(rotation_losses) == len(fold_specs):
                         fold_losses.append(float(np.mean(rotation_losses)))
-                if fold_losses:
+                if len(fold_losses) == fold_count:
                     ranked.append(
                         (
                             float(np.mean(fold_losses)),
@@ -1304,7 +1325,10 @@ def _select_hyperparams_by_grouped_cv(
                         )
                     )
     if not ranked:
-        return (None, float(c_values[0]), _estimator_name(prototypes[0]))
+        raise ValueError(
+            "train-only selection requires every deterministic grouped-CV fold "
+            "to be evaluable for at least one registered hyperparameter candidate"
+        )
     best = min(ranked)
     return best[5], best[6], best[4]
 
@@ -1357,13 +1381,19 @@ def _feature_matrix(
         elif family == "output_margin":
             vector = np.asarray(row.output_margin_features)
         elif family == NESTED_H5_BASELINE:
-            vector = np.asarray(row.surface_features)
+            vector = np.concatenate(
+                [
+                    np.asarray(row.surface_features),
+                    np.asarray(row.output_margin_features),
+                ]
+            )
         elif family == NESTED_H5_CANDIDATE:
             if layer is None:
                 raise ValueError("nested static feature family requires a layer")
             vector = np.concatenate(
                 [
                     np.asarray(row.surface_features),
+                    np.asarray(row.output_margin_features),
                     row.residual_features[anchor_index, layer],
                 ]
             )
@@ -1378,6 +1408,7 @@ def _feature_matrix(
             vector = np.concatenate(
                 [
                     np.asarray(row.surface_features),
+                    np.asarray(row.output_margin_features),
                     *_dynamics_components(row.residual_features[anchor_index], layer),
                 ]
             )
@@ -1424,12 +1455,12 @@ def _dynamics_components(layer_states: np.ndarray, layer: int) -> tuple[np.ndarr
     return static, delta, np.asarray([1.0 - max(-1.0, min(1.0, cosine))], dtype=np.float64)
 
 
-def _fit_selector(validation_matrix: np.ndarray, family: str) -> tuple[int, ...]:
+def _fit_selector(train_matrix: np.ndarray, family: str) -> tuple[int, ...]:
     if family not in SAE_FAMILIES:
-        return tuple(range(validation_matrix.shape[1]))
-    variances = np.var(validation_matrix, axis=0)
+        return tuple(range(train_matrix.shape[1]))
+    variances = np.var(train_matrix, axis=0)
     order = np.lexsort((np.arange(len(variances)), -variances))
-    count = 1 if family == "sae_1_sparse" else min(5, validation_matrix.shape[1])
+    count = 1 if family == "sae_1_sparse" else min(5, train_matrix.shape[1])
     return tuple(sorted(int(value) for value in order[:count]))
 
 
@@ -3102,7 +3133,6 @@ def _calculate_probe_result(
         for name, field_name in (
             ("entity", "entity_id"),
             ("template", "template_id"),
-            ("relation", "relation_id"),
             ("domain", "domain"),
         )
     }
@@ -3164,6 +3194,7 @@ def _calculate_probe_result(
             h5,
             h6,
             cross_condition_transfer,
+            selected_model,
         ),
     )
     return replace(
@@ -3236,6 +3267,32 @@ def _recover_evaluated_probe_bundle(
     return bundle
 
 
+def _published_probe_bundle_metrics(
+    store: FAArtifactStore,
+    endpoint_artifact: Any,
+    authorization: ProbeTestAuthorization,
+) -> tuple[str, Any | None]:
+    base = store.root / "runs" / "familiarity_answerability"
+    relative_parts = endpoint_artifact.data_path.relative_to(base).parts
+    if (
+        len(relative_parts) != 4
+        or relative_parts[1:3] != ("shards", "probe_test")
+    ):
+        raise ValueError("probe endpoint artifact has no durable run identity")
+    run_id = relative_parts[0]
+    shard_id = f"probe-bundle-metrics-{authorization.lease_id}"
+    data_path = base / run_id / "shards" / "probe_test" / f"{shard_id}.jsonl"
+    manifest_path = data_path.with_name(f"{data_path.name}.manifest.json")
+    if manifest_path.exists():
+        metrics = store.verify_shard(manifest_path)
+        if metrics.shard_id != shard_id:
+            raise ValueError("published probe metrics shard has the wrong identity")
+        return run_id, metrics
+    if data_path.exists():
+        raise ValueError("published probe metrics shard is incomplete")
+    return run_id, None
+
+
 def evaluate_probe_bundle_once(
     selections: Mapping[str, SelectionManifest],
     authorization: ProbeTestAuthorization,
@@ -3276,6 +3333,20 @@ def evaluate_probe_bundle_once(
         or durable_receipt.selection_manifest_hash != authorization.selection_hash
     ):
         raise ValueError("authorization does not match the durable endpoint lease")
+    run_id, published_metrics = _published_probe_bundle_metrics(
+        store, endpoint_artifact, authorization
+    )
+    if published_metrics is not None:
+        recovered = _recover_evaluated_probe_bundle(
+            published_metrics,
+            selections=selections,
+            authorization=authorization,
+            endpoint_artifact=endpoint_artifact,
+            sealed_identities=sealed_identities,
+        )
+        store.mark_evaluated(durable_receipt, published_metrics.data_path)
+        store.close_endpoint("probe_test")
+        return recovered
     if set(rows_by_task) != set(TASKS):
         raise ValueError("probe bundle rows must contain every registered task")
     for task in TASKS:
@@ -3316,12 +3387,8 @@ def evaluate_probe_bundle_once(
         results=results,
         gates=gates,
     )
-    base = store.root / "runs" / "familiarity_answerability"
-    relative_parts = endpoint_artifact.data_path.relative_to(base).parts
-    if not relative_parts:
-        raise ValueError("probe endpoint artifact has no durable run identity")
     metrics = store.write_completed_shard(
-        relative_parts[0],
+        run_id,
         "probe_test",
         f"probe-bundle-metrics-{authorization.lease_id}",
         ({"kind": "metrics", "metric_type": "f2a_bundle", "result": bundle.to_record()},),
@@ -3475,7 +3542,6 @@ def evaluate_probe_test_once(
         for name, field_name in (
             ("entity", "entity_id"),
             ("template", "template_id"),
-            ("relation", "relation_id"),
             ("domain", "domain"),
         )
     }
@@ -3551,11 +3617,6 @@ def _reject_test_group_leakage(selection: SelectionManifest, rows: Sequence[Prob
             "template_id",
             selection.train_template_ids + selection.validation_template_ids,
             "template leakage",
-        ),
-        (
-            "relation_id",
-            selection.train_relation_ids + selection.validation_relation_ids,
-            "relation leakage",
         ),
     ):
         if {getattr(row, field_name) for row in rows} & set(selected_values):
@@ -3818,7 +3879,9 @@ def _primary_gate(
     h5_improvement: float | None,
     h6_improvement: float | None,
     cross_condition_transfer: CrossConditionTransferSummary | None = None,
+    selected_model: FrozenProbeModel | None = None,
 ) -> HypothesisGate:
+    validity, validity_reasons = _valid_outcome_gate(metrics)
     if task in {"familiarity", "answerability"}:
         hypothesis = "H3" if task == "familiarity" else "H4"
         criteria = (
@@ -3852,8 +3915,26 @@ def _primary_gate(
                 CONFIRMATORY_THRESHOLDS["probe_balanced_accuracy_min"],
                 ">=",
             ),
+            GateCriterion(
+                "registered internal activation feature",
+                _internal_feature_value(task, selected_model),
+                1.0,
+                ">=",
+            ),
+            GateCriterion(
+                "registered task anchor",
+                _registered_anchor_value(task, selected_model),
+                1.0,
+                ">=",
+            ),
+            GateCriterion(
+                "valid outcome fraction",
+                validity,
+                CONFIRMATORY_THRESHOLDS["format_validity_min"],
+                ">=",
+            ),
         )
-        return HypothesisGate(hypothesis, criteria)
+        return HypothesisGate(hypothesis, criteria, validity_reasons)
     return HypothesisGate(
         "H5",
         (
@@ -3863,11 +3944,68 @@ def _primary_gate(
                 CONFIRMATORY_THRESHOLDS["h5_relative_log_loss_min"],
                 ">=",
             ),
+            GateCriterion(
+                "valid outcome fraction",
+                validity,
+                CONFIRMATORY_THRESHOLDS["format_validity_min"],
+                ">=",
+            ),
         ),
-        ("H6 is secondary and cannot invalidate H5",)
+        (*validity_reasons, "H6 is secondary and cannot invalidate H5")
         if h6_improvement is not None
-        else ("H6 is not evaluable without both frozen dynamics and static models",),
+        else (
+            *validity_reasons,
+            "H6 is not evaluable without both frozen dynamics and static models",
+        ),
     )
+
+
+def _internal_feature_value(
+    task: str, selected: FrozenProbeModel | ProbeResult | None
+) -> float:
+    if task not in {"familiarity", "answerability"} or selected is None:
+        return 0.0
+    if isinstance(selected, FrozenProbeModel):
+        family = selected.feature_family
+        layer = selected.layer
+        claim_scope = selected.claim_scope
+    else:
+        family = selected.selected_feature_family
+        layer = selected.selected_layer
+        claim_scope = selected.claim_scope
+    return float(
+        family in PRIMARY_INTERNAL_FAMILIES
+        and claim_scope == "pre_output"
+        and layer in REGISTERED_LAYERS[:-1]
+    )
+
+
+def _registered_anchor_value(
+    task: str, selected: FrozenProbeModel | ProbeResult | None
+) -> float:
+    if selected is None or task not in {"familiarity", "answerability"}:
+        return 0.0
+    anchor = (
+        selected.anchor
+        if isinstance(selected, FrozenProbeModel)
+        else selected.selected_anchor
+    )
+    expected = "target_intro_end" if task == "familiarity" else "user_prompt_end"
+    return float(anchor == expected)
+
+
+def _valid_outcome_gate(metrics: BinaryMetrics) -> tuple[float | None, tuple[str, ...]]:
+    if metrics.total <= 0:
+        return None, ("valid outcome fraction is unavailable because total=0",)
+    fraction = metrics.denominator / metrics.total
+    minimum = CONFIRMATORY_THRESHOLDS["format_validity_min"]
+    if fraction < minimum:
+        return None, (
+            f"valid outcome fraction={fraction:.6g} is below registered minimum "
+            f"{minimum:.6g} (missing={metrics.missing}, invalid={metrics.invalid}, "
+            f"total={metrics.total})",
+        )
+    return fraction, ()
 
 
 def holm_correct_h3_h4(p_values: Mapping[str, float]) -> Mapping[str, float]:
@@ -4046,12 +4184,23 @@ def evaluate_f2a_gates(
         adjusted_for_gate["H4"],
         context_reasons=p_reasons["H4"],
     )
+    h5_observed = _relative_improvement(
+        _metric_log_loss(
+            unsupported_answer.model_metrics.get(NESTED_H5_CANDIDATE)
+        ),
+        _metric_log_loss(
+            unsupported_answer.model_metrics.get(NESTED_H5_BASELINE)
+        ),
+    )
+    h5_validity, h5_validity_reasons = _valid_outcome_gate(
+        unsupported_answer.metrics
+    )
     h5 = HypothesisGate(
         "H5",
         (
             GateCriterion(
                 "nested held-out log-loss improvement",
-                unsupported_answer.relative_h5_log_loss_improvement,
+                h5_observed,
                 CONFIRMATORY_THRESHOLDS["h5_relative_log_loss_min"],
                 ">=",
             ),
@@ -4061,7 +4210,14 @@ def evaluate_f2a_gates(
                 0.0,
                 ">",
             ),
+            GateCriterion(
+                "valid outcome fraction",
+                h5_validity,
+                CONFIRMATORY_THRESHOLDS["format_validity_min"],
+                ">=",
+            ),
         ),
+        h5_validity_reasons,
     )
     layer_order_nulls = _nulls_for(
         unsupported_answer.null_results, "unsupported_answer", "layer_order"
@@ -4069,7 +4225,14 @@ def evaluate_f2a_gates(
     random_map_nulls = _nulls_for(
         unsupported_answer.null_results, "unsupported_answer", "random_map"
     )
-    h6_observed = unsupported_answer.relative_h6_log_loss_improvement
+    h6_observed = _relative_improvement(
+        _metric_log_loss(
+            unsupported_answer.model_metrics.get(NESTED_H6_CANDIDATE)
+        ),
+        _metric_log_loss(
+            unsupported_answer.model_metrics.get(NESTED_H5_CANDIDATE)
+        ),
+    )
     layer_margin = _null_improvement_margin(h6_observed, layer_order_nulls)
     random_margin = _null_improvement_margin(h6_observed, random_map_nulls)
     h6_reasons = []
@@ -4105,8 +4268,14 @@ def evaluate_f2a_gates(
                 0.0,
                 ">",
             ),
+            GateCriterion(
+                "valid outcome fraction",
+                h5_validity,
+                CONFIRMATORY_THRESHOLDS["format_validity_min"],
+                ">=",
+            ),
         ),
-        tuple(h6_reasons),
+        tuple((*h5_validity_reasons, *h6_reasons)),
     )
     return F2AGates(
         familiarity_result_sha256=familiarity.sha256,
@@ -4221,6 +4390,7 @@ def _decoding_gate(
     context_reasons: Sequence[str],
 ) -> HypothesisGate:
     transfer = result.cross_condition_transfer
+    validity, validity_reasons = _valid_outcome_gate(result.metrics)
     criteria = [
         GateCriterion(
             "reciprocal-transfer mean AUROC",
@@ -4240,6 +4410,24 @@ def _decoding_gate(
             CONFIRMATORY_THRESHOLDS["probe_balanced_accuracy_min"],
             ">=",
         ),
+        GateCriterion(
+            "registered internal activation feature",
+            _internal_feature_value(result.task, result),
+            1.0,
+            ">=",
+        ),
+        GateCriterion(
+            "registered task anchor",
+            _registered_anchor_value(result.task, result),
+            1.0,
+            ">=",
+        ),
+        GateCriterion(
+            "valid outcome fraction",
+            validity,
+            CONFIRMATORY_THRESHOLDS["format_validity_min"],
+            ">=",
+        ),
     ]
     criteria.append(
         GateCriterion(
@@ -4250,7 +4438,11 @@ def _decoding_gate(
         )
     )
     criteria.append(GateCriterion("Holm-adjusted p-value", adjusted_p, 0.05, "<="))
-    return HypothesisGate(hypothesis, tuple(criteria), tuple(context_reasons))
+    return HypothesisGate(
+        hypothesis,
+        tuple(criteria),
+        tuple((*context_reasons, *validity_reasons)),
+    )
 
 
 @dataclass(frozen=True)

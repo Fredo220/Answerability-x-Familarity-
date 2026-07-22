@@ -14,7 +14,7 @@ The confirmatory entity-unit counts are `mechanism_train=64`, `locked_validation
 - **H2:** For target-bound prompts, matched-synthetic target exact-answer accuracy is non-inferior to screened-real accuracy within a 5 percentage-point margin. Its lower paired-bootstrap bound must exceed -0.05.
 - **H2b:** The sealed same-string high-versus-low exposure block has the H1 sign, an interaction of at least 0.05, and a predicted-direction 95% interval excluding zero. It is confirmatory only when its prefix construction is sealed before outcomes are opened.
 - **H3:** A familiarity probe at `target_intro_end` generalizes across answerability conditions, held-out identities, and held-out templates.
-- **H4:** An answerability probe at `user_prompt_end` generalizes across target familiarity, distractor familiarity, and held-out relation families.
+- **H4:** An answerability probe at `user_prompt_end` generalizes across target familiarity, distractor familiarity, held-out entity units, and held-out template families. The fixed design contains one target relation (`archive_code`), so relation-family transfer is not claimed.
 - **H5:** Within evidence-absent prompts, frozen internal features improve held-out log loss over the nested surface-plus-output-margin baseline.
 - **H6:** Cross-layer dynamics improve held-out log loss over the nested static-activation model. This is secondary and cannot invalidate H1-H5.
 - **H7:** Same-string full activation replacement (`alpha=1`) changes answer attempts in the predicted direction for high-to-low and low-to-high pairs. Contrastive direction steering is secondary.
@@ -48,3 +48,5 @@ No confirmatory generation starts before source/model/tokenizer/chat-template pi
 ## Claim Boundaries
 
 Passing H1 supports a narrow behavioral interaction, not human-like belief or universal familiarity effects. H3-H5 support condition-invariant decodability and incremental pre-output prediction only when their gates pass. H7-H8 support local causal control only in this task. Optional F3 attribution is a fidelity-audited prompt-local circuit hypothesis and cannot rescue a failed F1 or F2A gate. Null results, invalid outputs, missingness, failed fidelity checks, and skipped gated phases remain visible in all reports.
+
+The confirmatory behavioral endpoint requires 100% completed, non-truncated generation in every registered factorial cell. Completed malformed non-`UNKNOWN` outputs remain answer attempts under the frozen intention-to-treat rule; missing, infrastructure-marked, and truncated generations do not count as attempts and make the endpoint `not_evaluable` until resumed.

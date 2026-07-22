@@ -8,6 +8,26 @@
 
 **Tech Stack:** Python 3.12, PyTorch, Hugging Face Transformers, NumPy, pandas, scikit-learn, Matplotlib, optional SAELens/Gemma Scope, optional `decoderesearch/circuit-tracer`, pytest.
 
+## Execution Status (2026-07-22)
+
+| Scope | Status | Evidence boundary |
+|---|---|---|
+| Tasks 1-8: config, artifacts, data, runtime, scoring, activations, and F2A | Complete | Covered by focused unit and protected-endpoint integration tests. |
+| Task 9: F2B | Core patching, controls, selection, and gate primitives complete; production model adapter and protected CLI transaction deferred | F2B must remain `skipped` until the adapter and end-to-end test exist. |
+| Task 10: F3 circuits | Deferred | No compatible PLT has passed fidelity; no circuit CLI is implemented. |
+| Task 11: report and release evidence | Complete for closed F1/F2A endpoints | Reports reload canonical closed artifacts and recompute gates. |
+| Task 12: runbook, notebooks, locks, and full verification | Complete for the F1/F2A Fellowship core | The full FA/Notebook matrix passes 600 tests; documentation keeps deferred F2B/F3 adapters non-runnable. |
+
+This table records implementation state, not a scientific result. Confirmatory
+Gemma execution, the external human audit, and protected test evaluation have
+not yet been run.
+
+The minimum implementation deliverable is therefore complete. The remaining
+work is study execution: curate the registered source candidates, obtain two
+independent naturalness ratings, run the pinned Gemma pipeline, and consume the
+protected endpoints exactly once. F2B and F3 remain optional follow-ups and are
+not required to interpret or publish the F1/F2A result.
+
 ## Global Constraints
 
 - Preserve the baseline of `362 passed, 3 skipped`.
@@ -582,7 +602,7 @@ Implement `surface`, `output_margin`, `residual_static`, `sae_1_sparse`, `sae_sm
 
 - [ ] **Step 4: Implement H3-H6 metrics**
 
-Report AUROC, balanced accuracy, log loss, calibration, per-condition worst case, held-out entity/template/relation transfer, H3/H4 Holm correction, H5 nested log-loss improvement of at least 2%, and H6 improvement of at least 1%.
+Report AUROC, balanced accuracy, log loss, calibration, per-condition worst case, held-out entity and template transfer, descriptive by-domain results, H3/H4 Holm correction, H5 nested log-loss improvement of at least 2%, and H6 improvement of at least 1%. The task has one fixed `archive_code` relation, so relation-family OOD is outside the claim.
 
 - [ ] **Step 5: Implement full-selection nulls**
 

@@ -83,7 +83,7 @@ This project is intended to fill that narrow gap on an open, reproducible model 
 
 **Code-absent prompt** means no candidate registry code appears in the context. The distractor receives a non-code attribute of matched length. Together, distractor-bound and code-absent prompts form the evidence-absent family.
 
-**Answer attempt** is an intention-to-treat binary endpoint: exact normalized `UNKNOWN` is 0, and every other completed response is 1. This prevents invalid formats from being silently removed from the denominator.
+**Answer attempt** is an intention-to-treat binary endpoint: exact normalized `UNKNOWN` is 0, and every other completed response is 1. This prevents completed invalid formats from being silently removed from the denominator. Missing, infrastructure-marked, or truncated generations are not answer attempts and make the confirmatory behavioral endpoint fail closed until generation is resumed to 100% completion.
 
 **Unsupported answer** means an answer attempt in either evidence-absent state. `distractor_code_copy`, `novel_code_assertion`, `other_non_abstention`, and `invalid_format` remain separate outcome classes.
 
@@ -96,7 +96,7 @@ This project is intended to fill that narrow gap on an open, reproducible model 
 Depending on the gates passed, the project may support increasingly strong claims:
 
 1. **Behavioral interaction:** the screened-real contrast or same-string exposure contrast changes answer propensity differently when target evidence is absent versus present.
-2. **Condition-invariant decodability:** familiarity and answerability transfer across the other factor, held-out entities, relation families, and templates.
+2. **Condition-invariant decodability:** familiarity and answerability transfer across the other factor, held-out entities, and held-out templates. The fixed task has one target relation, so relation-family transfer is outside scope.
 3. **Incremental pre-output prediction:** internal signals improve unsupported-answer prediction beyond lexical features and output logits.
 4. **Local causal control:** a frozen intervention changes answer-versus-abstain behavior in the predicted direction under this task.
 5. **Prompt-local circuit hypothesis:** a fidelity-audited attribution graph suggests how this behavior is implemented for selected prompts.
@@ -138,7 +138,7 @@ Does the model represent familiarity separately from answerability before genera
 
 **H3:** A familiarity probe at the first target mention, before registry evidence, generalizes to held-out identities and prompt templates and transfers across answerability states.
 
-**H4:** An answerability probe at the final user-content token generalizes across screened-real and matched-synthetic targets, across distractor familiarity, and across held-out relation families; its worst-condition performance remains above chance.
+**H4:** An answerability probe at the final user-content token generalizes across screened-real and matched-synthetic targets, across distractor familiarity, and across held-out entity and template families; its worst-condition performance remains above chance.
 
 ### RQ3: Predictive value for unsupported answers
 
@@ -304,7 +304,7 @@ The primary response format permits exactly the correct code or `UNKNOWN`. Raw t
 - `other_non_abstention`;
 - `invalid_format`.
 
-Invalid outputs are reported separately and are never silently converted into correct abstentions. In the primary intention-to-treat answer-attempt endpoint, every completed non-`UNKNOWN` output, including invalid format, counts as an answer attempt. Secondary exact-format analyses keep invalid outputs as their own class.
+Invalid outputs are reported separately and are never silently converted into correct abstentions. In the primary intention-to-treat answer-attempt endpoint, every completed non-`UNKNOWN` output, including invalid format, counts as an answer attempt. Missing, infrastructure-marked, or truncated generations make the confirmatory endpoint `not_evaluable` until the run is resumed to full completion. Secondary exact-format analyses keep invalid outputs as their own class.
 
 ### 7.7 Same-string contextual familiarization replication
 
@@ -489,7 +489,7 @@ The following are mandatory:
 - entity-string-only and prompt-metadata-only baselines;
 - final-layer exclusion for any claim described as pre-output;
 - removal of the output logit margin to test dependence on imminent output preparation;
-- held-out entity identities, independently authored prompt families, independently generated synthetic-name families, and held-out relation families;
+- held-out entity identities, independently authored prompt families, and independently generated synthetic-name families;
 - per-domain reporting rather than only pooled performance;
 - code-position and context-order counterbalancing;
 - a low-familiarity real-entity transfer block to test whether results depend on synthetic-name artificiality;
@@ -637,7 +637,7 @@ Use 10,000 deterministic crossed entity/template bootstrap replicates. The boots
 ### 12.4 Missingness and invalid output
 
 - Model or infrastructure failures trigger shard retry, not row deletion.
-- Invalid format is a measured outcome and counts as an answer attempt in the primary intention-to-treat endpoint.
+- Completed invalid format is a measured outcome and counts as an answer attempt in the primary intention-to-treat endpoint; missing, infrastructure-marked, or truncated generations do not and fail the completion gate.
 - A cell with less than 95% completed generations makes the behavioral endpoint `not_evaluable`.
 - Missing activation artifacts make the corresponding mechanistic endpoint `not_evaluable`; behavioral results remain reportable.
 - No imputation is used for model responses or activations.
@@ -694,7 +694,7 @@ Every completed shard is written to a temporary path, flushed, hashed, and atomi
 
 Endpoint states are `sealed -> unlocked_once -> evaluated -> closed`. Unlock commands require the preregistration hash and the endpoint-specific selection manifest. `probe_test` cannot be unlocked by a behavioral manifest, and `intervention_test` requires a sealed intervention manifest. Endpoint readers reject paths from other test namespaces.
 
-For Colab-to-Drive synchronization, only atomically completed shards and their checksum sidecars are copied. The destination checksum is verified before a local `synced` marker is written. Resume scans verified manifests rather than filenames. The release builder copies only declared publishable files and generates a top-level checksum manifest.
+For Colab-to-Drive synchronization, only atomically completed shards and their checksum sidecars are copied. The destination checksum is verified before a local `synced` marker is written. Resume scans verified manifests rather than filenames. The release builder copies only declared publishable files, requires the complete frozen F2A selection shard, and generates a top-level checksum manifest. The top-level hash must also be published through an external trust anchor such as a signed immutable Git tag or DOI-backed paper artifact record; an unsigned bundle cannot authenticate itself if every file and internal checksum is rewritten together.
 
 ## 14. Software Architecture and Planned Interfaces
 
@@ -919,7 +919,7 @@ Deliverables:
 | Real-versus-synthetic is a compound contrast | Lexical semantics or name-type priors may masquerade as familiarity | Independent target/distractor crossing, descriptive claim language, same-string contextual-familiarization replication |
 | Synthetic task is too easy | Explicit context may eliminate the proposed interaction | Development-only floor/ceiling pilot; no tuning after confirmatory start |
 | Synthetic task is too artificial | Effect may not transfer to real QA | Narrow claim plus exploratory low-familiarity and natural-question transfer blocks |
-| Probe learns lexical cues | High accuracy would not imply an internal mechanism | Cross-condition transfer, entity/template/relation holdouts, metadata baseline, full-pipeline permutations |
+| Probe learns lexical cues | High accuracy would not imply an internal mechanism | Cross-condition transfer, entity and template holdouts, metadata baseline, full-pipeline permutations |
 | SAE feature fails to generalize | Existing literature shows inconsistent OOD and base-to-IT transfer | Residual probes as baseline; IT loss-recovery gate; sparse streaming; SAE failure reported rather than hidden |
 | Small model lacks the mechanism | Null may be scale-specific | Explicit model-organism claim; optional larger-model behavioral replication |
 | Intervention causes blanket refusal | Apparent safety gain may be capability loss | Same-string bidirectional patching, target-bound non-inferiority, independent readouts, unrelated-task controls |

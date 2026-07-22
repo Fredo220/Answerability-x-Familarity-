@@ -22,6 +22,7 @@ from trajectory_extractor.fa_features import (
     VerifiedDomainRelation,
     build_probe_row,
     build_probe_rows,
+    materialize_probe_rows,
     output_feature_vector,
     surface_feature_vector,
 )
@@ -723,3 +724,137 @@ def test_batch_binding_is_a_deterministic_exact_id_multiset_without_invented_gro
             task="familiarity",
             expected_example_ids=expected_ids,
         )
+
+
+def test_materialization_builds_all_tasks_from_bound_evidence_and_roundtrips_output():
+    tokenizer = FakeTokenizer()
+    example = _example(tokenizer)
+    activation = _activation(example, tokenizer)
+    output = _evidence(example, tokenizer, activation)
+
+    class FixedScorer:
+        def score(self, candidate):
+            assert candidate == example
+            return output
+
+    metadata_manifest = {
+        "manifest_revision": "2026-07-22",
+        "rows": [_metadata_row(example)],
+    }
+    rows, evidence = materialize_probe_rows(
+        (example,),
+        (activation,),
+        FixedScorer(),
+        metadata_manifest,
+        unsupported_outcomes={
+            example.example_id: UnsupportedAnswerOutcome(
+                example.example_id,
+                1,
+                "valid",
+            )
+        },
+    )
+
+    assert {row.task for row in rows} == {
+        "familiarity",
+        "answerability",
+        "unsupported_answer",
+    }
+    assert all(row.source_sha256 == example.canonical_payload_sha256 for row in rows)
+    assert evidence == (output,)
+    assert OutputEvidence.from_record(dict(output.canonical_payload)) == output
+
+    with pytest.raises(ValueError, match="unsupported outcomes"):
+        materialize_probe_rows(
+            (example,),
+            (activation,),
+            FixedScorer(),
+            metadata_manifest,
+            unsupported_outcomes={},
+        )
+
+
+def test_same_string_context_exposure_cannot_be_built_as_a_primary_f2a_probe_row():
+    tokenizer = FakeTokenizer()
+    example = _example(
+        tokenizer,
+        block="same_string",
+        exposure="high_exposure",
+        target_familiarity="matched_synthetic",
+        distractor_familiarity="screened_real",
+        entity_order="target_second",
+        query_role="second",
+        relation_order="code_absent",
+        code_position="absent",
+    )
+    activation = _activation(example, tokenizer)
+    output = _evidence(example, tokenizer, activation)
+    feature = FeatureEvidence.from_records(example, activation, output, CONFIG_SHA256)
+
+    with pytest.raises(ValueError, match="context-exposure controls"):
+        build_probe_row(
+            example,
+            activation,
+            feature,
+            _metadata(example, condition="same_string"),
+            task="familiarity",
+        )
+
+
+def test_materialization_retains_same_string_evidence_but_excludes_primary_f2a_tasks():
+    tokenizer = FakeTokenizer()
+    factorial = _example(tokenizer)
+    contextual = _example(
+        tokenizer,
+        entity_unit_id="context-unit-2",
+        target_entity_id="context-target-2",
+        distractor_entity_id="context-distractor-2",
+        registry_code="K8N3R",
+        block="same_string",
+        exposure="low_exposure",
+        target_familiarity="matched_synthetic",
+        distractor_familiarity="screened_real",
+        entity_order="target_second",
+        query_role="second",
+        relation_order="code_absent",
+        code_position="absent",
+    )
+    examples = (factorial, contextual)
+    activations = tuple(_activation(example, tokenizer) for example in examples)
+    outputs = {
+        example.example_id: _evidence(example, tokenizer, activation)
+        for example, activation in zip(examples, activations, strict=True)
+    }
+
+    class FixedScorer:
+        def score(self, candidate):
+            return outputs[candidate.example_id]
+
+    metadata_manifest = {
+        "manifest_revision": "2026-07-22",
+        "rows": [
+            _metadata_row(factorial),
+            _metadata_row(contextual, condition="same_string"),
+        ],
+    }
+    rows, evidence = materialize_probe_rows(
+        examples,
+        activations,
+        FixedScorer(),
+        metadata_manifest,
+        unsupported_outcomes={
+            example.example_id: UnsupportedAnswerOutcome(example.example_id, 0, "valid")
+            for example in examples
+        },
+    )
+
+    assert {row.example_id for row in rows} == {factorial.example_id}
+    assert {row.task for row in rows} == {
+        "familiarity",
+        "answerability",
+        "unsupported_answer",
+    }
+    assert {item.example_id for item in evidence} == {
+        factorial.example_id,
+        contextual.example_id,
+    }

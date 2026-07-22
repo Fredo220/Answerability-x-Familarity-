@@ -158,21 +158,37 @@ def test_real_fa_example_requires_explicit_registered_vocabulary_for_another_reg
 
 
 @pytest.mark.parametrize(
-    ("text", "kwargs"),
+    "text",
     [
-        ("", {}),
-        ("K7M2Q\nwith explanation", {}),
-        ("K7M\t2Q", {}),
-        ("K7M2Q", {"truncated": True}),
-        ("generation backend unavailable", {"infrastructure_marked": True}),
+        "",
+        "K7M2Q\nwith explanation",
+        "K7M\t2Q",
     ],
 )
-def test_invalid_format_is_an_attempt_and_is_never_silently_removed(text, kwargs):
-    scored = score(absent_example(), text, **kwargs)
+def test_completed_invalid_format_is_an_attempt_and_is_never_silently_removed(text):
+    scored = score(absent_example(), text)
 
     assert scored.outcome is OutcomeClass.INVALID_FORMAT
     assert scored.answer_attempt == 1
     assert scored.valid_format is False
+    assert scored.completed is True
+
+
+@pytest.mark.parametrize(
+    ("text", "kwargs"),
+    [
+        ("K7M2Q", {"truncated": True}),
+        ("generation backend unavailable", {"infrastructure_marked": True}),
+        (None, {"infrastructure_marked": True}),
+    ],
+)
+def test_incomplete_generation_is_not_an_answer_attempt(text, kwargs):
+    scored = score(absent_example(), text, **kwargs)
+
+    assert scored.outcome is OutcomeClass.INVALID_FORMAT
+    assert scored.answer_attempt == 0
+    assert scored.valid_format is False
+    assert scored.completed is False
 
 
 def test_missing_infrastructure_response_is_incomplete_but_received_invalid_output_is_complete():
@@ -182,6 +198,8 @@ def test_missing_infrastructure_response_is_incomplete_but_received_invalid_outp
     assert missing.completed is False
     assert empty.completed is True
     assert missing.outcome is empty.outcome is OutcomeClass.INVALID_FORMAT
+    assert missing.answer_attempt == 0
+    assert empty.answer_attempt == 1
 
 
 def complete_factorial_rows(*, invalid_synthetic_target_bound: bool = False):
@@ -313,7 +331,7 @@ def test_bootstrap_interval_keeps_the_observed_statistic_separate_from_resample_
     assert distribution.interaction_interval.estimate == pytest.approx(metrics.interaction)
 
 
-def test_completion_below_95_percent_makes_endpoint_not_evaluable_without_dropping_invalid_rows():
+def test_any_incomplete_generation_makes_endpoint_not_evaluable_without_dropping_rows():
     rows = list(complete_factorial_rows())
     source = next(
         row
@@ -335,7 +353,7 @@ def test_completion_below_95_percent_makes_endpoint_not_evaluable_without_droppi
     metrics = estimate_behavior(rows)
 
     assert metrics.status == "not_evaluable"
-    assert any(reason.startswith("completion<0.95") for reason in metrics.reasons)
+    assert any(reason.startswith("completion<1.0") for reason in metrics.reasons)
     cell = ("matched_synthetic", source.distractor_familiarity, "code_absent")
     assert metrics.denominators[cell] == 4
     assert metrics.invalid_format_counts[cell] == 1

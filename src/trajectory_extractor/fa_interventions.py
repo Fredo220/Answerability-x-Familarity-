@@ -20,7 +20,13 @@ from .fa_config import (
     CONFIRMATORY_MODEL_REVISION,
     CONFIRMATORY_THRESHOLDS,
 )
-from .fa_probes import F2AGates, GateCriterion, HypothesisGate
+from .fa_probes import (
+    TASKS,
+    ProbeBundleResult,
+    SelectionManifest,
+    evaluate_f2a_gates,
+    f2a_selection_bundle_hash,
+)
 from .fa_scoring import (
     BehavioralMetrics,
     BootstrapDistribution,
@@ -1062,14 +1068,21 @@ def verify_gate_result_artifact(
         )
         probe_selection = None
     else:
+        config = input_lineage.get("config_sha256")
+        _sha256(config, "closed probe endpoint config_sha256")
+        selections = _load_f2a_selections(
+            store,
+            run_id=closed.run_id,
+            selection_bundle_hash=closed.selection_manifest_hash,
+            config_sha256=config,
+        )
         status, result_sha256, probe_selection = _verify_f2a_gate_row(
             row,
             metrics_lineage=metrics_lineage,
             endpoint_input_sha256=closed.input_artifact.sha256,
             selection_manifest_sha256=closed.selection_manifest_hash,
+            selections=selections,
         )
-        config = input_lineage.get("config_sha256")
-        _sha256(config, "closed probe endpoint config_sha256")
     return GateArtifactEvidence._from_verified_artifact(
         _verification_token=_GATE_EVIDENCE_TOKEN,
         phase=phase,
@@ -1290,53 +1303,73 @@ def _verify_f1_gate_row(
     return recomputed.status, recomputed.config_hash, row["evidence_sha256"]
 
 
-def _hypothesis_gate_record(value: Any, hypothesis: str) -> HypothesisGate:
-    if not isinstance(value, Mapping) or set(value) != {
-        "hypothesis",
-        "criteria",
-        "status",
-        "reasons",
-    }:
-        raise ValueError("F2A hypothesis gate has an invalid schema")
-    criteria = []
-    for record in value["criteria"]:
-        if not isinstance(record, Mapping) or set(record) != {
-            "name",
-            "observed",
-            "threshold",
-            "comparison",
-            "satisfied",
-        }:
-            raise ValueError("F2A gate criterion has an invalid schema")
-        criterion = GateCriterion(
-            record["name"], record["observed"], record["threshold"], record["comparison"]
-        )
-        if criterion.to_record() != dict(record):
-            raise ValueError("F2A gate criterion is not canonical")
-        criteria.append(criterion)
-    derived_reasons = []
-    for criterion in criteria:
-        if criterion.satisfied is None:
-            derived_reasons.append(f"{criterion.name} is not evaluable")
-        elif not criterion.satisfied:
-            derived_reasons.append(
-                f"{criterion.name}={criterion.observed:.6g} fails "
-                f"{criterion.comparison}{criterion.threshold:.6g}"
-            )
-    stored_reasons = tuple(value["reasons"])
-    if derived_reasons:
-        suffix = tuple(derived_reasons)
-        if stored_reasons[-len(suffix) :] != suffix:
-            raise ValueError("F2A gate reasons do not match its criteria")
-        context_reasons = stored_reasons[: -len(suffix)]
-    elif stored_reasons == ("all registered criteria are satisfied",):
-        context_reasons = ()
-    else:
-        context_reasons = stored_reasons
-    gate = HypothesisGate(hypothesis, tuple(criteria), context_reasons)
-    if gate.to_record() != dict(value):
-        raise ValueError("F2A gate does not match its recomputed criteria")
-    return gate
+def _load_f2a_selections(
+    store: FAArtifactStore,
+    *,
+    run_id: str,
+    selection_bundle_hash: str,
+    config_sha256: str,
+) -> Mapping[str, SelectionManifest]:
+    """Load the canonical selection bundle bound to the closed probe endpoint."""
+
+    selection_root = (
+        store.root
+        / "runs"
+        / "familiarity_answerability"
+        / run_id
+        / "shards"
+        / "locked_validation"
+    )
+    matches: list[tuple[str, Mapping[str, SelectionManifest]]] = []
+    for manifest_path in sorted(selection_root.glob("*.manifest.json")):
+        shard = store.verify_shard(manifest_path)
+        if shard.namespace != "locked_validation" or shard.record_kind != "selection_manifest":
+            continue
+        rows = _read_canonical_rows(shard)
+        if len(rows) != 1:
+            raise ValueError("F2A selection artifact must contain exactly one record")
+        record = rows[0]
+        if record.get("selection_bundle_hash") != selection_bundle_hash:
+            continue
+        expected_fields = {
+            "kind",
+            "schema_version",
+            "config_sha256",
+            "selection_bundle_hash",
+            "probe_test_prompt_sha256",
+            "probe_test_task_identities_sha256",
+            "selection_mode",
+            "selections",
+            "null_selections",
+        }
+        if (
+            set(record) != expected_fields
+            or record.get("kind") != "selection_manifest"
+            or record.get("schema_version") != 1
+            or record.get("config_sha256") != config_sha256
+        ):
+            raise ValueError("F2A selection artifact has an invalid identity or schema")
+        lineage = _verified_manifest_lineage(shard)
+        if (
+            lineage.get("config_sha256") != config_sha256
+            or lineage.get("selection_bundle_hash") != selection_bundle_hash
+        ):
+            raise ValueError("F2A selection artifact lineage does not match the endpoint")
+        raw_selections = record["selections"]
+        if not isinstance(raw_selections, Mapping) or set(raw_selections) != set(TASKS):
+            raise ValueError("F2A selection artifact lacks registered task selections")
+        selections = {
+            task: SelectionManifest.from_record(raw_selections[task]) for task in TASKS
+        }
+        if f2a_selection_bundle_hash(selections) != selection_bundle_hash:
+            raise ValueError("F2A selection bundle hash does not verify")
+        identity = _hash({task: selections[task].to_record() for task in TASKS})
+        matches.append((identity, selections))
+    if not matches:
+        raise ValueError("closed F2A endpoint lacks its canonical selection artifact")
+    if len({identity for identity, _ in matches}) != 1:
+        raise ValueError("closed F2A endpoint has ambiguous canonical selections")
+    return matches[0][1]
 
 
 def _verify_f2a_gate_row(
@@ -1345,159 +1378,37 @@ def _verify_f2a_gate_row(
     metrics_lineage: Mapping[str, Any],
     endpoint_input_sha256: str,
     selection_manifest_sha256: str,
+    selections: Mapping[str, SelectionManifest],
 ) -> tuple[str, str, str]:
     if set(row) != {"kind", "metric_type", "result"} or (
         row.get("kind"), row.get("metric_type")
     ) != ("metrics", "f2a_bundle"):
         raise ValueError("closed F2A metrics row has an invalid schema")
     result = row["result"]
-    expected_bundle = {
-        "schema_version",
-        "selection_bundle_hash",
-        "authorization_sha256",
-        "endpoint_input_sha256",
-        "endpoint_input_identities_sha256",
-        "endpoint_source_identities_sha256",
-        "results",
-        "gates",
-        "refit_performed",
-    }
-    if not isinstance(result, Mapping) or set(result) != expected_bundle:
+    if not isinstance(result, Mapping):
         raise ValueError("closed F2A bundle has an invalid schema")
+    bundle = ProbeBundleResult.from_record(result, selections=selections)
     if (
-        result["schema_version"] != 1
-        or result["refit_performed"] is not False
-        or result["selection_bundle_hash"] != selection_manifest_sha256
-        or result["endpoint_input_sha256"] != endpoint_input_sha256
-        or result["endpoint_source_identities_sha256"]
-        != result["endpoint_input_identities_sha256"]
+        bundle.selection_bundle_hash != selection_manifest_sha256
+        or bundle.endpoint_input_sha256 != endpoint_input_sha256
     ):
         raise ValueError("closed F2A bundle is not bound to its protected endpoint")
-    for name in (
-        "selection_bundle_hash",
-        "authorization_sha256",
-        "endpoint_input_sha256",
-        "endpoint_input_identities_sha256",
-        "endpoint_source_identities_sha256",
-    ):
-        _sha256(result[name], f"F2A {name}")
-    results = result["results"]
-    tasks = ("familiarity", "answerability", "unsupported_answer")
-    hypotheses = {"familiarity": "H3", "answerability": "H4", "unsupported_answer": "H5"}
-    required_probe_fields = {
-        "schema_version",
-        "task",
-        "selection_hash",
-        "authorization_sha256",
-        "endpoint_input_sha256",
-        "endpoint_input_identities_sha256",
-        "endpoint_source_identities_sha256",
-        "test_ids",
-        "test_row_sha256s",
-        "selected_feature_family",
-        "selected_model_scope",
-        "metrics",
-        "model_metrics",
-        "per_condition",
-        "worst_condition",
-        "ood_transfer",
-        "worst_ood_transfer",
-        "cross_condition_transfer",
-        "relative_h5_log_loss_improvement",
-        "relative_h6_log_loss_improvement",
-        "crossed_auroc_95",
-        "h5_absolute_log_loss_difference_95",
-        "h6_absolute_log_loss_difference_95",
-        "primary_gate",
-        "null_results",
-        "refit_performed",
-    }
-    if not isinstance(results, Mapping) or set(results) != set(tasks):
-        raise ValueError("closed F2A bundle lacks registered probe results")
-    for task in tasks:
-        probe = results[task]
-        if not isinstance(probe, Mapping) or set(probe) != required_probe_fields:
-            raise ValueError("closed F2A probe result has an invalid schema")
-        if (
-            probe["schema_version"] != 3
-            or probe["task"] != task
-            or probe["refit_performed"] is not False
-            or probe["endpoint_input_sha256"] != endpoint_input_sha256
-            or probe["endpoint_source_identities_sha256"]
-            != probe["endpoint_input_identities_sha256"]
-            or not probe["test_ids"]
-            or not probe["test_row_sha256s"]
-        ):
-            raise ValueError("closed F2A probe result is not endpoint-bound")
-        for name in (
-            "selection_hash",
-            "authorization_sha256",
-            "endpoint_input_sha256",
-            "endpoint_input_identities_sha256",
-            "endpoint_source_identities_sha256",
-        ):
-            _sha256(probe[name], f"F2A probe {name}")
-        scope = probe["selected_model_scope"]
-        if not isinstance(scope, Mapping) or set(scope) != {
-            "feature_family",
-            "anchor",
-            "layer",
-            "claim_scope",
-            "selected_model_sha256",
-        }:
-            raise ValueError("closed F2A selected model scope has an invalid schema")
-        if scope["feature_family"] != probe["selected_feature_family"]:
-            raise ValueError("closed F2A selected model scope is inconsistent")
-        _sha256(scope["selected_model_sha256"], "F2A selected_model_sha256")
-        for digest in probe["test_row_sha256s"]:
-            _sha256(digest, "F2A test row hash")
-        _hypothesis_gate_record(probe["primary_gate"], hypotheses[task])
-    gates_record = result["gates"]
-    if not isinstance(gates_record, Mapping) or set(gates_record) != {
-        "familiarity_result_sha256",
-        "answerability_result_sha256",
-        "unsupported_result_sha256",
-        "holm_adjusted_p",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "h6_secondary",
-        "status",
-    }:
-        raise ValueError("closed F2A joint gate has an invalid schema")
-    typed_gates = F2AGates(
-        familiarity_result_sha256=gates_record["familiarity_result_sha256"],
-        answerability_result_sha256=gates_record["answerability_result_sha256"],
-        unsupported_result_sha256=gates_record["unsupported_result_sha256"],
-        holm_adjusted_p=gates_record["holm_adjusted_p"],
-        h3=_hypothesis_gate_record(gates_record["h3"], "H3"),
-        h4=_hypothesis_gate_record(gates_record["h4"], "H4"),
-        h5=_hypothesis_gate_record(gates_record["h5"], "H5"),
-        h6=_hypothesis_gate_record(gates_record["h6"], "H6"),
+    recomputed_gates = evaluate_f2a_gates(
+        bundle.results["familiarity"],
+        bundle.results["answerability"],
+        bundle.results["unsupported_answer"],
     )
-    expected_hashes = (
-        _hash(results["familiarity"]),
-        _hash(results["answerability"]),
-        _hash(results["unsupported_answer"]),
-    )
-    if expected_hashes != (
-        typed_gates.familiarity_result_sha256,
-        typed_gates.answerability_result_sha256,
-        typed_gates.unsupported_result_sha256,
-    ) or typed_gates.to_record() != dict(gates_record):
-        raise ValueError("closed F2A gates do not match canonical typed probe results")
+    if bundle.gates.to_record() != recomputed_gates.to_record():
+        raise ValueError("closed F2A gates do not match canonical recomputation")
     expected_lineage = {
         "selection_manifest": selection_manifest_sha256,
-        "authorization": result["authorization_sha256"],
+        "authorization": bundle.authorization_sha256,
         "endpoint_input_sha256": endpoint_input_sha256,
-        "endpoint_source_identities_sha256": result[
-            "endpoint_input_identities_sha256"
-        ],
+        "endpoint_source_identities_sha256": bundle.endpoint_input_identities_sha256,
     }
     if any(metrics_lineage.get(name) != value for name, value in expected_lineage.items()):
         raise ValueError("closed F2A metrics lineage does not bind its endpoint and result")
-    return typed_gates.status, _hash(result), result["selection_bundle_hash"]
+    return recomputed_gates.status, bundle.sha256, bundle.selection_bundle_hash
 
 
 @dataclass(frozen=True)

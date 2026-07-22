@@ -4,11 +4,13 @@ import hashlib
 import json
 import os
 from dataclasses import replace
+from functools import lru_cache
 from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
 
 import trajectory_extractor.fa_report as report_module
 import trajectory_extractor.fa_interventions as interventions_module
@@ -33,12 +35,17 @@ from trajectory_extractor.fa_probes import (
     GateCriterion,
     HypothesisGate,
     NullSelectionResult,
+    OUTPUT_CONTROL_SCHEMA_SHA256,
+    ProbeBundleResult,
     ProbeResult,
+    ProbeRow,
     ProbeRowIdentity,
     SAEGate,
     TARGET_FAMILIARITY_CONDITIONS,
     TransferConditionResult,
     evaluate_f2a_gates,
+    f2a_selection_bundle_hash,
+    fit_selection,
 )
 from trajectory_extractor.fa_report import (
     CircuitFailure,
@@ -62,6 +69,116 @@ from trajectory_extractor.fa_scoring import (
 
 
 REGISTERED_DOMAINS = ("person", "place", "organization", "creative_work")
+
+
+def _release_probe_rows(split: str, task: str) -> tuple[ProbeRow, ...]:
+    rows = []
+    prefix = "tr" if split == "mechanism_train" else "va"
+    answerability_classes = ("target_bound", "distractor_bound", "code_absent")
+    for index in range(24):
+        answerability = answerability_classes[(index // 4) % 3]
+        if task == "unsupported_answer" and answerability == "target_bound":
+            continue
+        target_familiarity = TARGET_FAMILIARITY_CONDITIONS[index % 2]
+        distractor_familiarity = TARGET_FAMILIARITY_CONDITIONS[(index // 2) % 2]
+        if task == "answerability":
+            label = answerability
+            signal = float(answerability_classes.index(answerability) - 1) * 2.0
+        else:
+            label = (
+                int(target_familiarity == "screened_real")
+                if task == "familiarity"
+                else index % 2
+            )
+            signal = -2.0 if label == 0 else 2.0
+        residual = np.zeros((3, 26, 4), dtype=np.float64)
+        residual[:, :, 0] = signal
+        residual[:, :, 1] = np.arange(26, dtype=np.float64)
+        digest = lambda name: hashlib.sha256(
+            f"{name}-{prefix}-{task}-{index}".encode("ascii")
+        ).hexdigest()
+        rows.append(
+            ProbeRow(
+                example_id=f"{prefix}-{task}-example-{index}",
+                split=split,
+                task=task,
+                label=label,
+                entity_id=f"{prefix}-{task}-entity-{index // 2}",
+                template_id=f"{prefix}-{task}-template-{index % 4}",
+                relation_id="archive_code",
+                domain=REGISTERED_DOMAINS[(index // 2) % 4],
+                condition=f"condition-{index % 4}",
+                answerability_condition=answerability,
+                target_familiarity_condition=target_familiarity,
+                distractor_familiarity_condition=distractor_familiarity,
+                surface_features=(signal, float(index % 3)),
+                output_margin_features=tuple([signal] + [float(index % 3)] * 10),
+                residual_features=residual,
+                sae_features=None,
+                outcome_status="valid",
+                source_sha256=digest("source"),
+                activation_sha256=digest("activation"),
+                metadata_manifest_sha256=digest("metadata-manifest"),
+                metadata_row_sha256=digest("metadata-row"),
+                output_control_schema_sha256=OUTPUT_CONTROL_SCHEMA_SHA256,
+                output_evidence_sha256=digest("output-evidence"),
+            )
+        )
+    return tuple(rows)
+
+
+@lru_cache
+def _release_selections():
+    previous_fast = probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS
+    previous_draws = probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS
+    probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS = True
+    probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS = 40
+    try:
+        return {
+            task: fit_selection(
+                _release_probe_rows("mechanism_train", task),
+                _release_probe_rows("locked_validation", task),
+            )
+            for task in ("familiarity", "answerability", "unsupported_answer")
+        }
+    finally:
+        probes_module._TRAIN_ONLY_CV_FAST_PATH_FOR_TESTS = previous_fast
+        probes_module._BOOTSTRAP_DRAW_OVERRIDE_FOR_TESTS = previous_draws
+
+
+def _release_unscored_nulls(selection):
+    rows = []
+    for offset in range(4):
+        seed = 2026072201 + offset
+        kind = "label_permutation"
+        config = {"kind": kind, "seed": seed, "task": selection.task}
+        null_selection = replace(
+            selection,
+            null_provenance={"kind": kind, "seed": seed},
+        )
+        source_identities = (
+            ProbeRowIdentity(
+                f"{selection.task}-protected-id",
+                hashlib.sha256(
+                    f"{selection.task}-protected-source".encode("ascii")
+                ).hexdigest(),
+            ),
+        )
+        rows.append(
+            NullSelectionResult(
+                kind=kind,
+                seed=seed,
+                config=config,
+                config_sha256=hashlib.sha256(
+                    report_module._canonical_json(config)
+                ).hexdigest(),
+                selection=null_selection,
+                max_norm_error=0.0,
+                test_source_identities=source_identities,
+                test_transform={"seed": seed, "row_count": 1},
+            )
+        )
+    return tuple(rows)
 
 
 def _cells() -> tuple[tuple[str, str, str], ...]:
@@ -133,7 +250,26 @@ def _behavior(
         "b" * 64,
         same_string_seal=seal,
     )
-    return F1Evidence(metrics, bootstrap, gate)
+    scored_rows = (
+        {
+            "example_id": "behavior-example-1",
+            "entity_unit_id": "entity-1",
+            "template_family": "template-1",
+        },
+    )
+    producer_payload = {
+        "metrics": metrics.to_record(),
+        "bootstrap": bootstrap.to_record(),
+        "gate": gate.to_record(),
+        "scored_rows": list(scored_rows),
+    }
+    return F1Evidence(
+        metrics,
+        bootstrap,
+        gate,
+        scored_rows,
+        hashlib.sha256(report_module._canonical_json(producer_payload)).hexdigest(),
+    )
 
 
 def _binary(*, invalid=0) -> BinaryMetrics:
@@ -235,34 +371,55 @@ def _probe(
     *,
     invalid: int = 0,
     null_results: tuple[NullSelectionResult, ...] = (),
+    endpoint_input_sha256: str = "f" * 64,
+    selection=None,
 ) -> ProbeResult:
     metrics = _binary(invalid=invalid)
     hypothesis = {"familiarity": "H3", "answerability": "H4", "unsupported_answer": "H5"}[task]
     primary = HypothesisGate(hypothesis, (GateCriterion("typed metric", 1.0, 0.0, ">"),))
     identity = ProbeRowIdentity(f"{task}-id", "e" * 64)
+    h5_baseline_metrics = replace(metrics, log_loss=0.50)
+    h5_candidate_metrics = replace(metrics, log_loss=0.48)
+    h6_candidate_metrics = replace(metrics, log_loss=0.47)
     model_metrics = {
         "surface": metrics,
-        "surface_output": metrics,
-        "surface_output_static": metrics,
-        "surface_output_static_dynamics": metrics,
+        probes_module.NESTED_H5_BASELINE: h5_baseline_metrics,
+        probes_module.NESTED_H5_CANDIDATE: h5_candidate_metrics,
+        probes_module.NESTED_H6_CANDIDATE: h6_candidate_metrics,
         "residual_static": metrics,
     }
+    if selection is None:
+        selection_hash = "c" * 64
+        selected_feature_family = "residual_static"
+        selected_anchor = (
+            "target_intro_end" if task == "familiarity" else "user_prompt_end"
+        )
+        selected_layer = 24
+        claim_scope = "pre_output"
+        selected_model_sha256 = "9" * 64
+    else:
+        selected_model = selection.model_for(selection.selected_feature_family)
+        selection_hash = selection.sha256
+        selected_feature_family = selection.selected_feature_family
+        selected_anchor = selected_model.anchor
+        selected_layer = selected_model.layer
+        claim_scope = selected_model.claim_scope
+        selected_model_sha256 = selected_model.sha256
+        model_metrics.setdefault(selected_feature_family, metrics)
     return ProbeResult(
         schema_version=3,
         task=task,
-        selection_hash="c" * 64,
+        selection_hash=selection_hash,
         authorization_sha256="d" * 64,
-        endpoint_input_sha256="f" * 64,
+        endpoint_input_sha256=endpoint_input_sha256,
         endpoint_input_identities_sha256=probes_module._identity_digest((identity,)),
         test_ids=(f"{task}-id",),
         test_row_sha256s=("e" * 64,),
-        selected_feature_family="residual_static",
-        selected_anchor=(
-            "target_intro_end" if task == "familiarity" else "user_prompt_end"
-        ),
-        selected_layer=24,
-        claim_scope="pre_output",
-        selected_model_sha256="9" * 64,
+        selected_feature_family=selected_feature_family,
+        selected_anchor=selected_anchor,
+        selected_layer=selected_layer,
+        claim_scope=claim_scope,
+        selected_model_sha256=selected_model_sha256,
         metrics=metrics,
         model_metrics=model_metrics,
         per_condition={"held_out": metrics},
@@ -306,9 +463,19 @@ def _probe(
     )
 
 
-def _f2a(*, sae_failed=False, include_sae=True) -> F2AEvidence:
+def _f2a(
+    *,
+    sae_failed=False,
+    include_sae=True,
+    endpoint_input_sha256: str = "f" * 64,
+    selection_bundle_hash: str = "4" * 64,
+    selections=None,
+) -> F2AEvidence:
+    selected = selections or {}
     familiarity = _probe(
         "familiarity",
+        endpoint_input_sha256=endpoint_input_sha256,
+        selection=selected.get("familiarity"),
         null_results=tuple(
             _scored_null("familiarity", "label_permutation", seed)
             for seed in DEFAULT_FULL_SELECTION_NULL_SEEDS
@@ -316,7 +483,8 @@ def _f2a(*, sae_failed=False, include_sae=True) -> F2AEvidence:
     )
     answerability = _probe(
         "answerability",
-        invalid=2,
+        endpoint_input_sha256=endpoint_input_sha256,
+        selection=selected.get("answerability"),
         null_results=tuple(
             _scored_null("answerability", "label_permutation", seed)
             for seed in DEFAULT_FULL_SELECTION_NULL_SEEDS
@@ -324,6 +492,8 @@ def _f2a(*, sae_failed=False, include_sae=True) -> F2AEvidence:
     )
     unsupported = _probe(
         "unsupported_answer",
+        endpoint_input_sha256=endpoint_input_sha256,
+        selection=selected.get("unsupported_answer"),
         null_results=(
             *(
                 _scored_null(
@@ -347,11 +517,32 @@ def _f2a(*, sae_failed=False, include_sae=True) -> F2AEvidence:
     )
     gates = evaluate_f2a_gates(familiarity, answerability, unsupported)
     sae = SAEGate(1.0, 1.9 if sae_failed else 1.2, 2.0, 0.90 if sae_failed else 1.0, 0.10 if sae_failed else 0.80, ("finite fraction is below 0.95", "loss recovery is below 0.70") if sae_failed else ())
+    identity_bundle = probes_module._digest(
+        {
+            "familiarity": familiarity.endpoint_input_identities_sha256,
+            "answerability": answerability.endpoint_input_identities_sha256,
+            "unsupported_answer": unsupported.endpoint_input_identities_sha256,
+        }
+    )
+    producer_bundle = ProbeBundleResult(
+        schema_version=1,
+        selection_bundle_hash=selection_bundle_hash,
+        authorization_sha256="d" * 64,
+        endpoint_input_sha256=endpoint_input_sha256,
+        endpoint_input_identities_sha256=identity_bundle,
+        results={
+            "familiarity": familiarity,
+            "answerability": answerability,
+            "unsupported_answer": unsupported,
+        },
+        gates=gates,
+    )
     return F2AEvidence(
         familiarity,
         answerability,
         unsupported,
         gates,
+        producer_bundle,
         {"sae_1_sparse": sae} if include_sae else {},
     )
 
@@ -372,12 +563,69 @@ def _with_f2a_nulls(
         results["answerability"],
         results["unsupported_answer"],
     )
+    producer_bundle = ProbeBundleResult(
+        schema_version=evidence.producer_bundle.schema_version,
+        selection_bundle_hash=evidence.producer_bundle.selection_bundle_hash,
+        authorization_sha256=evidence.producer_bundle.authorization_sha256,
+        endpoint_input_sha256=evidence.producer_bundle.endpoint_input_sha256,
+        endpoint_input_identities_sha256=probes_module._digest(
+            {
+                task_name: result.endpoint_input_identities_sha256
+                for task_name, result in results.items()
+            }
+        ),
+        results=results,
+        gates=gates,
+    )
     return F2AEvidence(
         results["familiarity"],
         results["answerability"],
         results["unsupported_answer"],
         gates,
+        producer_bundle,
         evidence.sae_gates,
+    )
+
+
+def _f2a_from_results(
+    familiarity: ProbeResult,
+    answerability: ProbeResult,
+    unsupported: ProbeResult,
+    gates: F2AGates,
+    *,
+    sae_gates: dict[str, SAEGate] | None = None,
+    template: F2AEvidence | None = None,
+) -> F2AEvidence:
+    results = {
+        "familiarity": familiarity,
+        "answerability": answerability,
+        "unsupported_answer": unsupported,
+    }
+    producer_bundle = ProbeBundleResult(
+        schema_version=1,
+        selection_bundle_hash=(
+            template.producer_bundle.selection_bundle_hash
+            if template is not None
+            else "4" * 64
+        ),
+        authorization_sha256=familiarity.authorization_sha256,
+        endpoint_input_sha256=familiarity.endpoint_input_sha256,
+        endpoint_input_identities_sha256=probes_module._digest(
+            {
+                task: result.endpoint_input_identities_sha256
+                for task, result in results.items()
+            }
+        ),
+        results=results,
+        gates=gates,
+    )
+    return F2AEvidence(
+        familiarity,
+        answerability,
+        unsupported,
+        gates,
+        producer_bundle,
+        {} if sae_gates is None else sae_gates,
     )
 
 
@@ -436,6 +684,10 @@ def _f2b(
         "low_to_high_interval": (0.01, 0.15),
         "control_effects": controls,
         "target_bound_accuracy_change": -0.02,
+        "target_bound_accuracy_change_by_direction": {
+            "high_to_low": -0.02,
+            "low_to_high": -0.02,
+        },
         "unrelated_refusal_change": 0.01,
         "unrelated_invalid_format_change": 0.0,
         "unrelated_refusal_change_by_direction": {
@@ -508,19 +760,62 @@ def _circuit(
 
 def _closed_core_store(root: Path):
     behavior = _behavior()
-    f2a = _f2a()
+    f2a = None
     store = FAArtifactStore(root)
     endpoint_manifests = {}
     allowlist = {}
+    selections = _release_selections()
+    selection_bundle_hash = f2a_selection_bundle_hash(selections)
+    selection_shard = None
     for index, endpoint in enumerate(("behavior_test", "probe_test")):
-        selection = str(index + 3) * 64
+        selection = (
+            selection_bundle_hash if endpoint == "probe_test" else str(index + 3) * 64
+        )
+        input_lineage = {"config_sha256": "a" * 64}
+        if endpoint == "probe_test":
+            input_lineage["task_source_identities_sha256"] = "9" * 64
         input_shard = store.write_completed_shard(
             "release-run",
             endpoint,
             "inputs",
             ({"endpoint": endpoint, "row": 1},),
-            {"config_sha256": "1" * 64},
+            input_lineage,
         )
+        if endpoint == "probe_test":
+            selection_shard = store.write_completed_shard(
+                "release-run",
+                "locked_validation",
+                "f2a-selection",
+                (
+                    {
+                        "kind": "selection_manifest",
+                        "schema_version": 1,
+                        "config_sha256": "a" * 64,
+                        "selection_bundle_hash": selection_bundle_hash,
+                        "probe_test_prompt_sha256": input_shard.sha256,
+                        "probe_test_task_identities_sha256": "9" * 64,
+                        "selection_mode": "smoke_rehearsal",
+                        "selections": {
+                            task: selections[task].to_record() for task in selections
+                        },
+                        "null_selections": {
+                            task: [
+                                item.to_record()
+                                for item in _release_unscored_nulls(selections[task])
+                            ]
+                            for task in selections
+                        },
+                    },
+                ),
+                {
+                    "config_sha256": "a" * 64,
+                    "probe_test_prompt_sha256": input_shard.sha256,
+                    "probe_test_task_identities_sha256": "9" * 64,
+                    "selection_bundle_hash": selection_bundle_hash,
+                    "selection_mode": "smoke_rehearsal",
+                },
+                record_kind="selection_manifest",
+            )
         store.seal_endpoint(
             endpoint,
             (input_shard,),
@@ -531,29 +826,42 @@ def _closed_core_store(root: Path):
             metric_record = {
                 "kind": "metrics",
                 "phase": "F1",
-                "metrics": behavior.metrics.to_record(),
-                "bootstrap": behavior.bootstrap.to_record(),
-                "gate": behavior.gate.to_record(),
+                **behavior.to_record(),
+                "evidence_sha256": behavior.sha256,
+            }
+            metrics_lineage = {
+                "preregistration_sha256": "b" * 64,
+                "selection_sha256": selection,
+                "prompt_manifest_sha256": input_shard.sha256,
+                "evidence_sha256": behavior.sha256,
+                "config_sha256": behavior.gate.config_hash,
             }
         else:
+            f2a = _f2a(
+                include_sae=False,
+                endpoint_input_sha256=input_shard.sha256,
+                selection_bundle_hash=selection_bundle_hash,
+                selections=selections,
+            )
             metric_record = {
                 "kind": "metrics",
                 "metric_type": "f2a_bundle",
-                "result": {
-                    "results": {
-                        "familiarity": f2a.familiarity.to_record(),
-                        "answerability": f2a.answerability.to_record(),
-                        "unsupported_answer": f2a.unsupported_answer.to_record(),
-                    },
-                    "gates": f2a.gates.to_record(),
-                },
+                "result": f2a.producer_bundle.to_record(),
+            }
+            metrics_lineage = {
+                "selection_manifest": f2a.producer_bundle.selection_bundle_hash,
+                "authorization": f2a.producer_bundle.authorization_sha256,
+                "endpoint_input_sha256": input_shard.sha256,
+                "endpoint_source_identities_sha256": (
+                    f2a.producer_bundle.endpoint_input_identities_sha256
+                ),
             }
         metrics = store.write_completed_shard(
             "release-run",
             endpoint,
             "metrics",
             (metric_record,),
-            {"input_sha256": input_shard.sha256},
+            metrics_lineage,
             record_kind="metrics",
         )
         store.mark_evaluated(receipt, metrics.data_path)
@@ -564,6 +872,12 @@ def _closed_core_store(root: Path):
             allowlist[shard.manifest_path.relative_to(store.root).as_posix()] = hashlib.sha256(
                 shard.manifest_path.read_bytes()
             ).hexdigest()
+    assert selection_shard is not None
+    for path in (selection_shard.data_path, selection_shard.manifest_path):
+        allowlist[path.relative_to(store.root).as_posix()] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+    assert f2a is not None
     report = build_report(
         behavior=behavior,
         f2a=f2a,
@@ -572,7 +886,11 @@ def _closed_core_store(root: Path):
         output=store.root / "report.md",
     )
     allowlist["report.md"] = hashlib.sha256(report.read_bytes()).hexdigest()
-    return store, endpoint_manifests, allowlist
+    return store, endpoint_manifests, allowlist, {
+        "behavior_evidence": behavior,
+        "f2a_evidence": f2a,
+        "f2a_selection_manifest": selection_shard.manifest_path,
+    }
 
 
 def _capture_figure_semantics(monkeypatch):
@@ -605,6 +923,14 @@ def _report_input_metadata(path: Path) -> dict:
     return json.loads(line[len(prefix) : -4])
 
 
+def _canonical_f1_producer_payload(behavior: F1Evidence) -> dict:
+    return dict(behavior.to_record())
+
+
+def _canonical_f2a_producer_bundle(f2a: F2AEvidence) -> dict:
+    return f2a.producer_bundle.to_record()
+
+
 def test_report_recomputes_claims_and_never_trusts_stored_supported(tmp_path):
     report = build_report(
         behavior=_behavior(),
@@ -620,7 +946,7 @@ def test_report_recomputes_claims_and_never_trusts_stored_supported(tmp_path):
     assert "F2B: skipped" in text
     assert "F3: skipped" in text
     assert "Invalid outputs: 0" in text
-    assert "F2A invalid rows: 2" in text
+    assert "F2A invalid rows: 0" in text
 
 
 def test_generated_report_hash_binds_every_supplied_phase_and_input_bundle(tmp_path):
@@ -637,28 +963,75 @@ def test_generated_report_hash_binds_every_supplied_phase_and_input_bundle(tmp_p
         output=tmp_path / "report.md",
     )
     metadata = _report_input_metadata(report)
-    f2a_core = {
+    f1_payload = _canonical_f1_producer_payload(behavior)
+    f2a_bundle = _canonical_f2a_producer_bundle(f2a)
+    expected_hashes = {
+        "F1": hashlib.sha256(report_module._canonical_json(f1_payload)).hexdigest(),
+        "F2A": hashlib.sha256(report_module._canonical_json(f2a_bundle)).hexdigest(),
+        "F2B": f2b.result_sha256,
+        "F3": circuit.sha256,
+    }
+    bundle_record = {
+        "schema_version": 2,
+        "phase_evidence_sha256": expected_hashes,
+        "report_body_sha256": metadata["report_body_sha256"],
+    }
+
+    assert metadata["schema_version"] == 2
+    assert metadata["phase_evidence_sha256"] == expected_hashes
+    assert len(metadata["report_body_sha256"]) == 64
+    assert metadata["report_input_bundle_sha256"] == hashlib.sha256(
+        report_module._canonical_json(bundle_record)
+    ).hexdigest()
+
+
+def test_closed_phase_hashes_require_complete_canonical_producer_records():
+    behavior = _behavior()
+    f2a = _f2a()
+    f1_payload = _canonical_f1_producer_payload(behavior)
+    f1_hash = hashlib.sha256(report_module._canonical_json(f1_payload)).hexdigest()
+    f1_record = {
+        "kind": "metrics",
+        "phase": "F1",
+        **f1_payload,
+        "evidence_sha256": f1_hash,
+    }
+    f2a_bundle = _canonical_f2a_producer_bundle(f2a)
+    f2a_hash = hashlib.sha256(report_module._canonical_json(f2a_bundle)).hexdigest()
+    f2a_record = {
+        "kind": "metrics",
+        "metric_type": "f2a_bundle",
+        "result": f2a_bundle,
+    }
+
+    assert report_module._closed_endpoint_phase_hash(
+        "behavior_test", report_module._canonical_json(f1_record) + b"\n"
+    ) == ("F1", f1_hash)
+    assert report_module._closed_endpoint_phase_hash(
+        "probe_test", report_module._canonical_json(f2a_record) + b"\n"
+    ) == ("F2A", f2a_hash)
+
+    f1_record["scored_rows"][0]["entity_unit_id"] = "tampered"
+    with pytest.raises(ValueError, match="evidence hash"):
+        report_module._closed_endpoint_phase_hash(
+            "behavior_test", report_module._canonical_json(f1_record) + b"\n"
+        )
+
+
+def test_closed_f2a_phase_rejects_reduced_noncanonical_mapping():
+    f2a = _f2a()
+    reduced = {
+        "kind": "metrics",
         "familiarity": f2a.familiarity.to_record(),
         "answerability": f2a.answerability.to_record(),
         "unsupported_answer": f2a.unsupported_answer.to_record(),
         "gates": f2a.gates.to_record(),
     }
-    expected_hashes = {
-        "F1": behavior.sha256,
-        "F2A": hashlib.sha256(report_module._canonical_json(f2a_core)).hexdigest(),
-        "F2B": f2b.result_sha256,
-        "F3": circuit.sha256,
-    }
-    bundle_record = {
-        "schema_version": 1,
-        "phase_evidence_sha256": expected_hashes,
-    }
 
-    assert metadata["schema_version"] == 1
-    assert metadata["phase_evidence_sha256"] == expected_hashes
-    assert metadata["report_input_bundle_sha256"] == hashlib.sha256(
-        report_module._canonical_json(bundle_record)
-    ).hexdigest()
+    with pytest.raises(ValueError, match="canonical F2A"):
+        report_module._closed_endpoint_phase_hash(
+            "probe_test", report_module._canonical_json(reduced) + b"\n"
+        )
 
 
 @pytest.mark.parametrize(
@@ -794,7 +1167,7 @@ def test_intervention_recomputes_exact_h7_h8_criteria():
 
 def test_intervention_claim_uses_all_canonical_controls_and_crossed_bootstrap():
     controls = {name: (0.0, 0.0) for name in REQUIRED_CAUSAL_CONTROLS}
-    controls["orthogonal"] = (0.07, 0.07)
+    controls["orthogonal"] = (0.081, 0.081)
     claims = recompute_claim_ladder(
         behavior=_behavior(),
         f2a=_f2a(),
@@ -802,6 +1175,20 @@ def test_intervention_claim_uses_all_canonical_controls_and_crossed_bootstrap():
         circuit=None,
     )
     assert claims["H7"].status == "not_supported"
+
+
+def test_h7_applies_registered_margin_only_to_random_and_cross_entity_controls():
+    controls = {name: (0.0, 0.0) for name in REQUIRED_CAUSAL_CONTROLS}
+    controls["orthogonal"] = (0.07, 0.07)
+
+    claims = recompute_claim_ladder(
+        behavior=_behavior(),
+        f2a=_f2a(),
+        f2b=_f2b(control_effects=controls),
+        circuit=None,
+    )
+
+    assert claims["H7"].status == "supported"
 
 
 def test_intervention_draw_audit_supports_and_is_published_verbatim(tmp_path):
@@ -1053,7 +1440,7 @@ def test_h7_requires_and_evaluates_every_registered_control(control):
     assert missing_claims["H7"].status == "not_evaluable"
 
     strong = {name: (0.0, 0.0) for name in REQUIRED_CAUSAL_CONTROLS}
-    strong[control] = (0.07, 0.07)
+    strong[control] = (0.081, 0.081)
     strong_claims = recompute_claim_ladder(
         behavior=_behavior(),
         f2a=_f2a(),
@@ -1075,6 +1462,26 @@ def test_h7_requires_and_evaluates_every_registered_control(control):
     assert claims["H7"].status == "not_supported"
 
 
+@pytest.mark.parametrize("direction", ("high_to_low", "low_to_high"))
+def test_h8_rejects_target_bound_accuracy_loss_in_either_direction(direction):
+    directional = {"high_to_low": 0.0, "low_to_high": 0.0}
+    directional[direction] = -0.051
+    claims = recompute_claim_ladder(
+        behavior=_behavior(),
+        f2a=_f2a(),
+        f2b=_f2b(
+            metric_overrides={
+                "target_bound_accuracy_change": 0.0,
+                "target_bound_accuracy_change_by_direction": directional,
+            }
+        ),
+        circuit=None,
+    )
+
+    assert claims["H8"].status == "not_supported"
+    assert direction in " ".join(claims["H8"].reasons)
+
+
 def test_report_exposes_h2b_invalid_ood_and_sae_failure(tmp_path):
     report = build_report(behavior=_behavior(), f2a=_f2a(sae_failed=True), f2b=None, circuit=None, output=tmp_path / "report.md")
     text = report.read_text(encoding="utf-8")
@@ -1085,7 +1492,7 @@ def test_report_exposes_h2b_invalid_ood_and_sae_failure(tmp_path):
 
 def test_release_builder_copies_only_hash_allowlist_and_is_verifiable(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     allowed = source / "report.md"
     secret = source / "protected.jsonl"
     secret.write_text('{"label":1}\n', encoding="utf-8")
@@ -1095,9 +1502,10 @@ def test_release_builder_copies_only_hash_allowlist_and_is_verifiable(tmp_path):
         output=tmp_path / "release",
         allowlist=allowlist,
         artifact_store=store,
-        core_endpoint_manifests=endpoint_manifests,
-        config_hash="a" * 64,
-        preregistration_hash="b" * 64,
+            core_endpoint_manifests=endpoint_manifests,
+            config_hash="a" * 64,
+            preregistration_hash="b" * 64,
+            **evidence_args,
     )
 
     assert (release / "report.md").read_bytes() == allowed.read_bytes()
@@ -1106,12 +1514,99 @@ def test_release_builder_copies_only_hash_allowlist_and_is_verifiable(tmp_path):
     manifest = json.loads((release / "MANIFEST.json").read_text(encoding="utf-8"))
     assert set(manifest["files"]) == set(allowlist)
     assert set(manifest["core_endpoints"]) == {"behavior_test", "probe_test"}
+    assert manifest["selection_evidence"]["selection_bundle_hash"] == (
+        evidence_args["f2a_evidence"].producer_bundle.selection_bundle_hash
+    )
     assert len(manifest["top_level_sha256"]) == 64
+    assert verify_release_bundle(
+        release,
+        expected_top_level_sha256=manifest["top_level_sha256"],
+    )
+    assert not verify_release_bundle(
+        release,
+        expected_top_level_sha256="0" * 64,
+    )
+
+
+def test_release_rejects_noncanonical_f2a_selection_payload(tmp_path):
+    source = tmp_path / "source"
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
+    valid = store.verify_shard(evidence_args["f2a_selection_manifest"])
+    row = json.loads(valid.data_path.read_text(encoding="utf-8").strip())
+    row["selections"]["familiarity"] = {
+        "schema_version": 2,
+        "task": "familiarity",
+        "fixture": "not-a-selection-manifest",
+    }
+    invalid = store.write_completed_shard(
+        "release-run",
+        "locked_validation",
+        "invalid-f2a-selection",
+        (row,),
+        {
+            "config_sha256": "a" * 64,
+            "selection_bundle_hash": row["selection_bundle_hash"],
+        },
+        record_kind="selection_manifest",
+    )
+    for path in (invalid.data_path, invalid.manifest_path):
+        allowlist[path.relative_to(store.root).as_posix()] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+    evidence_args["f2a_selection_manifest"] = invalid.manifest_path
+
+    with pytest.raises(ValueError, match="typed provenance"):
+        build_release_bundle(
+            source_root=source,
+            output=tmp_path / "release",
+            allowlist=allowlist,
+            artifact_store=store,
+            core_endpoint_manifests=endpoint_manifests,
+            config_hash="a" * 64,
+            preregistration_hash="b" * 64,
+            **evidence_args,
+        )
+
+
+def test_release_rejects_selection_from_another_probe_input(tmp_path):
+    source = tmp_path / "source"
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
+    valid = store.verify_shard(evidence_args["f2a_selection_manifest"])
+    row = json.loads(valid.data_path.read_text(encoding="utf-8").strip())
+    row["probe_test_prompt_sha256"] = "0" * 64
+    mismatched = store.write_completed_shard(
+        "release-run",
+        "locked_validation",
+        "mismatched-f2a-selection",
+        (row,),
+        {
+            "config_sha256": "a" * 64,
+            "selection_bundle_hash": row["selection_bundle_hash"],
+        },
+        record_kind="selection_manifest",
+    )
+    for path in (mismatched.data_path, mismatched.manifest_path):
+        allowlist[path.relative_to(store.root).as_posix()] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+    evidence_args["f2a_selection_manifest"] = mismatched.manifest_path
+
+    with pytest.raises(ValueError, match="closed probe input"):
+        build_release_bundle(
+            source_root=source,
+            output=tmp_path / "release",
+            allowlist=allowlist,
+            artifact_store=store,
+            core_endpoint_manifests=endpoint_manifests,
+            config_hash="a" * 64,
+            preregistration_hash="b" * 64,
+            **evidence_args,
+        )
 
 
 def test_release_rejects_report_not_bound_to_closed_endpoint_evidence(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     report = build_report(
         behavior=_behavior(interaction=0.09),
         f2a=_f2a(),
@@ -1127,15 +1622,16 @@ def test_release_rejects_report_not_bound_to_closed_endpoint_evidence(tmp_path):
             output=tmp_path / "release",
             allowlist=allowlist,
             artifact_store=store,
-            core_endpoint_manifests=endpoint_manifests,
-            config_hash="a" * 64,
-            preregistration_hash="b" * 64,
+        core_endpoint_manifests=endpoint_manifests,
+        config_hash="a" * 64,
+        preregistration_hash="b" * 64,
+        **evidence_args,
         )
 
 
 def test_release_rejects_arbitrary_report_text_even_with_valid_closed_metrics(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     report = source / "report.md"
     report.write_text("unrelated report text\n", encoding="utf-8")
     allowlist["report.md"] = hashlib.sha256(report.read_bytes()).hexdigest()
@@ -1149,12 +1645,84 @@ def test_release_rejects_arbitrary_report_text_even_with_valid_closed_metrics(tm
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
+        )
+
+
+def test_release_rejects_mutated_generated_report_body_with_unchanged_metadata(
+    tmp_path,
+):
+    source = tmp_path / "source"
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
+    report = source / "report.md"
+    original = report.read_text(encoding="utf-8")
+    mutated = original.replace(
+        "Supported results are local to the registered model, entity set",
+        "Supported results generalize to every model and entity set",
+        1,
+    )
+    assert mutated != original
+    report.write_text(mutated, encoding="utf-8")
+    allowlist["report.md"] = hashlib.sha256(report.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="report body"):
+        build_release_bundle(
+            source_root=source,
+            output=tmp_path / "release",
+            allowlist=allowlist,
+            artifact_store=store,
+            core_endpoint_manifests=endpoint_manifests,
+            config_hash="a" * 64,
+            preregistration_hash="b" * 64,
+            **evidence_args,
+        )
+
+
+def test_release_rejects_forged_report_with_recomputed_self_hashes(tmp_path):
+    source = tmp_path / "source"
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
+    body_lines = ["# Forged Familiarity Report", "", "All hypotheses are supported."]
+    body = "\n".join(body_lines).encode("utf-8")
+    identity = {
+        "schema_version": 2,
+        "phase_evidence_sha256": {
+            "F1": evidence_args["behavior_evidence"].sha256,
+            "F2A": evidence_args["f2a_evidence"].sha256,
+        },
+        "report_body_sha256": hashlib.sha256(body).hexdigest(),
+    }
+    metadata = {
+        **identity,
+        "report_input_bundle_sha256": hashlib.sha256(
+            report_module._canonical_json(identity)
+        ).hexdigest(),
+    }
+    body_lines.insert(
+        1,
+        "<!-- fa-report-inputs:"
+        + report_module._canonical_json(metadata).decode("ascii")
+        + " -->",
+    )
+    report = source / "report.md"
+    report.write_text("\n".join(body_lines), encoding="utf-8")
+    allowlist["report.md"] = hashlib.sha256(report.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="canonical report"):
+        build_release_bundle(
+            source_root=source,
+            output=tmp_path / "release",
+            allowlist=allowlist,
+            artifact_store=store,
+            core_endpoint_manifests=endpoint_manifests,
+            config_hash="a" * 64,
+            preregistration_hash="b" * 64,
+            **evidence_args,
         )
 
 
 def test_release_rejects_tampered_report_input_bundle_hash(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     report = source / "report.md"
     text = report.read_text(encoding="utf-8")
     metadata = _report_input_metadata(report)
@@ -1175,12 +1743,13 @@ def test_release_rejects_tampered_report_input_bundle_hash(tmp_path):
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
 
 
 def test_release_builder_rejects_hash_mismatch_traversal_and_symlink(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, core_allowlist = _closed_core_store(source)
+    store, endpoint_manifests, core_allowlist, evidence_args = _closed_core_store(source)
     artifact = source / "artifact.txt"
     artifact.write_text("value", encoding="utf-8")
     with pytest.raises(ValueError, match="hash"):
@@ -1192,6 +1761,7 @@ def test_release_builder_rejects_hash_mismatch_traversal_and_symlink(tmp_path):
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     assert not (tmp_path / "bad-hash").exists()
     with pytest.raises(ValueError, match="relative"):
@@ -1206,6 +1776,7 @@ def test_release_builder_rejects_hash_mismatch_traversal_and_symlink(tmp_path):
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     link = source / "link.txt"
     link.symlink_to(artifact)
@@ -1221,13 +1792,14 @@ def test_release_builder_rejects_hash_mismatch_traversal_and_symlink(tmp_path):
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     assert not (tmp_path / "link-release").exists()
 
 
 def test_release_verifier_rejects_unmanifested_symlink_directory(tmp_path):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     artifact = source / "artifact.txt"
     artifact.write_text("value", encoding="utf-8")
     allowlist["artifact.txt"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -1239,6 +1811,7 @@ def test_release_verifier_rejects_unmanifested_symlink_directory(tmp_path):
         core_endpoint_manifests=endpoint_manifests,
         config_hash="a" * 64,
         preregistration_hash="b" * 64,
+        **evidence_args,
     )
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -1279,7 +1852,7 @@ def test_release_builder_verifies_store_shards_and_rejects_open_endpoint(tmp_pat
 
 
 def test_release_builder_requires_each_data_shard_and_sidecar_pair(tmp_path):
-    store, endpoint_manifests, allowlist = _closed_core_store(tmp_path / "source")
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(tmp_path / "source")
     omitted_sidecar = next(name for name in allowlist if name.endswith(".manifest.json"))
     incomplete = dict(allowlist)
     incomplete.pop(omitted_sidecar)
@@ -1298,7 +1871,7 @@ def test_release_builder_requires_each_data_shard_and_sidecar_pair(tmp_path):
 
 def test_release_builder_rejects_symlink_swap_after_validation(tmp_path, monkeypatch):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     artifact = source / "artifact.txt"
     artifact.write_text("trusted", encoding="utf-8")
     allowlist["artifact.txt"] = hashlib.sha256(b"trusted").hexdigest()
@@ -1318,13 +1891,14 @@ def test_release_builder_rejects_symlink_swap_after_validation(tmp_path, monkeyp
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     assert not (tmp_path / "release").exists()
 
 
 def test_release_publication_does_not_clobber_a_destination_race(tmp_path, monkeypatch):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     artifact = source / "artifact.txt"
     artifact.write_text("trusted", encoding="utf-8")
     allowlist["artifact.txt"] = hashlib.sha256(b"trusted").hexdigest()
@@ -1344,13 +1918,14 @@ def test_release_publication_does_not_clobber_a_destination_race(tmp_path, monke
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     assert (output / "sentinel.txt").read_text(encoding="utf-8") == "keep"
 
 
 def test_release_publication_rejects_an_intermediate_symlink_swap(tmp_path, monkeypatch):
     source = tmp_path / "source"
-    store, endpoint_manifests, allowlist = _closed_core_store(source)
+    store, endpoint_manifests, allowlist, evidence_args = _closed_core_store(source)
     artifact = source / "artifact.txt"
     artifact.write_text("trusted", encoding="utf-8")
     allowlist["artifact.txt"] = hashlib.sha256(b"trusted").hexdigest()
@@ -1375,6 +1950,7 @@ def test_release_publication_rejects_an_intermediate_symlink_swap(tmp_path, monk
             core_endpoint_manifests=endpoint_manifests,
             config_hash="a" * 64,
             preregistration_hash="b" * 64,
+            **evidence_args,
         )
     assert not (outside / "release").exists()
     assert not (detached / "release").exists()
@@ -1457,7 +2033,7 @@ def test_figure_4_explicitly_reports_prerequisite_gate_failure(monkeypatch, tmp_
     causal = captured["figure_4_causal_intervention.png"]
     assert causal["title"] == "Registered causal intervention: not gated"
     assert causal["bar_heights"] == ()
-    assert any("F1/H3/H4" in text for text in causal["texts"])
+    assert any("F1/H3/H4/H5" in text for text in causal["texts"])
 
 
 def test_figure_4_explicitly_reports_incomplete_f2b_evidence(monkeypatch, tmp_path):
@@ -1514,7 +2090,7 @@ def test_red_f2a_rejects_stored_gates_not_recomputed_from_probe_results():
     )
 
     with pytest.raises(ValueError, match="canonical F2A"):
-        F2AEvidence(familiarity, answerability, unsupported, forged, {})
+        _f2a_from_results(familiarity, answerability, unsupported, forged)
 
 
 @pytest.mark.parametrize(
@@ -1589,19 +2165,26 @@ def test_red_circuit_claim_requires_yield_failures_and_original_model_support():
 
 def test_f3_requires_complete_f2a_core_gate_including_h5():
     evidence = _f2a()
+    model_metrics = dict(evidence.unsupported_answer.model_metrics)
+    model_metrics[probes_module.NESTED_H5_CANDIDATE] = replace(
+        model_metrics[probes_module.NESTED_H5_CANDIDATE],
+        log_loss=model_metrics[probes_module.NESTED_H5_BASELINE].log_loss,
+    )
     unsupported = replace(
         evidence.unsupported_answer,
+        model_metrics=model_metrics,
         relative_h5_log_loss_improvement=0.0,
     )
     gates = evaluate_f2a_gates(
         evidence.familiarity, evidence.answerability, unsupported
     )
-    f2a = F2AEvidence(
+    f2a = _f2a_from_results(
         evidence.familiarity,
         evidence.answerability,
         unsupported,
         gates,
-        evidence.sae_gates,
+        sae_gates=dict(evidence.sae_gates),
+        template=evidence,
     )
     f2b = _f2b()
 
@@ -1617,6 +2200,45 @@ def test_f3_requires_complete_f2a_core_gate_including_h5():
     assert claims["H5"].status == "not_supported"
     assert claims["F3"].status == "not_supported"
     assert any("H5" in reason for reason in claims["F3"].reasons)
+
+
+def test_f2b_requires_complete_f2a_core_gate_including_h5():
+    evidence = _f2a()
+    model_metrics = dict(evidence.unsupported_answer.model_metrics)
+    model_metrics[probes_module.NESTED_H5_CANDIDATE] = replace(
+        model_metrics[probes_module.NESTED_H5_CANDIDATE],
+        log_loss=model_metrics[probes_module.NESTED_H5_BASELINE].log_loss,
+    )
+    unsupported = replace(
+        evidence.unsupported_answer,
+        model_metrics=model_metrics,
+        relative_h5_log_loss_improvement=0.0,
+    )
+    gates = evaluate_f2a_gates(
+        evidence.familiarity, evidence.answerability, unsupported
+    )
+    f2a = _f2a_from_results(
+        evidence.familiarity,
+        evidence.answerability,
+        unsupported,
+        gates,
+        sae_gates=dict(evidence.sae_gates),
+        template=evidence,
+    )
+
+    claims = recompute_claim_ladder(
+        behavior=_behavior(),
+        f2a=f2a,
+        f2b=_f2b(),
+        circuit=None,
+    )
+
+    assert claims["H3"].status == "supported"
+    assert claims["H4"].status == "supported"
+    assert claims["H5"].status == "not_supported"
+    assert claims["H7"].status == "skipped_by_gate"
+    assert claims["H8"].status == "skipped_by_gate"
+    assert any("H5" in reason for reason in claims["H7"].reasons)
 
 
 def test_circuit_evidence_must_be_typed_and_bound_to_intervention_result():
