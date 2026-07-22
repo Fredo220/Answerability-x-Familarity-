@@ -11,6 +11,7 @@ from trajectory_extractor.fa_data import FAExample, build_factorial_examples
 from trajectory_extractor.fa_entities import EntityMatch
 from trajectory_extractor.fa_scoring import (
     OutcomeClass,
+    SameStringSealEvidence,
     behavioral_gate,
     crossed_bootstrap,
     estimate_behavior,
@@ -266,6 +267,26 @@ def test_crossed_bootstrap_is_seeded_and_uses_entity_template_multiplicity_weigh
     assert all(denominator > 0 for denominator in first.weighted_denominators)
 
 
+def test_crossed_bootstrap_records_exact_draw_and_resampling_provenance():
+    distribution = crossed_bootstrap(
+        complete_factorial_rows(), replicates=31, seed=20260722
+    )
+
+    assert distribution.requested_draws == 31
+    assert distribution.valid_draws == 31
+    assert distribution.discarded_draws == 0
+    assert distribution.resampling_unit == (
+        "entity_unit_id",
+        "template_family",
+    )
+    assert distribution.seed == 20260722
+    assert distribution.alpha == pytest.approx(0.05)
+    assert distribution.to_record()["resampling_unit"] == [
+        "entity_unit_id",
+        "template_family",
+    ]
+
+
 def test_bootstrap_interval_keeps_the_observed_statistic_separate_from_resample_distribution():
     rows = list(complete_factorial_rows())
     for position, row in enumerate(rows):
@@ -401,6 +422,45 @@ def test_behavioral_gate_requires_and_records_exact_registered_provenance():
             same_string_sealed=True,
             config_hash="A" * 64,
             manifest_hash="b" * 64,
+        )
+
+
+def test_same_string_seal_is_typed_immutable_and_manifest_bound():
+    rows = (*complete_factorial_rows(), *same_string_rows())
+    metrics = estimate_behavior(rows)
+    distribution = crossed_bootstrap(rows, replicates=17, seed=42)
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256="b" * 64,
+        example_ids=("same-string-2", "same-string-1"),
+    )
+
+    gate = behavioral_gate(
+        metrics,
+        distribution,
+        thresholds=CONFIRMATORY_THRESHOLDS,
+        same_string_sealed=True,
+        config_hash="a" * 64,
+        manifest_hash="b" * 64,
+        same_string_seal=seal,
+    )
+
+    assert gate.same_string_seal == seal
+    assert gate.to_record()["same_string_seal_sha256"] == seal.sha256
+    assert gate.to_record()["same_string_seal"]["example_ids"] == [
+        "same-string-1",
+        "same-string-2",
+    ]
+    with pytest.raises(FrozenInstanceError):
+        seal.block = "factorial"
+    with pytest.raises(ValueError, match="source manifest"):
+        behavioral_gate(
+            metrics,
+            distribution,
+            thresholds=CONFIRMATORY_THRESHOLDS,
+            same_string_sealed=True,
+            config_hash="a" * 64,
+            manifest_hash="c" * 64,
+            same_string_seal=seal,
         )
 
 

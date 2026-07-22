@@ -7,14 +7,16 @@ without coupling it to generation or artifact I/O.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
-import unicodedata
-import re
 
 import numpy as np
 
@@ -220,6 +222,11 @@ class BootstrapDistribution:
     h2b_interaction_interval: PercentileInterval | None
     weighted_denominators: tuple[int, ...]
     seed: int
+    requested_draws: int | None = None
+    valid_draws: int | None = None
+    discarded_draws: int | None = None
+    resampling_unit: tuple[str, ...] = ("entity_unit_id", "template_family")
+    alpha: float = 0.05
 
     def __post_init__(self) -> None:
         for field in (
@@ -233,6 +240,33 @@ class BootstrapDistribution:
             raise ValueError("seed must be an integer")
         if any(value <= 0 for value in self.weighted_denominators):
             raise ValueError("weighted denominators must be positive")
+        valid = len(self.interaction_samples) if self.valid_draws is None else self.valid_draws
+        requested = valid if self.requested_draws is None else self.requested_draws
+        discarded = 0 if self.discarded_draws is None else self.discarded_draws
+        if (
+            type(requested) is not int
+            or type(valid) is not int
+            or type(discarded) is not int
+            or requested <= 0
+            or valid <= 0
+            or discarded < 0
+            or valid + discarded != requested
+        ):
+            raise ValueError("bootstrap draw accounting is invalid")
+        if len(self.interaction_samples) != valid or len(self.h2_accuracy_difference_samples) != valid:
+            raise ValueError("bootstrap sample counts must equal valid_draws")
+        if len(self.h2b_interaction_samples) not in {0, valid}:
+            raise ValueError("H2b bootstrap samples must be absent or complete")
+        unit = tuple(self.resampling_unit)
+        if unit != ("entity_unit_id", "template_family"):
+            raise ValueError("bootstrap resampling unit is not registered")
+        if type(self.alpha) not in {int, float} or not np.isfinite(self.alpha) or not 0.0 < float(self.alpha) < 1.0:
+            raise ValueError("bootstrap alpha must be finite and in (0, 1)")
+        object.__setattr__(self, "requested_draws", requested)
+        object.__setattr__(self, "valid_draws", valid)
+        object.__setattr__(self, "discarded_draws", discarded)
+        object.__setattr__(self, "resampling_unit", unit)
+        object.__setattr__(self, "alpha", float(self.alpha))
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -246,6 +280,11 @@ class BootstrapDistribution:
             "h2b_interaction_interval": None if self.h2b_interaction_interval is None else self.h2b_interaction_interval.to_record(),
             "weighted_denominators": list(self.weighted_denominators),
             "seed": self.seed,
+            "requested_draws": self.requested_draws,
+            "valid_draws": self.valid_draws,
+            "discarded_draws": self.discarded_draws,
+            "resampling_unit": list(self.resampling_unit),
+            "alpha": self.alpha,
         }
 
 
@@ -264,6 +303,83 @@ class GateDecision:
 
 
 @dataclass(frozen=True)
+class SameStringSealEvidence:
+    """Immutable registration record for the protected same-string block."""
+
+    schema_version: int
+    endpoint: str
+    source_manifest_sha256: str
+    block: str
+    example_ids: tuple[str, ...]
+    registered_block_sha256: str
+
+    @classmethod
+    def from_registered_block(
+        cls, *, source_manifest_sha256: str, example_ids: Sequence[str]
+    ) -> SameStringSealEvidence:
+        canonical_ids = tuple(sorted(example_ids))
+        block_record = cls._block_record(
+            source_manifest_sha256=source_manifest_sha256,
+            example_ids=canonical_ids,
+        )
+        return cls(
+            schema_version=1,
+            endpoint="behavior_test",
+            source_manifest_sha256=source_manifest_sha256,
+            block="same_string",
+            example_ids=canonical_ids,
+            registered_block_sha256=_sha256_record(block_record),
+        )
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1 or self.endpoint != "behavior_test":
+            raise ValueError("same-string seal endpoint or schema is invalid")
+        _lowercase_sha256(self.source_manifest_sha256, "source_manifest_sha256")
+        if self.block != "same_string":
+            raise ValueError("same-string seal block is invalid")
+        ids = tuple(self.example_ids)
+        if not ids or any(not isinstance(value, str) or not value for value in ids):
+            raise ValueError("same-string seal example IDs must be nonempty")
+        if ids != tuple(sorted(set(ids))):
+            raise ValueError("same-string seal example IDs must be unique and canonical")
+        _lowercase_sha256(self.registered_block_sha256, "registered_block_sha256")
+        expected = _sha256_record(
+            self._block_record(
+                source_manifest_sha256=self.source_manifest_sha256,
+                example_ids=ids,
+            )
+        )
+        if self.registered_block_sha256 != expected:
+            raise ValueError("same-string registered block hash does not match its record")
+        object.__setattr__(self, "example_ids", ids)
+
+    @staticmethod
+    def _block_record(
+        *, source_manifest_sha256: str, example_ids: Sequence[str]
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "endpoint": "behavior_test",
+            "source_manifest_sha256": source_manifest_sha256,
+            "block": "same_string",
+            "example_ids": list(example_ids),
+        }
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            **self._block_record(
+                source_manifest_sha256=self.source_manifest_sha256,
+                example_ids=self.example_ids,
+            ),
+            "registered_block_sha256": self.registered_block_sha256,
+        }
+
+    @property
+    def sha256(self) -> str:
+        return _sha256_record(self.to_record())
+
+
+@dataclass(frozen=True)
 class BehavioralGate:
     status: str
     h1: GateDecision
@@ -274,6 +390,7 @@ class BehavioralGate:
     config_hash: str
     manifest_hash: str
     h2b_cannot_rescue_h1: bool = True
+    same_string_seal: SameStringSealEvidence | None = None
 
     def __post_init__(self) -> None:
         if self.status not in {"supported", "not_supported", "not_evaluable"}:
@@ -286,6 +403,13 @@ class BehavioralGate:
             raise ValueError("same_string_sealed must be boolean")
         _lowercase_sha256(self.config_hash, "config_hash")
         _lowercase_sha256(self.manifest_hash, "manifest_hash")
+        if self.same_string_seal is not None:
+            if not isinstance(self.same_string_seal, SameStringSealEvidence):
+                raise ValueError("same_string_seal must be typed evidence")
+            if self.same_string_seal.source_manifest_sha256 != self.manifest_hash:
+                raise ValueError("same-string seal source manifest does not match gate")
+            if not self.same_string_sealed:
+                raise ValueError("typed same-string seal requires same_string_sealed")
         object.__setattr__(self, "thresholds", MappingProxyType(dict(self.thresholds)))
 
     def to_record(self) -> dict[str, Any]:
@@ -299,6 +423,14 @@ class BehavioralGate:
             "config_hash": self.config_hash,
             "manifest_hash": self.manifest_hash,
             "h2b_cannot_rescue_h1": True,
+            "same_string_seal": (
+                None
+                if self.same_string_seal is None
+                else self.same_string_seal.to_record()
+            ),
+            "same_string_seal_sha256": (
+                None if self.same_string_seal is None else self.same_string_seal.sha256
+            ),
         }
 
 
@@ -372,17 +504,26 @@ def crossed_bootstrap(
     h2_samples: list[float] = []
     h2b_samples: list[float] = []
     weighted_denominators: tuple[int, ...] | None = None
+    discarded_draws = 0
+    require_h2b = observed.h2b_interaction is not None
     for _ in range(replicates):
         sampled = cross_resample(source, rng)
         metrics = _estimate(sampled, include_sensitivities=False, require_completion=False)
-        if metrics.interaction is None or metrics.h2_accuracy_difference is None:
-            raise ValueError("bootstrap sample lacks a registered factorial cell")
+        if (
+            metrics.interaction is None
+            or metrics.h2_accuracy_difference is None
+            or (require_h2b and metrics.h2b_interaction is None)
+        ):
+            discarded_draws += 1
+            continue
         interaction_samples.append(metrics.interaction)
         h2_samples.append(metrics.h2_accuracy_difference)
-        if metrics.h2b_interaction is not None:
+        if require_h2b:
             h2b_samples.append(metrics.h2b_interaction)
         if weighted_denominators is None:
             weighted_denominators = tuple(metrics.denominators.values())
+    if not interaction_samples:
+        raise ValueError("bootstrap produced no valid registered draws")
     return BootstrapDistribution(
         interaction_samples=tuple(interaction_samples),
         h2_accuracy_difference_samples=tuple(h2_samples),
@@ -396,6 +537,11 @@ def crossed_bootstrap(
         ),
         weighted_denominators=weighted_denominators or (),
         seed=seed,
+        requested_draws=replicates,
+        valid_draws=len(interaction_samples),
+        discarded_draws=discarded_draws,
+        resampling_unit=("entity_unit_id", "template_family"),
+        alpha=0.05,
     )
 
 
@@ -422,6 +568,7 @@ def behavioral_gate(
     same_string_sealed: bool,
     config_hash: str,
     manifest_hash: str,
+    same_string_seal: SameStringSealEvidence | None = None,
 ) -> BehavioralGate:
     """Apply registered H1/H2 gates while reporting H2b independently."""
     if not isinstance(thresholds, Mapping):
@@ -448,6 +595,7 @@ def behavioral_gate(
         same_string_sealed=same_string_sealed,
         config_hash=config_hash,
         manifest_hash=manifest_hash,
+        same_string_seal=same_string_seal,
     )
 
 
@@ -733,6 +881,13 @@ def _nonempty_text(value: Any, name: str) -> str:
 def _contains_infrastructure_marker(value: str) -> bool:
     normalized = value.casefold()
     return any(marker in normalized for marker in _INFRASTRUCTURE_MARKERS)
+
+
+def _sha256_record(value: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _lowercase_sha256(value: Any, name: str) -> str:
