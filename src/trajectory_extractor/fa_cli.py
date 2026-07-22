@@ -111,6 +111,7 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     generation.add_argument("--manifest", required=True)
     generation.add_argument("--shard-id", required=True)
     generation.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
+    generation.add_argument("--resume", action="store_true")
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)

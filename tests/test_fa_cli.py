@@ -219,6 +219,31 @@ def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     assert args.root == str(tmp_path)
 
 
+def test_generation_parser_accepts_explicit_resume_flag(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    args = parser.parse_args(
+        [
+            "fa-run-generation",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(tmp_path / "prompts.jsonl.manifest.json"),
+            "--shard-id",
+            "0001",
+            "--namespace",
+            "pilot",
+            "--resume",
+        ]
+    )
+
+    assert args.resume is True
+
+
 def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
     install_fake_tokenizer(monkeypatch)
     args = argparse.Namespace(command="rlmf-prepare-data")
