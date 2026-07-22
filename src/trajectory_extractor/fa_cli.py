@@ -4,11 +4,16 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from trajectory_extractor.fa_activations import (
+    HFSelectedPositionRunner,
+    write_activation_shard,
+)
 from trajectory_extractor.fa_artifacts import FAArtifactStore
 from trajectory_extractor.fa_config import FAConfig, SMOKE_CHAT_TEMPLATE_SHA256
 from trajectory_extractor.fa_data import (
@@ -49,7 +54,7 @@ FA_COMMANDS = (
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
-_IMPLEMENTED = frozenset(FA_COMMANDS[:6])
+_IMPLEMENTED = frozenset((*FA_COMMANDS[:6], "fa-extract-activations"))
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
 _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
 _SMOKE_CONFIG_PATH = (
@@ -65,6 +70,8 @@ _PREREGISTRATION_PATH = (
 _TOKENIZER_LOADER = None
 _POWER_EXECUTOR = simulate_interaction_power
 _SMOKE_CHAT_TEMPLATE_SHA256 = SMOKE_CHAT_TEMPLATE_SHA256
+_ACTIVATION_RUNNER_FACTORY = HFSelectedPositionRunner
+_ACTIVATION_SHARD_WRITER = write_activation_shard
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,12 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     generation.add_argument("--shard-id", required=True)
     generation.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     generation.add_argument("--resume", action="store_true")
+    activations = parsers["fa-extract-activations"]
+    activations.add_argument("--manifest", required=True)
+    activations.add_argument("--shard-id", required=True)
+    activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
+    activations.add_argument("--layers")
+    activations.add_argument("--resume", action="store_true")
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)
@@ -147,6 +160,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _audit_manifest(config, root, args)
         elif command == "fa-run-generation":
             payload = _run_generation(config, root, args)
+        elif command == "fa-extract-activations":
+            payload = _extract_activations(config, root, args)
         else:
             payload = _score_behavior(config, root, args)
     except Exception as error:
@@ -398,6 +413,86 @@ def _run_generation(config: FAConfig, root: Path, args: argparse.Namespace) -> d
         "shard_manifest": str(shard.manifest_path),
         "sha256": shard.sha256,
     }
+
+
+def _extract_activations(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    if args.namespace in _PROTECTED:
+        raise ValueError(
+            "fa-extract-activations is generic-only and cannot evaluate protected test namespaces"
+        )
+    store = FAArtifactStore(root)
+    manifest = _load_manifest(store, args.manifest, config)
+    if manifest.namespace != args.namespace:
+        raise ValueError("explicit activation manifest contains another namespace")
+    layers = _registered_extraction_layers(config, args.layers)
+    shard_id = _safe_cli_id(args.shard_id, "activation shard-id")
+    model_runner = HFModelRunner(config)
+    validate_runner_binding(
+        model_runner,
+        config,
+        expected_chat_template_sha256=manifest.chat_template_sha256,
+    )
+    runner = _ACTIVATION_RUNNER_FACTORY(
+        model_runner.model,
+        model_runner.tokenizer,
+        model_id=config.model_id,
+        model_revision=config.model_revision,
+        tokenizer_revision=config.tokenizer_revision,
+    )
+    destination = (
+        root.absolute()
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "activations"
+        / args.namespace
+        / f"{shard_id}.npz"
+    )
+    shard = _ACTIVATION_SHARD_WRITER(
+        runner,
+        manifest.examples,
+        layers,
+        destination=destination,
+    )
+    return {
+        "status": "extracted",
+        "manifest": str(shard.manifest_path),
+        "request_sha256": shard.request_sha256,
+        "row_count": shard.row_count,
+    }
+
+
+def _registered_extraction_layers(config: FAConfig, raw: str | None) -> tuple[int, ...]:
+    registered = tuple(range(26))
+    if config.profile == "confirmatory":
+        if raw is not None and _parse_layer_ids(raw) != registered:
+            raise ValueError("confirmatory extraction must use all 26 registered layers")
+        return registered
+    if raw is None:
+        raise ValueError("smoke activation extraction requires explicit --layers")
+    return _parse_layer_ids(raw)
+
+
+def _parse_layer_ids(raw: str) -> tuple[int, ...]:
+    if not isinstance(raw, str) or not raw:
+        raise ValueError("activation layers must be a comma-separated integer sequence")
+    try:
+        layers = tuple(int(value) for value in raw.split(","))
+    except ValueError as error:
+        raise ValueError("activation layers must be a comma-separated integer sequence") from error
+    if not layers or any(value < 0 for value in layers) or layers != tuple(sorted(set(layers))):
+        raise ValueError("activation layers must be unique increasing nonnegative integers")
+    return layers
+
+
+def _safe_cli_id(value: object, field: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) is None:
+        raise ValueError(f"{field} is invalid")
+    if value in {".", ".."} or ".." in value:
+        raise ValueError(f"{field} is invalid")
+    return value
 
 
 def _score_behavior(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:

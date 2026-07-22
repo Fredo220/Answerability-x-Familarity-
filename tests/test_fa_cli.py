@@ -244,6 +244,149 @@ def test_generation_parser_accepts_explicit_resume_flag(tmp_path):
     assert args.resume is True
 
 
+def test_activation_parser_requires_explicit_manifest_namespace_and_shard(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    args = parser.parse_args(
+        [
+            "fa-extract-activations",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(tmp_path / "prompts.jsonl.manifest.json"),
+            "--namespace",
+            "pilot",
+            "--shard-id",
+            "0001",
+            "--layers",
+            "0,4,8",
+            "--resume",
+        ]
+    )
+
+    assert args.namespace == "pilot"
+    assert args.shard_id == "0001"
+    assert args.layers == "0,4,8"
+    assert args.resume is True
+
+
+def test_activation_cli_wires_verified_prompt_to_resumable_writer(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, "pilot")
+    calls = {}
+
+    class FakeModelRunner:
+        def __init__(self, supplied):
+            assert supplied == config
+            self.model = object()
+            self.tokenizer = object()
+            self.model_id = supplied.model_id
+            self.model_revision = supplied.model_revision
+            self.tokenizer_revision = supplied.tokenizer_revision
+            self.chat_template_sha256 = CHAT_TEMPLATE_SHA256
+
+        def generate(self, prompts, generation):
+            raise AssertionError("activation extraction must not generate completions")
+
+    class FakeSelectedRunner:
+        def __init__(self, model, tokenizer, **pins):
+            calls["runner"] = (model, tokenizer, pins)
+
+    def fake_write(runner, examples, registered_layers, *, destination):
+        calls["write"] = (runner, tuple(examples), tuple(registered_layers), destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        for path in (
+            destination,
+            destination.with_suffix(".jsonl"),
+            destination.with_suffix(".manifest.json"),
+        ):
+            path.write_bytes(b"sealed")
+        return SimpleNamespace(
+            manifest_path=destination.with_suffix(".manifest.json"),
+            request_sha256="a" * 64,
+            row_count=len(examples),
+        )
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeModelRunner)
+    monkeypatch.setattr(fa_cli, "_ACTIVATION_RUNNER_FACTORY", FakeSelectedRunner)
+    monkeypatch.setattr(fa_cli, "_ACTIVATION_SHARD_WRITER", fake_write)
+
+    exit_code = cli.main(
+        [
+            "fa-extract-activations",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--namespace",
+            "pilot",
+            "--shard-id",
+            "0001",
+            "--layers",
+            "0,4,8",
+            "--resume",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["status"] == "extracted"
+    assert payload["request_sha256"] == "a" * 64
+    assert calls["write"][2] == (0, 4, 8)
+    assert calls["write"][3] == (
+        tmp_path
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "activations"
+        / "pilot"
+        / "0001.npz"
+    )
+
+
+def test_generic_activation_cli_rejects_protected_namespace_before_model_load(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, "probe_test")
+
+    class MustNotConstruct:
+        def __init__(self, _config):
+            raise AssertionError("protected extraction must use its endpoint transaction")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotConstruct)
+    exit_code = cli.main(
+        [
+            "fa-extract-activations",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--namespace",
+            "probe_test",
+            "--shard-id",
+            "0001",
+            "--layers",
+            "0",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload["status"] == "error"
+    assert "protected test namespaces" in payload["error"]["message"]
+
+
 def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
     install_fake_tokenizer(monkeypatch)
     args = argparse.Namespace(command="rlmf-prepare-data")
