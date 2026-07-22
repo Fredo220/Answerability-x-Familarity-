@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import FrozenInstanceError, replace
+from itertools import product
+import math
 
 import pytest
 
+import trajectory_extractor.fa_data as fa_data
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_data import (
     CONFIRMATORY_POWER_SIMULATIONS,
@@ -13,6 +16,8 @@ from trajectory_extractor.fa_data import (
     TRAIN_TEMPLATE_FAMILIES,
     VALIDATION_TEMPLATE_FAMILIES,
     FAManifest,
+    PowerAudit,
+    PowerCell,
     audit_dataset,
     build_factorial_examples,
     build_same_string_examples,
@@ -28,6 +33,45 @@ class FakeTokenizer:
     def encode(self, text, add_special_tokens=False):
         tokens = text.replace(".", " .").replace("?", " ?").split()
         return ([0] if add_special_tokens else []) + tokens + ([0] if add_special_tokens else [])
+
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+        assert tokenize is True
+        assert add_generation_prompt is True
+        assert messages == [{"role": "user", "content": messages[0]["content"]}]
+        return self.encode(messages[0]["content"], add_special_tokens=True)
+
+
+class LegacyFakeTokenizer:
+    all_special_ids = (0,)
+
+    def encode(self, text, add_special_tokens=False):
+        tokens = text.split()
+        return ([0] if add_special_tokens else []) + tokens + ([0] if add_special_tokens else [])
+
+
+class ChatTemplateTokenizer(FakeTokenizer):
+    all_special_ids = (0, 91, 92)
+
+    def __init__(self):
+        self.template_revision = 1
+
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+        raw = self.encode(messages[0]["content"], add_special_tokens=False)
+        suffix = [92] * self.template_revision
+        return [0, 91, *raw, *suffix, 0]
+
+
+class VariableCodeTokenizer(FakeTokenizer):
+    def encode(self, text, add_special_tokens=False):
+        tokens = super().encode(text, add_special_tokens=False)
+        split_tokens = []
+        for token in tokens:
+            bare = token.strip(".,:;?!")
+            if fa_data._CODE.fullmatch(bare) and bare[-1] in "23456789":
+                split_tokens.extend((bare[:3], bare[3:]))
+            else:
+                split_tokens.append(token)
+        return ([0] if add_special_tokens else []) + split_tokens + ([0] if add_special_tokens else [])
 
 
 def config() -> FAConfig:
@@ -118,6 +162,69 @@ def registered_examples(tokenizer=FakeTokenizer()):
     return build_factorial_examples(config(), matches, tokenizer=tokenizer), matches
 
 
+@pytest.fixture(scope="module")
+def full_confirmatory_design():
+    matches = tuple(
+        entity_unit(
+            index,
+            split=split,
+            coarse_type=("place", "person", "organization", "creative_work")[index % 4],
+        )
+        for index, split in enumerate(
+            ["mechanism_train"] * 64
+            + ["locked_validation"] * 32
+            + ["behavior_test"] * 48
+            + ["probe_test"] * 24
+            + ["intervention_test"] * 24
+        )
+    )
+    tokenizer = FakeTokenizer()
+    factorial = build_factorial_examples(config(), matches, tokenizer=tokenizer)
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    return factorial, same_string
+
+
+def exhaustive_power_audit(rows, *, power=0.80):
+    design_hash = simulate_interaction_power(
+        rows,
+        effect_grid=(0.0,),
+        within_entity_correlations={
+            "entity_icc": (0.05,),
+            "template_icc": (0.02,),
+            "invalid_format_rate": (0.0,),
+        },
+        simulations=1,
+    ).design_sha256
+    cells = tuple(
+        PowerCell(
+            absent_attempt_rate=absent_rate,
+            entity_icc=entity_icc,
+            template_icc=template_icc,
+            invalid_format_rate=invalid_rate,
+            interaction=interaction,
+            estimated_power=power,
+            monte_carlo_standard_error=math.sqrt(
+                power * (1.0 - power) / CONFIRMATORY_POWER_SIMULATIONS
+            ),
+            simulations=CONFIRMATORY_POWER_SIMULATIONS,
+        )
+        for absent_rate, entity_icc, template_icc, invalid_rate, interaction in product(
+            REGISTERED_POWER_GRID.absent_attempt_rates,
+            REGISTERED_POWER_GRID.entity_iccs,
+            REGISTERED_POWER_GRID.template_iccs,
+            REGISTERED_POWER_GRID.invalid_format_rates,
+            REGISTERED_POWER_GRID.interactions,
+        )
+    )
+    return PowerAudit(
+        design_sha256=design_hash,
+        seed=20260722,
+        simulations=CONFIRMATORY_POWER_SIMULATIONS,
+        cells=cells,
+        registered_grid=True,
+    )
+
+
 def test_each_entity_unit_expands_over_its_registered_template_families():
     tokenizer = FakeTokenizer()
     rows, _ = registered_examples(tokenizer)
@@ -126,8 +233,8 @@ def test_each_entity_unit_expands_over_its_registered_template_families():
         "mechanism_train": TRAIN_TEMPLATE_FAMILIES,
         "locked_validation": VALIDATION_TEMPLATE_FAMILIES,
         "behavior_test": TEST_TEMPLATE_FAMILIES,
-        "probe_test": TEST_TEMPLATE_FAMILIES,
-        "intervention_test": TEST_TEMPLATE_FAMILIES,
+        "probe_test": fa_data.PROBE_TEMPLATE_FAMILIES,
+        "intervention_test": fa_data.INTERVENTION_TEMPLATE_FAMILIES,
     }
     for split, families in expected_families.items():
         split_rows = [row for row in rows if row.split == split]
@@ -191,6 +298,213 @@ def test_same_string_rows_fix_target_and_token_budget_and_use_one_balanced_famil
             assert pair[0].special_token_sequence == pair[1].special_token_sequence
 
     assert not {row.example_id for row in factorial} & {row.example_id for row in rows}
+
+
+def test_same_string_exposure_prefixes_are_neutral_unrelated_and_target_matched():
+    _factorial, matches = registered_examples()
+    tokenizer = FakeTokenizer()
+    rows = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    prohibited = {
+        "archive",
+        "registry",
+        "catalog",
+        "ledger",
+        "code",
+        "answer",
+        "answerability",
+        "unknown",
+        "uncertain",
+        "uncertainty",
+        "abstain",
+        "abstention",
+    }
+
+    for match in matches:
+        unit_rows = [row for row in rows if row.entity_unit_id == match.pair_id]
+        for row in unit_rows:
+            prefix, separator, task = row.user_text.partition(" Task: ")
+            assert separator
+            prefix_words = {word.casefold().strip(".,:;?!") for word in prefix.split()}
+            assert prefix_words.isdisjoint(prohibited)
+            assert row.target_text in task
+            if row.exposure == "high_exposure":
+                assert prefix.count(row.target_text) == 4
+            else:
+                assert row.target_text not in prefix
+
+        for answerability in ("target_bound", "code_absent"):
+            high, low = sorted(
+                (row for row in unit_rows if row.answerability == answerability),
+                key=lambda row: row.exposure,
+            )
+            high_prefix = high.user_text.partition(" Task: ")[0]
+            low_prefix = low.user_text.partition(" Task: ")[0]
+            assert len(tokenizer.encode(high_prefix)) == len(tokenizer.encode(low_prefix))
+            assert high.user_text.partition(" Task: ")[2] == low.user_text.partition(" Task: ")[2]
+
+
+def test_template_families_have_distinct_labels_and_registered_prompt_bytes():
+    family_sets = tuple(fa_data._FAMILIES_BY_SPLIT[split] for split in config().split_counts)
+    flattened = [family for families in family_sets for family in families]
+    assert len(flattened) == len(set(flattened))
+
+    rendered = {
+        fa_data._TEMPLATE_TEXT[family].format(
+            first="First Entity",
+            second="Second Entity",
+            first_relation="code",
+            first_value="KABCD",
+            second_relation="color",
+            second_value="amber",
+            query="First Entity",
+        ).encode("utf-8")
+        for family in flattened
+    }
+    assert len(rendered) == len(flattened)
+
+
+def test_template_audit_rejects_duplicate_registered_content(monkeypatch):
+    monkeypatch.setitem(
+        fa_data._TEMPLATE_TEXT,
+        "train_registry_possessive",
+        fa_data._TEMPLATE_TEXT["train_registry_direct"],
+    )
+    rows, matches = registered_examples()
+    same_string = build_same_string_examples(config(), matches, tokenizer=FakeTokenizer())
+
+    assert not audit_dataset(rows, same_string, tokenizer=FakeTokenizer()).checks["template_overlap"]
+
+
+@pytest.mark.parametrize("replacement", ["archive", "records"])
+def test_same_string_audit_rejects_unregistered_prefix_concepts_without_length_drift(replacement):
+    _factorial, matches = registered_examples()
+    tokenizer = FakeTokenizer()
+    rows = list(build_same_string_examples(config(), matches, tokenizer=tokenizer))
+    target = next(row for row in rows if row.exposure == "high_exposure")
+    tampered_text = target.user_text.replace("visits", replacement, 1)
+    token_ids, special_tokens = fa_data._token_metadata(tampered_text, tokenizer)
+    object.__setattr__(target, "user_text", tampered_text)
+    object.__setattr__(target, "rendered_token_ids", token_ids)
+    object.__setattr__(target, "rendered_token_count", len(token_ids))
+    object.__setattr__(target, "special_token_sequence", special_tokens)
+
+    audit = audit_dataset(registered_examples()[0], rows, tokenizer=tokenizer)
+    assert not audit.checks["same_string_token_budget"]
+
+
+def test_code_vocabulary_is_tokenizer_filtered_single_class_and_deterministic():
+    _rows, matches = registered_examples()
+    tokenizer = VariableCodeTokenizer()
+    forward = build_factorial_examples(config(), matches, tokenizer=tokenizer)
+    reverse = build_factorial_examples(config(), tuple(reversed(matches)), tokenizer=tokenizer)
+
+    code_by_unit = {row.entity_unit_id: row.registry_code for row in forward}
+    assert code_by_unit == {row.entity_unit_id: row.registry_code for row in reverse}
+    assert len({len(tokenizer.encode(code)) for code in code_by_unit.values()}) == 1
+
+    for unit_id, code in code_by_unit.items():
+        unit_rows = [row for row in forward if row.entity_unit_id == unit_id]
+        assert {row.registry_code for row in unit_rows} == {code}
+        assert len({row.split for row in unit_rows}) == 1
+        assert Counter(row.target_familiarity for row in unit_rows).most_common()[0][1] == len(
+            unit_rows
+        ) // 2
+        assert Counter(row.distractor_familiarity for row in unit_rows).most_common()[0][1] == len(
+            unit_rows
+        ) // 2
+        assert Counter(row.entity_order for row in unit_rows) == Counter(
+            {"target_first": len(unit_rows) // 2, "target_second": len(unit_rows) // 2}
+        )
+
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    assert audit_dataset(forward, same_string, tokenizer=tokenizer).checks["code_vocabulary"]
+
+
+def test_code_vocabulary_audit_rejects_a_regex_valid_code_from_another_token_class():
+    tokenizer = VariableCodeTokenizer()
+    rows, matches = registered_examples(tokenizer)
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    target_unit = rows[0].entity_unit_id
+    replacement_code = next(
+        code
+        for code in ("KAAA2", "KAAAA")
+        if len(tokenizer.encode(code)) != len(tokenizer.encode(rows[0].registry_code))
+    )
+    assert len(tokenizer.encode(replacement_code)) != len(tokenizer.encode(rows[0].registry_code))
+    for row in (*rows, *same_string):
+        if row.entity_unit_id == target_unit:
+            object.__setattr__(row, "registry_code", replacement_code)
+
+    audit = audit_dataset(rows, same_string, tokenizer=tokenizer)
+    assert not audit.checks["code_vocabulary"]
+
+
+def test_code_vocabulary_audit_rejects_globally_consistent_but_unregistered_token_class():
+    tokenizer = VariableCodeTokenizer()
+    rows, matches = registered_examples(tokenizer)
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    registered_length = len(tokenizer.encode(rows[0].registry_code))
+    replacements = {}
+    used = set()
+    for row in rows:
+        if row.entity_unit_id in replacements:
+            continue
+        for attempt in range(256, 1024):
+            candidate = fa_data._code_for(row.split, row.entity_unit_id, attempt)
+            if (
+                candidate not in used
+                and len(tokenizer.encode(candidate)) != registered_length
+            ):
+                replacements[row.entity_unit_id] = candidate
+                used.add(candidate)
+                break
+
+    assert len(replacements) == len({row.entity_unit_id for row in rows})
+    assert len({len(tokenizer.encode(code)) for code in replacements.values()}) == 1
+    for row in (*rows, *same_string):
+        object.__setattr__(row, "registry_code", replacements[row.entity_unit_id])
+
+    audit = audit_dataset(rows, same_string, tokenizer=tokenizer)
+    assert not audit.checks["code_vocabulary"]
+
+
+def test_rendered_token_metadata_uses_actual_chat_template_and_generation_prompt():
+    tokenizer = ChatTemplateTokenizer()
+    rows, _ = registered_examples(tokenizer)
+    row = rows[0]
+    expected = tokenizer.apply_chat_template(
+        [{"role": "user", "content": row.user_text}],
+        tokenize=True,
+        add_generation_prompt=True,
+    )
+
+    assert row.rendered_token_ids == tuple(expected)
+    assert row.rendered_token_count == len(expected)
+    assert row.special_token_sequence == (0, 91, 92, 0)
+    assert row.rendered_token_ids != tuple(tokenizer.encode(row.user_text, add_special_tokens=True))
+
+
+def test_rendered_token_audit_detects_chat_template_only_changes():
+    tokenizer = ChatTemplateTokenizer()
+    rows, matches = registered_examples(tokenizer)
+    same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
+    tokenizer.template_revision = 2
+
+    audit = audit_dataset(rows, same_string, tokenizer=tokenizer)
+    assert not audit.checks["rendered_token_length"]
+    assert not audit.checks["special_token_sequence"]
+
+
+def test_confirmatory_construction_requires_apply_chat_template_but_fake_adapter_is_conservative():
+    legacy = LegacyFakeTokenizer()
+    _rows, matches = registered_examples()
+
+    with pytest.raises(ValueError, match="apply_chat_template"):
+        build_factorial_examples(config(), matches, tokenizer=legacy)
+
+    token_ids, special_tokens = fa_data._token_metadata("plain fake prompt", legacy)
+    assert token_ids == (0, "plain", "fake", "prompt", 0)
+    assert special_tokens == (0, 0)
 
 
 def test_examples_and_manifests_are_immutable_and_content_addressed():
@@ -261,6 +575,92 @@ def test_power_simulation_uses_registered_grid_is_deterministic_and_has_fast_ove
     assert CONFIRMATORY_POWER_SIMULATIONS == 2000
 
 
+def test_power_simulation_samples_binary_and_invalid_events_not_analytic_gaussians(monkeypatch):
+    rows, _ = registered_examples()
+
+    def analytic_approximation_is_forbidden(*_args, **_kwargs):
+        raise AssertionError("analytic Gaussian approximation was called")
+
+    monkeypatch.setattr(
+        fa_data,
+        "_conservative_interaction_se",
+        analytic_approximation_is_forbidden,
+        raising=False,
+    )
+    audit = simulate_interaction_power(
+        rows,
+        effect_grid=(0.10,),
+        within_entity_correlations={
+            "entity_icc": (0.30,),
+            "template_icc": (0.10,),
+            "invalid_format_rate": (1.0,),
+        },
+        simulations=12,
+    )
+
+    assert len(audit.cells) == 3
+    assert all(cell.estimated_power == 0.0 for cell in audit.cells)
+    assert all(cell.monte_carlo_standard_error == 0.0 for cell in audit.cells)
+
+
+def test_power_simulation_draws_invalid_events_independently_for_each_simulation(monkeypatch):
+    rows, _ = registered_examples()
+    original_default_rng = fa_data.np.random.default_rng
+    observed_sizes = []
+
+    class RecordingGenerator:
+        def __init__(self, seed):
+            self._generator = original_default_rng(seed)
+
+        def normal(self, *args, **kwargs):
+            return self._generator.normal(*args, **kwargs)
+
+        def binomial(self, n, p, size=None):
+            observed_sizes.append(size)
+            return self._generator.binomial(n, p, size=size)
+
+    monkeypatch.setattr(fa_data.np.random, "default_rng", RecordingGenerator)
+    simulations = 7
+    simulate_interaction_power(
+        rows,
+        effect_grid=(0.05,),
+        within_entity_correlations={
+            "entity_icc": (0.05,),
+            "template_icc": (0.02,),
+            "invalid_format_rate": (0.05,),
+        },
+        simulations=simulations,
+    )
+
+    grouped_rows = len(fa_data._prepare_power_design(rows)["repetitions"])
+    assert observed_sizes[0] == (simulations, grouped_rows)
+
+
+def test_power_design_registers_entity_template_intersections_for_two_way_clustering():
+    rows, _ = registered_examples()
+    prepared = fa_data._prepare_power_design(rows)
+
+    assert prepared is not None
+    expected_intersections = {
+        (row.entity_unit_id, row.split, row.template_family) for row in rows
+    }
+    assert prepared["intersection_membership"].shape[1] == len(expected_intersections)
+    assert (prepared["intersection_membership"].sum(axis=1) == 1.0).all()
+
+
+def test_logistic_random_effects_preserve_registered_marginal_probabilities():
+    total_variance = fa_data._logit_random_effect_sd(0.30) ** 2 + fa_data._logit_random_effect_sd(
+        0.10
+    ) ** 2
+
+    for probability in (0.10, 0.25, 0.50, 0.55, 0.80):
+        intercept = fa_data._calibrated_logit_intercept(probability, total_variance)
+        assert fa_data._logistic_normal_mean(intercept, total_variance) == pytest.approx(
+            probability,
+            abs=1e-10,
+        )
+
+
 def test_confirmatory_manifest_fails_closed_without_a_registered_power_audit():
     matches = tuple(
         entity_unit(index, split=split, coarse_type=("place", "person", "organization", "creative_work")[index % 4])
@@ -276,3 +676,63 @@ def test_confirmatory_manifest_fails_closed_without_a_registered_power_audit():
 
     with pytest.raises(ValueError, match="power audit"):
         build_manifest(config(), rows)
+
+
+def test_confirmatory_gate_recognizes_factorial_corpus_when_same_string_rows_are_included(
+    full_confirmatory_design,
+):
+    factorial, same_string = full_confirmatory_design
+
+    with pytest.raises(ValueError, match="power audit"):
+        build_manifest(config(), factorial + same_string)
+
+    audit = exhaustive_power_audit(factorial)
+    manifest = build_manifest(config(), factorial + same_string, power_audit=audit)
+    assert manifest.power_audit == audit
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        lambda audit: replace(audit, cells=audit.cells[:1]),
+        lambda audit: replace(audit, cells=audit.cells[:-1] + (audit.cells[0],)),
+        lambda audit: replace(
+            audit,
+            cells=(
+                replace(audit.cells[0], monte_carlo_standard_error=float("nan")),
+                *audit.cells[1:],
+            ),
+        ),
+        lambda audit: replace(
+            audit,
+            cells=(replace(audit.cells[0], simulations=1), *audit.cells[1:]),
+        ),
+        lambda audit: replace(audit, design_sha256="0" * 64),
+    ],
+)
+def test_confirmatory_gate_rejects_partial_fabricated_or_invalid_power_audits(
+    full_confirmatory_design,
+    tamper,
+):
+    factorial, same_string = full_confirmatory_design
+    audit = tamper(exhaustive_power_audit(factorial))
+
+    with pytest.raises(ValueError, match="passing registered power audit"):
+        build_manifest(config(), factorial + same_string, power_audit=audit)
+
+
+def test_confirmatory_gate_requires_every_conservative_five_point_cell_to_reach_power(
+    full_confirmatory_design,
+):
+    factorial, same_string = full_confirmatory_design
+    audit = exhaustive_power_audit(factorial)
+    index = next(index for index, cell in enumerate(audit.cells) if cell.interaction == 0.05)
+    cells = list(audit.cells)
+    cells[index] = replace(cells[index], estimated_power=0.799)
+
+    with pytest.raises(ValueError, match="passing registered power audit"):
+        build_manifest(
+            config(),
+            factorial + same_string,
+            power_audit=replace(audit, cells=tuple(cells)),
+        )
