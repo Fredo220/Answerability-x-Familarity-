@@ -387,6 +387,76 @@ def test_generic_activation_cli_rejects_protected_namespace_before_model_load(
     assert "protected test namespaces" in payload["error"]["message"]
 
 
+def test_behavior_test_command_closes_one_use_endpoint_with_canonical_metrics(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, "behavior_test")
+    preregistration_hash = hashlib.sha256(
+        (
+            Path(__file__).resolve().parents[1]
+            / "docs"
+            / "familiarity_answerability_preregistration.md"
+        ).read_bytes()
+    ).hexdigest()
+    selection_hash = "d" * 64
+    store = FAArtifactStore(tmp_path)
+    store.seal_endpoint(
+        "behavior_test",
+        (prompts,),
+        {
+            "preregistration": preregistration_hash,
+            "selection_manifest": selection_hash,
+        },
+    )
+
+    class CanonicalRecord:
+        def __init__(self, value):
+            self.value = value
+
+        def to_record(self):
+            return dict(self.value)
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeRunner)
+    monkeypatch.setattr(
+        fa_cli,
+        "_BEHAVIOR_BOOTSTRAP",
+        lambda rows, replicates, seed: CanonicalRecord(
+            {"replicates": replicates, "rows": len(rows), "seed": seed}
+        ),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_BEHAVIOR_GATE",
+        lambda metrics, bootstrap, **kwargs: CanonicalRecord(
+            {"status": "not_evaluable", "config_hash": kwargs["config_hash"]}
+        ),
+    )
+
+    exit_code = cli.main(
+        [
+            "fa-evaluate-behavior-test",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--shard-id",
+            "confirmatory-0001",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["status"] == "evaluated"
+    assert payload["endpoint_state"] == "closed"
+    assert store.endpoint_state("behavior_test", prompts.manifest_path) == "closed"
+    metrics = store.verify_shard(payload["metrics_manifest"])
+    assert metrics.record_kind == "metrics"
+    assert metrics.namespace == "behavior_test"
+
+
 def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
     install_fake_tokenizer(monkeypatch)
     args = argparse.Namespace(command="rlmf-prepare-data")
@@ -725,7 +795,6 @@ def test_generic_generation_rejects_protected_namespaces_before_runner_construct
 @pytest.mark.parametrize(
     "command",
     [
-        "fa-evaluate-behavior-test",
         "fa-evaluate-probe-test",
         "fa-evaluate-intervention-test",
     ],

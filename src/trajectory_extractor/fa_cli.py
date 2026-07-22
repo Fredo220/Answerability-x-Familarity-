@@ -44,7 +44,12 @@ from trajectory_extractor.fa_runtime import (
     run_generation_shard,
     validate_runner_binding,
 )
-from trajectory_extractor.fa_scoring import estimate_behavior, score_response
+from trajectory_extractor.fa_scoring import (
+    behavioral_gate,
+    crossed_bootstrap,
+    estimate_behavior,
+    score_response,
+)
 
 
 FA_COMMANDS = (
@@ -54,7 +59,9 @@ FA_COMMANDS = (
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
-_IMPLEMENTED = frozenset((*FA_COMMANDS[:6], "fa-extract-activations"))
+_IMPLEMENTED = frozenset(
+    (*FA_COMMANDS[:6], "fa-extract-activations", "fa-evaluate-behavior-test")
+)
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
 _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
 _SMOKE_CONFIG_PATH = (
@@ -72,6 +79,8 @@ _POWER_EXECUTOR = simulate_interaction_power
 _SMOKE_CHAT_TEMPLATE_SHA256 = SMOKE_CHAT_TEMPLATE_SHA256
 _ACTIVATION_RUNNER_FACTORY = HFSelectedPositionRunner
 _ACTIVATION_SHARD_WRITER = write_activation_shard
+_BEHAVIOR_BOOTSTRAP = crossed_bootstrap
+_BEHAVIOR_GATE = behavioral_gate
 
 
 @dataclass(frozen=True)
@@ -125,6 +134,9 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     activations.add_argument("--layers")
     activations.add_argument("--resume", action="store_true")
+    behavior_test = parsers["fa-evaluate-behavior-test"]
+    behavior_test.add_argument("--manifest", required=True)
+    behavior_test.add_argument("--shard-id", required=True)
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)
@@ -162,6 +174,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _run_generation(config, root, args)
         elif command == "fa-extract-activations":
             payload = _extract_activations(config, root, args)
+        elif command == "fa-evaluate-behavior-test":
+            payload = _evaluate_behavior_test(config, root, args)
         else:
             payload = _score_behavior(config, root, args)
     except Exception as error:
@@ -493,6 +507,141 @@ def _safe_cli_id(value: object, field: str) -> str:
     if value in {".", ".."} or ".." in value:
         raise ValueError(f"{field} is invalid")
     return value
+
+
+def _evaluate_behavior_test(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    manifest = _load_manifest(store, args.manifest, config)
+    if manifest.namespace != "behavior_test":
+        raise ValueError("behavior evaluation requires the protected behavior_test manifest")
+    state = store.endpoint_state("behavior_test", manifest.shard_manifest_path)
+    if state == "closed":
+        raise ValueError("behavior_test is already closed")
+    if state == "evaluated":
+        store.close_endpoint("behavior_test")
+        return {"status": "recovered", "endpoint_state": "closed"}
+    receipt = store.unlock_or_resume_endpoint(
+        "behavior_test", manifest.shard_manifest_path
+    )
+    runner = HFModelRunner(config)
+    validate_runner_binding(
+        runner,
+        config,
+        expected_chat_template_sha256=manifest.chat_template_sha256,
+    )
+    generation = run_generation_shard(
+        runner,
+        manifest,
+        store,
+        _safe_cli_id(args.shard_id, "behavior shard-id"),
+        config=config,
+        namespace="behavior_test",
+    )
+    records = _load_verified_generation_sidecar(
+        store, generation.manifest_path, manifest, config
+    )
+    if not all(record["status"] == "completed" for record in records):
+        return {
+            "status": "infrastructure_failure",
+            "endpoint_state": "unlocked_once",
+            "generation_manifest": str(generation.manifest_path),
+        }
+    scored = _score_rows(records, manifest)
+    metrics = estimate_behavior(scored)
+    bootstrap = _BEHAVIOR_BOOTSTRAP(
+        scored,
+        replicates=config.bootstrap_replicates,
+        seed=config.bootstrap_seed,
+    )
+    gate = _BEHAVIOR_GATE(
+        metrics,
+        bootstrap,
+        thresholds=config.thresholds,
+        same_string_sealed=any(row.block == "same_string" for row in manifest.examples),
+        config_hash=config.config_hash,
+        manifest_hash=manifest.full_manifest_sha256,
+    )
+    evidence = {
+        "metrics": _json_safe(metrics.to_record()),
+        "bootstrap": _json_safe(bootstrap.to_record()),
+        "gate": _json_safe(gate.to_record()),
+        "scored_rows": [_json_safe(row.to_record()) for row in scored],
+    }
+    row = {
+        "kind": "metrics",
+        "phase": "F1",
+        **evidence,
+        "evidence_sha256": _sha256_json(evidence),
+    }
+    lineage = {
+        "config_sha256": config.config_hash,
+        "preregistration_sha256": receipt.preregistration_hash,
+        "selection_sha256": receipt.selection_manifest_hash,
+        "prompt_manifest_sha256": manifest.shard_sha256,
+        "generation_manifest_sha256": generation.sha256,
+        "evidence_sha256": row["evidence_sha256"],
+    }
+    metrics_shard = _write_or_resume_metrics(
+        store,
+        config.run_id,
+        "behavior_test",
+        f"behavior-metrics-{receipt.lease_id}",
+        row,
+        lineage,
+    )
+    store.mark_evaluated(receipt, metrics_shard.data_path)
+    store.close_endpoint("behavior_test")
+    return {
+        "status": "evaluated",
+        "endpoint_state": "closed",
+        "metrics_manifest": str(metrics_shard.manifest_path),
+        "evidence_sha256": row["evidence_sha256"],
+    }
+
+
+def _write_or_resume_metrics(
+    store: FAArtifactStore,
+    run_id: str,
+    namespace: str,
+    shard_id: str,
+    row: dict[str, Any],
+    lineage: dict[str, Any],
+):
+    try:
+        return store.write_completed_shard(
+            run_id,
+            namespace,
+            shard_id,
+            (row,),
+            lineage,
+            record_kind="metrics",
+        )
+    except FileExistsError:
+        candidate = (
+            store.root
+            / "runs"
+            / "familiarity_answerability"
+            / run_id
+            / "shards"
+            / namespace
+            / f"{shard_id}.jsonl.manifest.json"
+        )
+        existing = store.verify_shard(candidate)
+        expected = json.dumps(
+            row, allow_nan=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8") + b"\n"
+        if (
+            existing.record_kind != "metrics"
+            or existing.row_count != 1
+            or existing.sha256 != hashlib.sha256(expected).hexdigest()
+        ):
+            raise ValueError("existing metrics artifact does not match this evaluation")
+        sidecar = _read_json_object(existing.manifest_path)
+        if sidecar.get("lineage") != lineage:
+            raise ValueError("existing metrics lineage does not match this evaluation")
+        return existing
 
 
 def _score_behavior(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:
