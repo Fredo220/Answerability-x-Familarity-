@@ -10,6 +10,11 @@
     "repository": "google/gemma-2-2b-it",
     "sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
   },
+  "qwen_smoke_chat_template": {
+    "repository": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+  },
   "gemma_scope": {
     "repository": "google/gemma-scope-2b-pt-res",
     "revision": "fd571b47c1c64851e9b1989792367b9babb4af63"

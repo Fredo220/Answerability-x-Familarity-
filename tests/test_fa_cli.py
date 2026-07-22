@@ -1,7 +1,11 @@
 import argparse
 import hashlib
 import json
+import math
+from dataclasses import asdict
+from itertools import product
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +14,15 @@ from trajectory_extractor.fa_artifacts import FAArtifactStore
 import trajectory_extractor.fa_cli as fa_cli
 from trajectory_extractor.fa_cli import dispatch_fa, register_fa_subcommands
 from trajectory_extractor.fa_config import FAConfig
+from trajectory_extractor.fa_data import (
+    CONFIRMATORY_POWER_SIMULATIONS,
+    REGISTERED_POWER_GRID,
+    PowerAudit,
+    PowerCell,
+    build_factorial_examples,
+)
+from trajectory_extractor.fa_entities import EntityMatch
+from trajectory_extractor.fa_runtime import run_generation_shard
 
 
 CONFIG_PATH = (
@@ -41,6 +54,85 @@ MATCH = {
 }
 
 
+class FakeTokenizer:
+    chat_template = "fake qwen template"
+    all_special_ids = ()
+
+    def encode(self, text, add_special_tokens=False):
+        return text.split()
+
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+        rendered = messages[0]["content"] + " <assistant>"
+        return self.encode(rendered) if tokenize else rendered
+
+
+CHAT_TEMPLATE_BYTES = FakeTokenizer.chat_template.encode("utf-8")
+CHAT_TEMPLATE_SHA256 = hashlib.sha256(CHAT_TEMPLATE_BYTES).hexdigest()
+
+
+@pytest.fixture(autouse=True)
+def register_fake_smoke_template(monkeypatch):
+    monkeypatch.setattr(fa_cli, "_SMOKE_CHAT_TEMPLATE_SHA256", CHAT_TEMPLATE_SHA256)
+
+
+def install_fake_tokenizer(monkeypatch):
+    monkeypatch.setattr(
+        fa_cli,
+        "_TOKENIZER_LOADER",
+        lambda model_id, *, revision: FakeTokenizer(),
+    )
+
+
+def sha256_json(value):
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def valid_examples(config, split):
+    match = dict(MATCH)
+    match["split"] = split
+    return build_factorial_examples(
+        config, (EntityMatch(**match),), tokenizer=FakeTokenizer()
+    )
+
+
+def prompt_capability(
+    root, config, split, *, full_hash="b" * 64, template_bytes=CHAT_TEMPLATE_BYTES
+):
+    examples = valid_examples(config, split)
+    store = FAArtifactStore(root)
+    template_hash = hashlib.sha256(template_bytes).hexdigest()
+    prepared = SimpleNamespace(
+        chat_template_bytes=template_bytes,
+        chat_template_sha256=template_hash,
+    )
+    try:
+        tokenizer_pin = fa_cli._write_tokenizer_pin(
+            store, config, prepared, full_hash
+        )
+    except FileExistsError:
+        tokenizer_pin = store.verify_shard(
+            store.root
+            / "runs"
+            / "familiarity_answerability"
+            / config.run_id
+            / "shards"
+            / ("mechanism_train" if config.profile == "confirmatory" else "pilot")
+            / f"tokenizer-pin-{template_hash[:16]}.jsonl.manifest.json"
+        )
+    shard = fa_cli._write_prompt_capability(
+        store,
+        config,
+        full_hash,
+        split,
+        examples,
+        template_hash,
+        tokenizer_pin,
+    )
+    return examples, shard
+
+
 def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -65,7 +157,8 @@ def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     assert args.root == str(tmp_path)
 
 
-def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys):
+def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
+    install_fake_tokenizer(monkeypatch)
     args = argparse.Namespace(command="rlmf-prepare-data")
     assert dispatch_fa(args) is None
 
@@ -89,13 +182,108 @@ def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys):
     assert payload["status"] == "built"
 
 
-def test_fa_commands_require_explicit_input_manifests_and_restrict_generation_namespaces(tmp_path):
+def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, monkeypatch):
+    install_fake_tokenizer(monkeypatch)
+    config = FAConfig.from_json(CONFIG_PATH)
+    matches = tmp_path / "matches.json"
+    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+
+    payload = fa_cli._build_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(matches_manifest=matches),
+        confirmatory=False,
+    )
+    store = FAArtifactStore(tmp_path)
+    prompt = store.verify_shard(payload["manifest"])
+    pin = store.verify_shard(payload["tokenizer_pin_manifest"])
+    prompt_row = fa_cli._read_json_rows(prompt.data_path)[0]
+    prompt_lineage = json.loads(prompt.manifest_path.read_text(encoding="utf-8"))[
+        "lineage"
+    ]
+    pin_row = fa_cli._read_json_rows(pin.data_path)[0]
+
+    assert prompt_row["tokenizer_pin_manifest"] == str(
+        pin.manifest_path.relative_to(store.root)
+    )
+    assert prompt_row["tokenizer_pin_sha256"] == pin.sha256
+    assert prompt_lineage["tokenizer_pin_sha256"] == pin.sha256
+    assert hashlib.sha256(bytes.fromhex(pin_row["chat_template_utf8_hex"])).hexdigest() == (
+        pin_row["chat_template_sha256"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("model_id", "attacker/model", "model identity"),
+        ("model_revision", "0" * 40, "model identity"),
+        ("tokenizer_revision", "1" * 40, "model identity"),
+        ("chat_template_utf8_hex", b"alternate template".hex(), "claimed hash"),
+    ],
+)
+def test_prompt_verifier_rejects_forged_tokenizer_pin_identity_or_template_bytes(
+    tmp_path, field, value, message
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompt = prompt_capability(tmp_path, config, "pilot")
+    store = FAArtifactStore(tmp_path)
+    prompt_row = fa_cli._read_json_rows(prompt.data_path)[0]
+    prompt_lineage = json.loads(prompt.manifest_path.read_text(encoding="utf-8"))[
+        "lineage"
+    ]
+    pin_path = store.root / prompt_row["tokenizer_pin_manifest"]
+    pin = store.verify_shard(pin_path)
+    pin_row = fa_cli._read_json_rows(pin.data_path)[0]
+    pin_lineage = json.loads(pin.manifest_path.read_text(encoding="utf-8"))["lineage"]
+    pin_row[field] = value
+    forged_pin = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        f"forged-pin-{field}",
+        [pin_row],
+        pin_lineage,
+        record_kind="tokenizer_pin",
+    )
+    prompt_row["tokenizer_pin_manifest"] = str(
+        forged_pin.manifest_path.relative_to(store.root)
+    )
+    prompt_row["tokenizer_pin_sha256"] = forged_pin.sha256
+    prompt_row["subset_manifest_sha256"] = fa_cli._prompt_subset_sha256(
+        prompt_row["config_hash"],
+        prompt_row["full_manifest_sha256"],
+        prompt_row["namespace"],
+        prompt_row["chat_template_sha256"],
+        forged_pin.sha256,
+        tuple(prompt_row["examples"]),
+    )
+    prompt_lineage["subset_manifest_sha256"] = prompt_row[
+        "subset_manifest_sha256"
+    ]
+    prompt_lineage["tokenizer_pin_sha256"] = forged_pin.sha256
+    forged_prompt = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        f"forged-prompt-{field}",
+        [prompt_row],
+        prompt_lineage,
+        record_kind="prompt_manifest",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fa_cli._load_manifest(store, forged_prompt.manifest_path, config)
+
+
+def test_fa_commands_require_explicit_input_manifests_and_restrict_generation_namespaces(tmp_path, capsys):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     register_fa_subcommands(subparsers)
 
     with pytest.raises(SystemExit):
         parser.parse_args(["fa-run-generation", "--config", str(CONFIG_PATH)])
+    argument_error = json.loads(capsys.readouterr().out)
+    assert argument_error["status"] == "error"
+    assert argument_error["error"]["type"] == "ArgumentError"
     args = parser.parse_args(
         [
             "fa-run-generation",
@@ -119,8 +307,20 @@ def test_fa_commands_require_explicit_input_manifests_and_restrict_generation_na
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="endpoint manifest"):
-        dispatch_fa(args)
+    exit_code = dispatch_fa(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert payload == {
+        "command": "fa-run-generation",
+        "error": {
+            "message": (
+                "fa-run-generation is generic-only and cannot evaluate protected "
+                "test namespaces"
+            ),
+            "type": "ValueError",
+        },
+        "status": "error",
+    }
 
 
 def test_pilot_gate_json_contract_stops_confirmatory_construction(tmp_path, capsys):
@@ -128,36 +328,22 @@ def test_pilot_gate_json_contract_stops_confirmatory_construction(tmp_path, caps
     config_payload["split_counts"] = {"pilot": 1, "circuit_dev": 1}
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(config_payload), encoding="utf-8")
-    manifest = {
-        "config_hash": hashlib.sha256(
-            json.dumps(config_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest(),
-        "manifest_sha256": "a" * 64,
-        "examples": [],
-    }
-    manifest_path = tmp_path / "pilot-manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    responses_path = tmp_path / "responses.jsonl"
-    responses_path.write_text(
-        json.dumps(
-            {
-                "example": {
-                    "example_id": "e1",
-                    "entity_unit_id": "u1",
-                    "template_family": "train_registry_direct",
-                    "target_familiarity": "screened_real",
-                    "distractor_familiarity": "matched_synthetic",
-                    "answerability": "target_bound",
-                    "registry_code": "K7M2Q",
-                    "block": "factorial",
-                    "exposure": None,
-                },
-                "raw_output": "UNKNOWN",
-                "status": "completed",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    template_hash = CHAT_TEMPLATE_SHA256
+    active_config = FAConfig.from_json(config_path)
+    _, prompts = prompt_capability(tmp_path, active_config, "pilot")
+
+    class BlockingRunner:
+        model_id = active_config.model_id
+        model_revision = active_config.model_revision
+        tokenizer_revision = active_config.tokenizer_revision
+        chat_template_sha256 = template_hash
+
+        def generate(self, prompts, generation):
+            return ["UNKNOWN"] * len(prompts)
+
+    manifest = fa_cli._load_manifest(FAArtifactStore(tmp_path), prompts.manifest_path, active_config)
+    generation = run_generation_shard(
+        BlockingRunner(), manifest, FAArtifactStore(tmp_path), "responses", config=active_config
     )
 
     exit_code = cli.main(
@@ -168,9 +354,9 @@ def test_pilot_gate_json_contract_stops_confirmatory_construction(tmp_path, caps
             "--root",
             str(tmp_path),
             "--manifest",
-            str(manifest_path),
+            str(prompts.manifest_path),
             "--generation-manifest",
-            str(responses_path),
+            str(generation.manifest_path),
         ]
     )
 
@@ -179,6 +365,28 @@ def test_pilot_gate_json_contract_stops_confirmatory_construction(tmp_path, caps
     assert payload["command"] == "fa-score-behavior"
     assert payload["pilot_gate"]["status"] == "blocked"
     assert "target_bound_accuracy_below_70_percent" in payload["pilot_gate"]["reasons"]
+    assert Path(payload["pilot_gate_manifest"]).exists()
+    with pytest.raises(ValueError, match="exact registered smoke config"):
+        fa_cli._load_verified_pilot_gate(
+            FAArtifactStore(tmp_path),
+            payload["pilot_gate_manifest"],
+            FAConfig.from_json(CONFIG_PATH),
+        )
+
+
+def test_pilot_gate_rejects_self_consistent_template_without_tokenizer_pin_chain(
+    tmp_path,
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    alternate_template = b"arbitrary alternate self-consistent template"
+    alternate_hash = hashlib.sha256(alternate_template).hexdigest()
+    _, prompts = prompt_capability(
+        tmp_path, config, "pilot", template_bytes=alternate_template
+    )
+    store = FAArtifactStore(tmp_path)
+    assert alternate_hash != CHAT_TEMPLATE_SHA256
+    with pytest.raises(ValueError, match="registered smoke tokenizer revision"):
+        fa_cli._load_manifest(store, prompts.manifest_path, config)
 
 
 class FakeRunner:
@@ -186,53 +394,15 @@ class FakeRunner:
         self.model_id = config.model_id
         self.model_revision = config.model_revision
         self.tokenizer_revision = config.tokenizer_revision
-        self.chat_template_sha256 = "d" * 64
+        self.chat_template_sha256 = CHAT_TEMPLATE_SHA256
 
     def generate(self, prompts, generation):
         return ["K7M2Q" for _ in prompts]
 
 
-def test_run_generation_uses_fake_runner_and_explicit_protected_endpoint_manifest(tmp_path, capsys, monkeypatch):
+def test_run_generation_uses_fake_runner_for_generic_namespace(tmp_path, capsys, monkeypatch):
     config = FAConfig.from_json(CONFIG_PATH)
-    example = {
-        "example_id": "a" * 64,
-        "canonical_payload_sha256": "a" * 64,
-        "user_text": "What is stated?",
-        "split": "behavior_test",
-        "entity_unit_id": "unit-1",
-        "template_family": "behavior_catalog_direct",
-        "target_familiarity": "screened_real",
-        "distractor_familiarity": "matched_synthetic",
-        "answerability": "target_bound",
-        "registry_code": "K7M2Q",
-        "block": "factorial",
-        "exposure": None,
-    }
-    manifest = tmp_path / "examples.json"
-    manifest.write_text(
-        json.dumps({"config_hash": config.config_hash, "manifest_sha256": "b" * 64, "examples": [example]}),
-        encoding="utf-8",
-    )
-    store = FAArtifactStore(tmp_path)
-    selection = store.write_completed_shard(
-        config.run_id,
-        "behavior_test",
-        "selection",
-        [{"example_id": "selection"}],
-        {"config_sha256": config.config_hash, "source_manifest_sha256": "c" * 64},
-    )
-    endpoint = tmp_path / "endpoint.json"
-    endpoint.write_text(
-        json.dumps(
-            {
-                "endpoint": "behavior_test",
-                "preregistration_hash": "e" * 64,
-                "selection_manifest_hash": "f" * 64,
-                "selection_shard_manifests": [str(selection.manifest_path)],
-            }
-        ),
-        encoding="utf-8",
-    )
+    _, prompts = prompt_capability(tmp_path, config, "pilot")
     monkeypatch.setattr(fa_cli, "HFModelRunner", FakeRunner)
 
     exit_code = cli.main(
@@ -243,17 +413,539 @@ def test_run_generation_uses_fake_runner_and_explicit_protected_endpoint_manifes
             "--root",
             str(tmp_path),
             "--manifest",
-            str(manifest),
+            str(prompts.manifest_path),
             "--shard-id",
             "0001",
             "--namespace",
-            "behavior_test",
-            "--endpoint-manifest",
-            str(endpoint),
+            "pilot",
         ]
     )
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["status"] == "generated"
-    assert Path(payload["closed_endpoint"]).exists()
+    assert Path(payload["shard_manifest"]).exists()
+
+
+def test_behavior_scoring_rejects_mutable_raw_generation_rows(tmp_path, capsys):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, manifest = prompt_capability(tmp_path, config, "pilot")
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text(json.dumps({"status": "completed"}) + "\n", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "fa-score-behavior",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(manifest.manifest_path),
+            "--generation-manifest",
+            str(raw),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert payload["status"] == "error"
+    assert "verified generation sidecar manifest" in payload["error"]["message"]
+
+
+@pytest.mark.parametrize(
+    "namespace", ["behavior_test", "probe_test", "intervention_test"]
+)
+def test_generic_generation_rejects_protected_namespaces_before_runner_construction(
+    tmp_path, capsys, monkeypatch, namespace
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, namespace)
+
+    class MustNotConstruct:
+        def __init__(self, config):
+            raise AssertionError("protected generation must use a dedicated later command")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotConstruct)
+    exit_code = cli.main(
+        [
+            "fa-run-generation",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(prompts.manifest_path),
+            "--shard-id",
+            "0001",
+            "--namespace",
+            namespace,
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["status"] == "error"
+    assert payload["error"]["message"] == (
+        "fa-run-generation is generic-only and cannot evaluate protected test namespaces"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "fa-evaluate-behavior-test",
+        "fa-evaluate-probe-test",
+        "fa-evaluate-intervention-test",
+    ],
+)
+def test_dedicated_protected_evaluation_commands_remain_not_implemented(
+    capsys, command
+):
+    exit_code = cli.main([command, "--config", str(CONFIG_PATH)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload == {
+        "command": command,
+        "error": {
+            "message": "FA command is not implemented",
+            "type": "NotImplementedError",
+        },
+        "status": "not_implemented",
+    }
+
+
+def exhaustive_power_audit(rows, *, power=0.8):
+    cells = tuple(
+        PowerCell(
+            absent_attempt_rate=absent,
+            entity_icc=entity,
+            template_icc=template,
+            invalid_format_rate=invalid,
+            interaction=interaction,
+            estimated_power=power,
+            monte_carlo_standard_error=math.sqrt(
+                power * (1 - power) / CONFIRMATORY_POWER_SIMULATIONS
+            ),
+            simulations=CONFIRMATORY_POWER_SIMULATIONS,
+        )
+        for absent, entity, template, invalid, interaction in product(
+            REGISTERED_POWER_GRID.absent_attempt_rates,
+            REGISTERED_POWER_GRID.entity_iccs,
+            REGISTERED_POWER_GRID.template_iccs,
+            REGISTERED_POWER_GRID.invalid_format_rates,
+            REGISTERED_POWER_GRID.interactions,
+        )
+    )
+    return PowerAudit(
+        design_sha256=fa_cli._design_sha256(rows),
+        seed=20260722,
+        simulations=CONFIRMATORY_POWER_SIMULATIONS,
+        cells=cells,
+        registered_grid=True,
+    )
+
+
+def test_registered_power_preparation_uses_exact_fa_data_signature_and_typed_artifact(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    rows = valid_examples(config, "behavior_test")
+    audit = exhaustive_power_audit(rows)
+    calls = []
+
+    def execute(design, effects, correlations, seed, *, simulations):
+        calls.append((tuple(design), effects, correlations, seed, simulations))
+        return audit
+
+    monkeypatch.setattr(fa_cli, "_POWER_EXECUTOR", execute)
+    loaded, shard = fa_cli._prepare_power_audit(
+        FAArtifactStore(tmp_path),
+        config,
+        rows,
+        None,
+        run_registered=True,
+    )
+
+    assert loaded == audit
+    assert shard.record_kind == "power_audit"
+    assert calls == [
+        (
+            tuple(rows),
+            REGISTERED_POWER_GRID.interactions,
+            {
+                "entity_icc": REGISTERED_POWER_GRID.entity_iccs,
+                "template_icc": REGISTERED_POWER_GRID.template_iccs,
+                "invalid_format_rate": REGISTERED_POWER_GRID.invalid_format_rates,
+            },
+            20260722,
+            2000,
+        )
+    ]
+
+
+def test_confirmatory_power_modes_are_explicit_and_mutually_exclusive(tmp_path, capsys):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+    common = [
+        "fa-build-confirmatory",
+        "--config",
+        str(CONFIG_PATH),
+        "--matches-manifest",
+        str(tmp_path / "matches.json"),
+        "--pilot-gate-manifest",
+        str(tmp_path / "gate.json"),
+    ]
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(common)
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            common
+            + [
+                "--power-audit-manifest",
+                str(tmp_path / "power.json"),
+                "--run-registered-power-audit",
+            ]
+        )
+
+
+def test_prompt_loader_rejects_raw_or_self_attested_manifests(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    raw = tmp_path / "manifest.json"
+    raw.write_text(json.dumps({"manifest_sha256": "a" * 64}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="immutable shard manifest"):
+        fa_cli._load_manifest(FAArtifactStore(tmp_path), raw, config)
+
+    fake = FAArtifactStore(tmp_path).write_completed_shard(
+        config.run_id,
+        "pilot",
+        "self-attested",
+        [
+            {
+                "kind": "prompt_manifest",
+                "config_hash": config.config_hash,
+                "full_manifest_sha256": "a" * 64,
+                "subset_manifest_sha256": "b" * 64,
+                "chat_template_sha256": "d" * 64,
+                "namespace": "pilot",
+                "model_sha256": "e" * 64,
+                "tokenizer_sha256": "f" * 64,
+                "generation": dict(config.generation),
+                "examples": [{"example_id": "self-attested"}],
+            }
+        ],
+        {
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": "a" * 64,
+            "subset_manifest_sha256": "b" * 64,
+            "chat_template_sha256": "d" * 64,
+        },
+        record_kind="prompt_manifest",
+    )
+    with pytest.raises(ValueError, match="invalid schema"):
+        fa_cli._load_manifest(FAArtifactStore(tmp_path), fake.manifest_path, config)
+
+
+def test_confirmatory_index_contains_only_ids_hashes_and_capability_paths(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    pilot_rows, pilot = prompt_capability(tmp_path, config, "pilot")
+    protected_rows, protected = prompt_capability(tmp_path, config, "behavior_test")
+    store = FAArtifactStore(tmp_path)
+    power = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "power-index-parent",
+        [{"kind": "power_audit", "audit": {}}],
+        {"config_sha256": config.config_hash},
+        record_kind="power_audit",
+    )
+    pin = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "pin-index-parent",
+        [{"kind": "tokenizer_pin"}],
+        {"config_sha256": config.config_hash},
+        record_kind="tokenizer_pin",
+    )
+
+    index = fa_cli._confirmatory_index_record(
+        store,
+        config,
+        "f" * 64,
+        pilot_rows + protected_rows,
+        {"pilot": pilot, "behavior_test": protected},
+        power,
+        pin,
+    )
+    encoded = json.dumps(index, sort_keys=True)
+
+    assert "user_text" not in encoded
+    assert "target_text" not in encoded
+    assert "expected_output" not in encoded
+    assert all(row.user_text not in encoded for row in pilot_rows + protected_rows)
+    assert set(index["capabilities"]) == {"pilot", "behavior_test"}
+
+
+def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
+    tmp_path, monkeypatch
+):
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    config = FAConfig.from_json(config_path)
+    store = FAArtifactStore(tmp_path)
+    matches = tmp_path / "matches.json"
+    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    rows = tuple(
+        SimpleNamespace(
+            example_id=sha256_json({"namespace": namespace}),
+            canonical_payload_sha256=sha256_json({"namespace": namespace}),
+            split=namespace,
+        )
+        for namespace in config.split_counts
+    )
+    power = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "prepared-power",
+        [{"kind": "power_audit", "audit": {}}],
+        {"config_sha256": config.config_hash},
+        record_kind="power_audit",
+    )
+    observed_smoke_configs = []
+
+    def load_gate(artifact_store, path, expected_config):
+        observed_smoke_configs.append(expected_config)
+        return {"status": "passed", "evidence_sha256": "a" * 64}
+
+    monkeypatch.setattr(fa_cli, "_load_verified_pilot_gate", load_gate)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(
+            tokenizer=FakeTokenizer(),
+            chat_template_bytes=b"registered confirmatory template",
+            chat_template_sha256=config.chat_template_sha256,
+        ),
+    )
+    monkeypatch.setattr(fa_cli, "build_factorial_examples", lambda *args, **kwargs: rows)
+    monkeypatch.setattr(fa_cli, "build_same_string_examples", lambda *args, **kwargs: ())
+    monkeypatch.setattr(
+        fa_cli,
+        "_prepare_power_audit",
+        lambda *args, **kwargs: (SimpleNamespace(), power),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "build_manifest",
+        lambda *args, **kwargs: SimpleNamespace(manifest_sha256="f" * 64),
+    )
+
+    def must_not_seal(*args, **kwargs):
+        raise AssertionError("confirmatory construction must not seal an endpoint")
+
+    monkeypatch.setattr(FAArtifactStore, "seal_endpoint", must_not_seal)
+    payload = fa_cli._build_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            matches_manifest=matches,
+            pilot_gate_manifest=tmp_path / "gate.json",
+            power_audit_manifest=None,
+            run_registered_power_audit=True,
+        ),
+        confirmatory=True,
+    )
+
+    assert observed_smoke_configs == [FAConfig.from_json(CONFIG_PATH)]
+    assert set(payload["namespace_manifests"]) == set(config.split_counts)
+    assert "protected_endpoint_manifests" not in payload
+    assert not (
+        tmp_path
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "endpoints"
+    ).exists()
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "extra"])
+def test_generation_sidecar_requires_exact_example_multiset(tmp_path, mutation):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, "pilot")
+    store = FAArtifactStore(tmp_path)
+    manifest = fa_cli._load_manifest(store, prompts.manifest_path, config)
+    generated = run_generation_shard(
+        FakeRunner(config), manifest, store, "valid", config=config, namespace="pilot"
+    )
+    rows = list(fa_cli._read_json_rows(generated.data_path))
+    if mutation == "missing":
+        rows.pop()
+    elif mutation == "duplicate":
+        rows[-1] = dict(rows[0])
+    else:
+        extra = dict(rows[0])
+        extra["example_id"] = "0" * 64
+        rows.append(extra)
+    lineage = json.loads(generated.manifest_path.read_text(encoding="utf-8"))["lineage"]
+    forged = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        f"forged-{mutation}",
+        rows,
+        lineage,
+        record_kind="generation",
+    )
+
+    with pytest.raises(ValueError, match="every expected example exactly once"):
+        fa_cli._load_verified_generation_sidecar(
+            store, forged.manifest_path, manifest, config
+        )
+
+
+def test_power_audit_rejects_duplicate_registered_cells(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    rows = valid_examples(config, "behavior_test")
+    audit = exhaustive_power_audit(rows)
+    forged = PowerAudit(
+        design_sha256=audit.design_sha256,
+        seed=audit.seed,
+        simulations=audit.simulations,
+        cells=audit.cells[:-1] + (audit.cells[0],),
+        registered_grid=True,
+    )
+    shard = FAArtifactStore(tmp_path).write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "forged-power",
+        [{"kind": "power_audit", "audit": asdict(forged)}],
+        {"config_sha256": config.config_hash, "design_sha256": audit.design_sha256},
+        record_kind="power_audit",
+    )
+
+    with pytest.raises(ValueError, match="180 unique"):
+        fa_cli._prepare_power_audit(
+            FAArtifactStore(tmp_path),
+            config,
+            rows,
+            shard.manifest_path,
+            run_registered=False,
+        )
+
+
+def test_pilot_gate_recomputes_and_rejects_forged_stored_pass(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _, prompts = prompt_capability(tmp_path, config, "pilot")
+    store = FAArtifactStore(tmp_path)
+    manifest = fa_cli._load_manifest(store, prompts.manifest_path, config)
+
+    class BlockingRunner(FakeRunner):
+        def generate(self, prompts, generation):
+            return ["INVALID"] * len(prompts)
+
+    generation = run_generation_shard(
+        BlockingRunner(config), manifest, store, "blocked", config=config
+    )
+    forged_gate = {"status": "passed", "reasons": []}
+    metrics = {"forged": True}
+    evidence_hash = sha256_json({"metrics": metrics, "pilot_gate": forged_gate})
+    gate = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        "forged-gate",
+        [
+            {
+                "kind": "pilot_gate",
+                "config_sha256": config.config_hash,
+                "source_manifest_sha256": manifest.manifest_sha256,
+                "prompt_manifest": str(prompts.manifest_path.relative_to(store.root)),
+                "prompt_manifest_sha256": prompts.sha256,
+                "tokenizer_pin_manifest": str(
+                    manifest.tokenizer_pin_manifest_path.relative_to(store.root)
+                ),
+                "tokenizer_pin_sha256": manifest.tokenizer_pin_sha256,
+                "chat_template_sha256": manifest.chat_template_sha256,
+                "generation_sidecar_manifest": str(
+                    generation.manifest_path.relative_to(store.root)
+                ),
+                "generation_sidecar_sha256": generation.sha256,
+                "pilot_gate": forged_gate,
+                "metrics": metrics,
+                "evidence_sha256": evidence_hash,
+            }
+        ],
+        {
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": manifest.manifest_sha256,
+            "generation_sidecar_sha256": generation.sha256,
+            "prompt_manifest_sha256": prompts.sha256,
+            "tokenizer_pin_sha256": manifest.tokenizer_pin_sha256,
+            "chat_template_sha256": manifest.chat_template_sha256,
+        },
+        record_kind="pilot_gate",
+    )
+    gate_row = fa_cli._read_json_rows(gate.data_path)[0]
+    gate_lineage = json.loads(gate.manifest_path.read_text(encoding="utf-8"))[
+        "lineage"
+    ]
+    unrelated_run_gate = store.write_completed_shard(
+        "unrelated-run",
+        "pilot",
+        "forged-gate",
+        [gate_row],
+        gate_lineage,
+        record_kind="pilot_gate",
+    )
+
+    with pytest.raises(ValueError, match="registered smoke run"):
+        fa_cli._load_verified_pilot_gate(
+            store, unrelated_run_gate.manifest_path, config
+        )
+
+    with pytest.raises(ValueError, match="deterministic recomputation"):
+        fa_cli._load_verified_pilot_gate(store, gate.manifest_path, config)
+
+
+def test_build_confirmatory_rejects_raw_passed_gate_before_tokenizer_loading(
+    tmp_path, capsys, monkeypatch
+):
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    matches = tmp_path / "matches.json"
+    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    gate = tmp_path / "raw-gate.json"
+    gate.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+
+    def must_not_load(*args, **kwargs):
+        raise AssertionError("tokenizer must not load before gate verification")
+
+    monkeypatch.setattr(fa_cli, "load_pinned_tokenizer", must_not_load)
+    exit_code = cli.main(
+        [
+            "fa-build-confirmatory",
+            "--config",
+            str(config_path),
+            "--root",
+            str(tmp_path),
+            "--matches-manifest",
+            str(matches),
+            "--pilot-gate-manifest",
+            str(gate),
+            "--run-registered-power-audit",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code != 0
+    assert payload["status"] == "error"
+    assert "verified pilot gate sidecar manifest" in payload["error"]["message"]

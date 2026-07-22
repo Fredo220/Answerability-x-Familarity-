@@ -45,6 +45,7 @@ class SealedShard:
     manifest_path: Path
     sha256: str
     row_count: int
+    record_kind: str
 
 
 @dataclass(frozen=True)
@@ -75,17 +76,23 @@ class FAArtifactStore:
         shard_id: str,
         rows: Iterable[Mapping[str, Any]],
         lineage: Mapping[str, Any],
+        *,
+        record_kind: str = "generic",
     ) -> SealedShard:
         run = _safe_id(run_id, "run_id")
         namespace = _namespace(namespace)
         shard = _safe_id(shard_id, "shard_id")
+        kind = _safe_id(record_kind, "record_kind")
         if not isinstance(lineage, Mapping):
             raise ValueError("lineage must be a mapping")
         payload_rows = []
         for row in rows:
             if not isinstance(row, Mapping):
                 raise ValueError("shard rows must be mappings")
-            payload_rows.append(_canonical_json(dict(row)) + b"\n")
+            value = dict(row)
+            if kind != "generic" and value.get("kind") != kind:
+                raise ValueError("shard row kind does not match record kind")
+            payload_rows.append(_canonical_json(value) + b"\n")
         payload = b"".join(payload_rows)
         data_path = self._shard_path(run, namespace, shard)
         manifest_path = data_path.with_name(f"{data_path.name}.manifest.json")
@@ -98,6 +105,7 @@ class FAArtifactStore:
             "data_file": data_path.name,
             "sha256": digest,
             "row_count": len(payload_rows),
+            "record_kind": kind,
             "lineage": dict(lineage),
         }
         _canonical_json(manifest)
@@ -109,7 +117,9 @@ class FAArtifactStore:
             if data_identity is not None:
                 self._remove_regular(data_path, data_identity)
             raise
-        return SealedShard(namespace, shard, data_path, manifest_path, digest, len(payload_rows))
+        return SealedShard(
+            namespace, shard, data_path, manifest_path, digest, len(payload_rows), kind
+        )
 
     def verify_shard(self, manifest_path: str | Path) -> SealedShard:
         manifest_path = Path(manifest_path).absolute()
@@ -136,12 +146,25 @@ class FAArtifactStore:
             raise ValueError("shard manifest row_count is invalid")
         if not isinstance(manifest.get("lineage"), dict):
             raise ValueError("shard manifest lineage is invalid")
+        kind = _safe_id(manifest.get("record_kind"), "shard manifest record kind")
         data = self._read_regular_bytes(data_path, "shard data")
         if _sha256_bytes(data) != digest:
             raise ValueError("shard hash mismatch")
         if data.count(b"\n") != row_count:
             raise ValueError("shard row count mismatch")
-        return SealedShard(namespace, shard, data_path, manifest_path, digest, row_count)
+        if kind == "metrics":
+            if row_count < 1:
+                raise ValueError("metrics shard must contain at least one row")
+            for line in data.splitlines():
+                try:
+                    row = json.loads(line)
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise ValueError("metrics shard contains invalid JSON") from error
+                if not isinstance(row, dict) or _canonical_json(row) != line:
+                    raise ValueError("metrics rows must be canonical JSON objects")
+                if row.get("kind") != "metrics":
+                    raise ValueError("shard row kind does not match record kind")
+        return SealedShard(namespace, shard, data_path, manifest_path, digest, row_count, kind)
 
     def resume_verified_shards(self, run_id: str, namespace: str) -> tuple[SealedShard, ...]:
         """Return only durably completed shards; corrupt sidecars stop resumption."""
@@ -216,12 +239,88 @@ class FAArtifactStore:
             raise ValueError(
                 f"{endpoint.removesuffix('_test')} selection manifest hash does not match sealed endpoint"
             )
+        return self._write_unlock_receipt(sealed)
+
+    def verify_endpoint_artifact(
+        self, endpoint: str, manifest_path: str | Path
+    ) -> SealedShard:
+        """Verify that an explicit shard is one of the endpoint's sealed capabilities."""
+        endpoint = _endpoint(endpoint)
+        sealed_path = self._find_endpoint_path(endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        self._verify_endpoint_artifacts(sealed)
+        explicit_path = Path(manifest_path).absolute()
+        self._require_under_root(explicit_path)
+        registered = {
+            self._path_from_root_record(item["manifest_path"], "endpoint artifact manifest"): item
+            for item in sealed["artifacts"]
+        }
+        artifact = registered.get(explicit_path)
+        if artifact is None:
+            raise ValueError("explicit endpoint artifact is not registered in the sealed endpoint")
+        shard = self.verify_shard(explicit_path)
+        if (
+            shard.namespace != endpoint
+            or shard.sha256 != artifact["sha256"]
+            or self._run_id_for_shard(shard) != sealed["run_id"]
+        ):
+            raise ValueError("explicit endpoint artifact no longer matches the sealed endpoint")
+        return shard
+
+    def unlock_or_resume_endpoint(
+        self, endpoint: str, manifest_path: str | Path
+    ) -> UnlockReceipt:
+        """Unlock a registered artifact once or resume its still-open receipt."""
+        endpoint = _endpoint(endpoint)
+        self.verify_endpoint_artifact(endpoint, manifest_path)
+        sealed_path = self._find_endpoint_path(endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        run_id = sealed["run_id"]
+        if self._destination_exists(self._endpoint_path(run_id, endpoint, "closed")):
+            raise ValueError(f"{endpoint} is already closed")
+        if self._destination_exists(self._endpoint_path(run_id, endpoint, "evaluated")):
+            raise ValueError(f"{endpoint} is already evaluated")
+        unlocked_path = self._endpoint_path(run_id, endpoint, "unlocked_once")
+        if not self._destination_exists(unlocked_path):
+            return self._write_unlock_receipt(sealed)
+        unlocked, _ = self._read_endpoint_record(unlocked_path, endpoint, "unlocked_once")
+        if (
+            unlocked["preregistration_hash"] != sealed["parents"]["preregistration"]
+            or unlocked["selection_manifest_hash"]
+            != sealed["parents"]["selection_manifest"]
+        ):
+            raise ValueError("active unlock lease no longer matches the sealed endpoint")
+        return UnlockReceipt(
+            endpoint=endpoint,
+            lease_id=unlocked["lease_id"],
+            state="unlocked_once",
+            preregistration_hash=unlocked["preregistration_hash"],
+            selection_manifest_hash=unlocked["selection_manifest_hash"],
+        )
+
+    def endpoint_state(self, endpoint: str, manifest_path: str | Path) -> str:
+        """Return the verified durable state for a registered endpoint artifact."""
+        endpoint = _endpoint(endpoint)
+        self.verify_endpoint_artifact(endpoint, manifest_path)
+        sealed_path = self._find_endpoint_path(endpoint, "sealed")
+        sealed, _ = self._read_endpoint_record(sealed_path, endpoint, "sealed")
+        for state in ("closed", "evaluated", "unlocked_once"):
+            path = self._endpoint_path(sealed["run_id"], endpoint, state)
+            if self._destination_exists(path):
+                self._read_endpoint_record(path, endpoint, state)
+                return state
+        return "sealed"
+
+    def _write_unlock_receipt(self, sealed: Mapping[str, Any]) -> UnlockReceipt:
+        endpoint = _endpoint(sealed["endpoint"])
+        parents = _parents(sealed["parents"])
+        unlocked_path = self._endpoint_path(sealed["run_id"], endpoint, "unlocked_once")
         receipt = UnlockReceipt(
             endpoint=endpoint,
             lease_id=uuid.uuid4().hex,
             state="unlocked_once",
-            preregistration_hash=preregistration_hash,
-            selection_manifest_hash=selection_manifest_hash,
+            preregistration_hash=parents["preregistration"],
+            selection_manifest_hash=parents["selection_manifest"],
         )
         self._exclusive_write(
             unlocked_path,
@@ -232,8 +331,8 @@ class FAArtifactStore:
                     "run_id": sealed["run_id"],
                     "endpoint": endpoint,
                     "lease_id": receipt.lease_id,
-                    "preregistration_hash": preregistration_hash,
-                    "selection_manifest_hash": selection_manifest_hash,
+                    "preregistration_hash": receipt.preregistration_hash,
+                    "selection_manifest_hash": receipt.selection_manifest_hash,
                 }
             ),
         )
@@ -268,6 +367,8 @@ class FAArtifactStore:
         metrics = self.verify_shard(metric_manifest)
         if metrics.data_path != metric_data:
             raise ValueError("metrics path does not match its verified sidecar")
+        if metrics.record_kind != "metrics":
+            raise ValueError("endpoint evaluation requires a metrics artifact")
         if metrics.namespace != endpoint:
             raise ValueError("metrics shard must use the matching endpoint namespace")
         if self._run_id_for_shard(metrics) != run_id:
@@ -319,6 +420,8 @@ class FAArtifactStore:
             evaluated.get("metrics_manifest_path"), "metrics manifest"
         )
         metrics = self.verify_shard(metrics_manifest)
+        if metrics.record_kind != "metrics":
+            raise ValueError("evaluated endpoint requires a metrics artifact")
         if metrics.namespace != endpoint or metrics.sha256 != evaluated.get("metrics_sha256"):
             raise ValueError("evaluated endpoint metrics no longer verify")
         if self._run_id_for_shard(metrics) != run_id:

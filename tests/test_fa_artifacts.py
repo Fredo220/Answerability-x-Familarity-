@@ -48,6 +48,26 @@ def test_completed_shard_is_no_clobber_and_hash_verified(tmp_path, config):
         )
 
 
+def test_completed_shard_manifest_enforces_an_explicit_record_kind(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    shard = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        "typed",
+        [{"kind": "generation", "status": "completed"}],
+        lineage(config),
+        record_kind="generation",
+    )
+
+    assert store.verify_shard(shard.manifest_path).record_kind == "generation"
+    manifest = json.loads(shard.manifest_path.read_text(encoding="utf-8"))
+    manifest["record_kind"] = "../metrics"
+    shard.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="record kind"):
+        store.verify_shard(shard.manifest_path)
+
+
 def test_probe_endpoint_rejects_behavior_parent_and_second_unlock(tmp_path, config):
     store = FAArtifactStore(tmp_path)
     probe_shard = store.write_completed_shard(
@@ -68,6 +88,74 @@ def test_probe_endpoint_rejects_behavior_parent_and_second_unlock(tmp_path, conf
         )
 
     assert receipt.state == "unlocked_once"
+
+
+def test_registered_endpoint_artifact_must_be_explicitly_sealed(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    registered = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "registered-prompts",
+        [{"manifest_sha256": digest("registered prompts"), "examples": []}],
+        lineage(config),
+    )
+    unregistered = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "caller-prompts",
+        [{"manifest_sha256": digest("caller prompts"), "examples": []}],
+        lineage(config),
+    )
+    store.seal_endpoint("probe_test", [registered], parents())
+
+    assert store.verify_endpoint_artifact("probe_test", registered.manifest_path) == registered
+    with pytest.raises(ValueError, match="not registered"):
+        store.verify_endpoint_artifact("probe_test", unregistered.manifest_path)
+    with pytest.raises(ValueError, match="not registered"):
+        store.unlock_or_resume_endpoint("probe_test", unregistered.manifest_path)
+
+
+def test_endpoint_retry_resumes_the_same_still_open_unlock_receipt(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    prompts = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "registered-prompts",
+        [{"manifest_sha256": digest("registered prompts"), "examples": []}],
+        lineage(config),
+    )
+    store.seal_endpoint("probe_test", [prompts], parents())
+    assert store.endpoint_state("probe_test", prompts.manifest_path) == "sealed"
+
+    first = store.unlock_or_resume_endpoint("probe_test", prompts.manifest_path)
+    resumed = store.unlock_or_resume_endpoint("probe_test", prompts.manifest_path)
+
+    assert resumed == first
+    assert resumed.state == "unlocked_once"
+    assert store.endpoint_state("probe_test", prompts.manifest_path) == "unlocked_once"
+    endpoint_dir = (
+        tmp_path
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "endpoints"
+        / "probe_test"
+    )
+    assert endpoint_dir.is_dir()
+    assert sorted(path.name for path in endpoint_dir.iterdir()) == ["sealed.json", "unlocked_once.json"]
+
+    metrics = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "metrics",
+        [{"kind": "metrics", "metric": "complete"}],
+        lineage(config),
+        record_kind="metrics",
+    )
+    store.mark_evaluated(first, metrics.data_path)
+    assert store.endpoint_state("probe_test", prompts.manifest_path) == "evaluated"
+    with pytest.raises(ValueError, match="already evaluated"):
+        store.unlock_or_resume_endpoint("probe_test", prompts.manifest_path)
 
 
 def test_tampered_shard_fails_verification_and_cannot_seal(tmp_path, config):
@@ -354,8 +442,9 @@ def test_endpoint_lifecycle_requires_verified_matching_metrics_and_closes_once(t
         config.run_id,
         "behavior_test",
         "metrics",
-        [{"metric": "wrong endpoint"}],
+        [{"kind": "metrics", "metric": "wrong endpoint"}],
         lineage(config),
+        record_kind="metrics",
     )
     with pytest.raises(ValueError, match="matching endpoint namespace"):
         store.mark_evaluated(receipt, behavior_metrics.data_path)
@@ -364,8 +453,9 @@ def test_endpoint_lifecycle_requires_verified_matching_metrics_and_closes_once(t
         config.run_id,
         "probe_test",
         "metrics",
-        [{"metric": "complete"}],
+        [{"kind": "metrics", "metric": "complete"}],
         lineage(config),
+        record_kind="metrics",
     )
     evaluated = store.mark_evaluated(receipt, probe_metrics.data_path)
     closed = store.close_endpoint("probe_test")
@@ -374,6 +464,64 @@ def test_endpoint_lifecycle_requires_verified_matching_metrics_and_closes_once(t
     assert json.loads(closed.read_text(encoding="utf-8"))["state"] == "closed"
     with pytest.raises(ValueError, match="already closed"):
         store.close_endpoint("probe_test")
+
+
+def test_endpoint_rejects_generation_shard_as_metrics(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    selection = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "selection",
+        [{"example_id": "probe"}],
+        lineage(config),
+    )
+    store.seal_endpoint("probe_test", [selection], parents())
+    receipt = store.unlock_endpoint(
+        "probe_test", parents()["preregistration"], parents()["selection_manifest"]
+    )
+    generation = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "generation",
+        [{"kind": "generation", "example_id": "probe", "response": "UNKNOWN"}],
+        lineage(config),
+        record_kind="generation",
+    )
+
+    with pytest.raises(ValueError, match="metrics artifact"):
+        store.mark_evaluated(receipt, generation.data_path)
+
+    sidecar = json.loads(generation.manifest_path.read_text(encoding="utf-8"))
+    sidecar["record_kind"] = "metrics"
+    generation.manifest_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    with pytest.raises(ValueError, match="row kind"):
+        store.mark_evaluated(receipt, generation.data_path)
+
+
+def test_endpoint_rejects_empty_metrics_shard(tmp_path, config):
+    store = FAArtifactStore(tmp_path)
+    selection = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "selection",
+        [{"example_id": "probe"}],
+        lineage(config),
+    )
+    store.seal_endpoint("probe_test", [selection], parents())
+    receipt = store.unlock_endpoint(
+        "probe_test", parents()["preregistration"], parents()["selection_manifest"]
+    )
+    empty = store.write_completed_shard(
+        config.run_id,
+        "probe_test",
+        "empty-metrics",
+        [],
+        lineage(config),
+        record_kind="metrics",
+    )
+
+    with pytest.raises(ValueError, match="at least one row"):
+        store.mark_evaluated(receipt, empty.data_path)
 
 
 def test_mark_evaluated_rejects_a_tampered_metrics_manifest(tmp_path, config):
@@ -386,7 +534,12 @@ def test_mark_evaluated_rejects_a_tampered_metrics_manifest(tmp_path, config):
         "probe_test", parents()["preregistration"], parents()["selection_manifest"]
     )
     metrics = store.write_completed_shard(
-        config.run_id, "probe_test", "metrics", [{"metric": "complete"}], lineage(config)
+        config.run_id,
+        "probe_test",
+        "metrics",
+        [{"kind": "metrics", "metric": "complete"}],
+        lineage(config),
+        record_kind="metrics",
     )
     manifest = json.loads(metrics.manifest_path.read_text(encoding="utf-8"))
     manifest["data_file"] = "other.jsonl"
@@ -415,7 +568,7 @@ def test_mark_evaluated_rejects_reusing_a_sealed_input_as_metrics(tmp_path, conf
         "probe_test", parents()["preregistration"], parents()["selection_manifest"]
     )
 
-    with pytest.raises(ValueError, match="sealed input"):
+    with pytest.raises(ValueError, match="metrics artifact"):
         store.mark_evaluated(receipt, selection.data_path)
 
 
@@ -429,7 +582,12 @@ def _evaluated_endpoint(tmp_path, config):
         "probe_test", parents()["preregistration"], parents()["selection_manifest"]
     )
     metrics = store.write_completed_shard(
-        config.run_id, "probe_test", "metrics", [{"metric": "complete"}], lineage(config)
+        config.run_id,
+        "probe_test",
+        "metrics",
+        [{"kind": "metrics", "metric": "complete"}],
+        lineage(config),
+        record_kind="metrics",
     )
     evaluated = store.mark_evaluated(receipt, metrics.data_path)
     return store, selection, metrics, receipt, evaluated
@@ -471,7 +629,12 @@ def test_close_requires_exact_evaluated_schema_and_active_matching_lease(tmp_pat
 def test_close_rejects_evaluated_metrics_bound_to_another_run(tmp_path, config):
     store, _, _, receipt, evaluated = _evaluated_endpoint(tmp_path, config)
     other = store.write_completed_shard(
-        "other-run", "probe_test", "metrics", [{"metric": "other"}], lineage(config)
+        "other-run",
+        "probe_test",
+        "metrics",
+        [{"kind": "metrics", "metric": "other"}],
+        lineage(config),
+        record_kind="metrics",
     )
     record = json.loads(evaluated.read_text(encoding="utf-8"))
     record["metrics_manifest_path"] = str(other.manifest_path.relative_to(tmp_path))
