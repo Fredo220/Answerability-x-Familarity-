@@ -1,0 +1,8 @@
+# Keep the architecture graph isolated to the active Familiarity-vs-Answerability study.
+*
+!src/
+!src/trajectory_extractor/
+!src/trajectory_extractor/__init__.py
+!src/trajectory_extractor/fa_*.py
+!tests/
+!tests/test_fa_*.py

@@ -1,0 +1,194 @@
+[
+  {
+    "schema_version": 1,
+    "question_id": "einstein-01",
+    "qid": "Q937",
+    "prompt": "Return only the answer after the colon, not a sentence.\nAlbert Einstein profession:",
+    "accepted_aliases": ["physicist", "physicist.", "theoretical physicist", "theoretical physicist."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1921/einstein/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "einstein-02",
+    "qid": "Q937",
+    "prompt": "Return only the answer after the colon, not a sentence.\nTheory most associated with Albert Einstein:",
+    "accepted_aliases": ["relativity", "relativity.", "theory of relativity", "theory of relativity."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1921/einstein/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "einstein-03",
+    "qid": "Q937",
+    "prompt": "Return only the answer after the colon, not a sentence.\nAlbert Einstein's Nobel Prize field:",
+    "accepted_aliases": ["physics", "physics."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1921/einstein/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "curie-01",
+    "qid": "Q7186",
+    "prompt": "Return only the answer after the colon, not a sentence.\nMarie Curie's country of birth:",
+    "accepted_aliases": ["Poland", "Poland.", "Polish", "Polish."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1903/marie-curie/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "curie-02",
+    "qid": "Q7186",
+    "prompt": "Return only the answer after the colon, not a sentence.\nPhenomenon most associated with Marie Curie's research:",
+    "accepted_aliases": ["radioactivity", "radioactivity."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1903/marie-curie/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "curie-03",
+    "qid": "Q7186",
+    "prompt": "Return only the answer after the colon, not a sentence.\nElement Marie Curie named after Poland:",
+    "accepted_aliases": ["polonium", "polonium."],
+    "source_provenance": "https://www.nobelprize.org/prizes/physics/1903/marie-curie/facts/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "new-york-city-01",
+    "qid": "Q60",
+    "prompt": "Return only the answer after the colon, not a sentence.\nCountry containing New York City:",
+    "accepted_aliases": ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"],
+    "source_provenance": "https://portal.311.nyc.gov/article/?kanumber=KA-02877"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "new-york-city-02",
+    "qid": "Q60",
+    "prompt": "Return only the answer after the colon, not a sentence.\nU.S. state containing New York City:",
+    "accepted_aliases": ["New York", "New York.", "New York State", "New York State.", "State of New York", "State of New York.", "NY", "N.Y."],
+    "source_provenance": "https://portal.311.nyc.gov/article/?kanumber=KA-02877"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "new-york-city-03",
+    "qid": "Q60",
+    "prompt": "Return only the answer after the colon, not a sentence.\nNumber of New York City boroughs:",
+    "accepted_aliases": ["5", "5.", "five", "five."],
+    "source_provenance": "https://portal.311.nyc.gov/article/?kanumber=KA-02877"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "los-angeles-01",
+    "qid": "Q65",
+    "prompt": "Return only the answer after the colon, not a sentence.\nU.S. state containing Los Angeles:",
+    "accepted_aliases": ["California", "California.", "State of California", "State of California.", "CA", "CA.", "Calif."],
+    "source_provenance": "https://griffithobservatory.lacity.gov/about/city-of-los-angeles/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "los-angeles-02",
+    "qid": "Q65",
+    "prompt": "Return only the answer after the colon, not a sentence.\nCountry containing Los Angeles:",
+    "accepted_aliases": ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"],
+    "source_provenance": "https://griffithobservatory.lacity.gov/about/city-of-los-angeles/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "los-angeles-03",
+    "qid": "Q65",
+    "prompt": "Return only the answer after the colon, not a sentence.\nCounty containing Los Angeles:",
+    "accepted_aliases": ["Los Angeles County", "Los Angeles County.", "County of Los Angeles", "County of Los Angeles.", "LA County", "LA County.", "L.A. County", "L.A. County."],
+    "source_provenance": "https://griffithobservatory.lacity.gov/about/city-of-los-angeles/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "un-01",
+    "qid": "Q1065",
+    "prompt": "Return only the answer after the colon, not a sentence.\nUnited Nations founding year:",
+    "accepted_aliases": ["1945", "1945."],
+    "source_provenance": "https://www.un.org/en/about-us/history-of-the-un"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "un-02",
+    "qid": "Q1065",
+    "prompt": "Return only the answer after the colon, not a sentence.\nUnited Nations Headquarters city:",
+    "accepted_aliases": ["New York City", "New York City.", "New York", "New York.", "NYC", "NYC.", "New York, NY", "New York, NY."],
+    "source_provenance": "https://www.un.org/en/about-us"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "un-03",
+    "qid": "Q1065",
+    "prompt": "Return only the answer after the colon, not a sentence.\nThe abbreviation UN stands for:",
+    "accepted_aliases": ["United Nations", "United Nations."],
+    "source_provenance": "https://www.un.org/en/about-us"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "who-01",
+    "qid": "Q7817",
+    "prompt": "Return only the answer after the colon, not a sentence.\nThe abbreviation WHO stands for:",
+    "accepted_aliases": ["World Health Organization", "World Health Organization."],
+    "source_provenance": "https://www.who.int/about/frequently-asked-questions"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "who-02",
+    "qid": "Q7817",
+    "prompt": "Return only the answer after the colon, not a sentence.\nWHO's primary field:",
+    "accepted_aliases": ["health", "health.", "public health", "public health."],
+    "source_provenance": "https://www.who.int/about/frequently-asked-questions"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "who-03",
+    "qid": "Q7817",
+    "prompt": "Return only the answer after the colon, not a sentence.\nOrganization whose agency WHO is:",
+    "accepted_aliases": ["United Nations", "United Nations.", "UN", "UN.", "the UN", "the UN."],
+    "source_provenance": "https://www.who.int/about/frequently-asked-questions"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "hamlet-01",
+    "qid": "Q41567",
+    "prompt": "Return only the answer after the colon, not a sentence.\nAuthor of Hamlet:",
+    "accepted_aliases": ["William Shakespeare", "William Shakespeare.", "Shakespeare", "Shakespeare."],
+    "source_provenance": "https://www.folger.edu/explore/shakespeares-works/hamlet/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "hamlet-02",
+    "qid": "Q41567",
+    "prompt": "Return only the answer after the colon, not a sentence.\nBroad genre of Hamlet:",
+    "accepted_aliases": ["tragedy", "tragedy.", "a tragedy", "a tragedy.", "revenge tragedy", "revenge tragedy."],
+    "source_provenance": "https://www.folger.edu/explore/shakespeares-works/hamlet/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "hamlet-03",
+    "qid": "Q41567",
+    "prompt": "Return only the answer after the colon, not a sentence.\nProtagonist of Hamlet:",
+    "accepted_aliases": ["Hamlet", "Hamlet.", "Prince Hamlet", "Prince Hamlet.", "Hamlet, Prince of Denmark", "Hamlet, Prince of Denmark."],
+    "source_provenance": "https://www.folger.edu/explore/shakespeares-works/hamlet/"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "mona-lisa-01",
+    "qid": "Q12418",
+    "prompt": "Return only the answer after the colon, not a sentence.\nPainter of the Mona Lisa:",
+    "accepted_aliases": ["Leonardo da Vinci", "Leonardo da Vinci."],
+    "source_provenance": "https://www.louvre.fr/en/explore/the-palace/from-the-mona-lisa-to-the-wedding-feast-at-cana"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "mona-lisa-02",
+    "qid": "Q12418",
+    "prompt": "Return only the answer after the colon, not a sentence.\nMuseum housing the Mona Lisa:",
+    "accepted_aliases": ["Louvre Museum", "Louvre Museum.", "the Louvre", "the Louvre.", "Louvre", "Louvre.", "Musee du Louvre", "Musee du Louvre."],
+    "source_provenance": "https://www.louvre.fr/en/explore/the-palace/from-the-mona-lisa-to-the-wedding-feast-at-cana"
+  },
+  {
+    "schema_version": 1,
+    "question_id": "mona-lisa-03",
+    "qid": "Q12418",
+    "prompt": "Return only the answer after the colon, not a sentence.\nCity where the Mona Lisa is displayed:",
+    "accepted_aliases": ["Paris", "Paris.", "Paris, France", "Paris, France."],
+    "source_provenance": "https://www.louvre.fr/en/visit/map-entrances-directions"
+  }
+]

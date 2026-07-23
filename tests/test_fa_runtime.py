@@ -165,6 +165,27 @@ def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypat
     assert completions == ["completion-1", "completion-2", "completion-3"]
 
 
+def test_qwen_smoke_rendering_disables_thinking_without_affecting_other_models():
+    calls = []
+
+    class TemplateTokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            calls.append((messages, kwargs))
+            return "rendered"
+
+    qwen = object.__new__(HFModelRunner)
+    qwen.model_id = "Qwen/Qwen3-0.6B"
+    qwen.tokenizer = TemplateTokenizer()
+    assert qwen.render_prompt("question") == "rendered"
+    assert calls[-1][1]["enable_thinking"] is False
+
+    gemma = object.__new__(HFModelRunner)
+    gemma.model_id = "google/gemma-2-2b-it"
+    gemma.tokenizer = TemplateTokenizer()
+    assert gemma.render_prompt("question") == "rendered"
+    assert "enable_thinking" not in calls[-1][1]
+
+
 def replace_shard_payload(shard, payload: bytes) -> None:
     shard.data_path.write_bytes(payload)
     sidecar = json.loads(shard.manifest_path.read_text(encoding="utf-8"))

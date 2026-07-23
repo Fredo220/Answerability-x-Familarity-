@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Familiarity Answerability Synthetic Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "candidate_id", "name", "coarse_type", "split", "generator_revision"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "candidate_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "name": {"type": "string", "minLength": 1},
+    "coarse_type": {"type": "string", "minLength": 1},
+    "split": {"enum": ["pilot", "mechanism_train", "locked_validation", "behavior_test", "probe_test", "intervention_test", "circuit_dev"]},
+    "generator_revision": {"type": "string", "minLength": 1}
+  }
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import math
 import re
@@ -21,6 +22,7 @@ from trajectory_extractor.fa_data import (
     CONFIRMATORY_POWER_SEED,
     CONFIRMATORY_POWER_SIMULATIONS,
     REGISTERED_POWER_GRID,
+    REGISTERED_ENTITY_DOMAINS,
     FAExample,
     PowerAudit,
     PowerCell,
@@ -35,9 +37,11 @@ from trajectory_extractor.fa_entities import (
     EntityMatch,
     NaturalnessAudit,
     NaturalnessRating,
+    ScreeningQuestion,
     SyntheticCandidate,
     audit_naturalness_manifest,
     match_synthetic_entities,
+    order_screening_questions,
     score_screening,
 )
 from trajectory_extractor.fa_runtime import (
@@ -61,7 +65,6 @@ from trajectory_extractor.fa_report import (
 from trajectory_extractor.fa_features import (
     HFTeacherForcedScorer,
     OutputEvidence,
-    REGISTERED_ENTITY_DOMAINS,
     UnsupportedAnswerOutcome,
     materialize_probe_rows,
 )
@@ -80,7 +83,7 @@ from trajectory_extractor.fa_probes import (
 
 
 FA_COMMANDS = (
-    "fa-screen-entities", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
@@ -88,7 +91,13 @@ FA_COMMANDS = (
 )
 _IMPLEMENTED = frozenset(
     (
-        *FA_COMMANDS[:6],
+        "fa-run-screening",
+        "fa-screen-entities",
+        "fa-build-pilot",
+        "fa-build-confirmatory",
+        "fa-audit-manifest",
+        "fa-run-generation",
+        "fa-score-behavior",
         "fa-extract-activations",
         "fa-materialize-probe-rows",
         "fa-fit-probes",
@@ -105,7 +114,7 @@ _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
 _SMOKE_CONFIG_PATH = (
     Path(__file__).resolve().parents[2]
     / "configs"
-    / "familiarity_answerability_qwen06b_smoke.json"
+    / "familiarity_answerability_qwen17b_smoke.json"
 )
 _PREREGISTRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -177,7 +186,13 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
         parser.add_argument("--config", required=True)
         parser.add_argument("--root", default=".")
         parsers[command] = parser
+    screening = parsers["fa-run-screening"]
+    screening.add_argument("--candidates-manifest", required=True)
+    screening.add_argument("--questions-manifest", required=True)
+    screening.add_argument("--shard-id", required=True)
+    screening.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     parsers["fa-screen-entities"].add_argument("--candidates-manifest", required=True)
+    parsers["fa-screen-entities"].add_argument("--questions-manifest", required=True)
     parsers["fa-screen-entities"].add_argument("--screening-manifest", required=True)
     parsers["fa-screen-entities"].add_argument("--synthetic-manifest", required=True)
     parsers["fa-build-pilot"].add_argument("--matches-manifest", required=True)
@@ -261,7 +276,9 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
     try:
         config = FAConfig.from_json(args.config)
         root = Path(args.root)
-        if command == "fa-screen-entities":
+        if command == "fa-run-screening":
+            payload = _run_screening(config, root, args)
+        elif command == "fa-screen-entities":
             payload = _screen_entities(config, root, args)
         elif command in {"fa-build-pilot", "fa-build-confirmatory"}:
             payload = _build_manifest(config, root, args, confirmatory=command == "fa-build-confirmatory")
@@ -326,19 +343,546 @@ def _argument_error(command: str, message: str) -> None:
     raise SystemExit(2)
 
 
+def _run_screening(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    candidates = tuple(
+        CandidateEntity(**_without_schema(row))
+        for row in _read_json_rows(args.candidates_manifest)
+    )
+    questions = tuple(
+        ScreeningQuestion(**_without_schema(row))
+        for row in _read_json_rows(args.questions_manifest)
+    )
+    joined = order_screening_questions(candidates, questions)
+    if any(candidate.split != args.namespace for candidate, _ in joined):
+        raise ValueError("screening candidates must all belong to the requested namespace")
+
+    runner = HFModelRunner(config)
+    template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
+    validate_runner_binding(
+        runner,
+        config,
+        expected_chat_template_sha256=template_hash,
+    )
+    ordered = tuple(
+        (candidate, index, question)
+        for candidate, candidate_questions in joined
+        for index, question in enumerate(candidate_questions)
+    )
+    rendered_prompts = tuple(
+        _render_screening_prompt(runner, question.prompt)
+        for _, _, question in ordered
+    )
+    try:
+        outputs = tuple(runner.generate(rendered_prompts, dict(config.generation)))
+        if len(outputs) != len(ordered) or any(
+            not isinstance(output, str) for output in outputs
+        ):
+            raise RuntimeError("model runner returned invalid screening completions")
+        status = "completed"
+        exception_class = None
+    except Exception as error:
+        outputs = (None,) * len(ordered)
+        status = "infrastructure_failure"
+        exception_class = type(error).__name__
+
+    candidate_hash = _candidate_manifest_sha256(candidates)
+    question_hash = _screening_question_manifest_sha256(questions)
+    model_hash, tokenizer_hash = _config_runtime_hashes(config)
+    records = []
+    for (candidate, index, question), rendered, output in zip(
+        ordered, rendered_prompts, outputs, strict=True
+    ):
+        records.append(
+            {
+                "kind": "screening_completion",
+                "schema_version": 1,
+                "entity_id": candidate.entity_id,
+                "qid": candidate.qid,
+                "question_id": question.question_id,
+                "question_index": index,
+                "prompt": question.prompt,
+                "accepted_aliases": list(question.accepted_aliases),
+                "source_provenance": question.source_provenance,
+                "rendered_prompt_sha256": hashlib.sha256(
+                    rendered.encode("utf-8")
+                ).hexdigest(),
+                "raw_output": output,
+                "answer_text": (
+                    None if output is None else _screening_answer_text(output)
+                ),
+                "generation": dict(config.generation),
+                "config_sha256": config.config_hash,
+                "model_sha256": model_hash,
+                "tokenizer_sha256": tokenizer_hash,
+                "chat_template_sha256": template_hash,
+                "status": status,
+                "exception_class": exception_class,
+            }
+        )
+    shard = FAArtifactStore(root).write_completed_shard(
+        config.run_id,
+        args.namespace,
+        args.shard_id,
+        records,
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": candidate_hash,
+            "questions_manifest_sha256": question_hash,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+        record_kind="screening_completion",
+    )
+    if status != "completed":
+        return {
+            "status": "infrastructure_failure",
+            "error": {
+                "message": "screening generation failed; preserve the artifact and retry with a new shard id",
+                "type": exception_class or "InfrastructureFailure",
+            },
+            "shard_manifest": str(shard.manifest_path),
+            "sha256": shard.sha256,
+        }
+    return {
+        "status": "generated",
+        "shard_manifest": str(shard.manifest_path),
+        "sha256": shard.sha256,
+        "count": len(records),
+    }
+
+
 def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:
+    store = FAArtifactStore(root)
     candidates = tuple(CandidateEntity(**_without_schema(row)) for row in _read_json_rows(args.candidates_manifest))
+    questions = tuple(
+        ScreeningQuestion(**_without_schema(row))
+        for row in _read_json_rows(args.questions_manifest)
+    )
     synthetic = tuple(SyntheticCandidate(**_without_schema(row)) for row in _read_json_rows(args.synthetic_manifest))
-    completions = _read_json_object(args.screening_manifest)
-    qualified = []
-    for candidate in candidates:
-        result = score_screening(candidate, completions.get(candidate.entity_id, ()))
-        if result.qualifies:
-            qualified.append(candidate)
+    order_screening_questions(candidates, questions)
+    required_count = _screening_required_count(candidates, config)
+    screening_shard = _require_verified_shard_kind(
+        store,
+        args.screening_manifest,
+        "screening_completion",
+        "verified screening completion manifest",
+    )
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
-    matches = match_synthetic_entities(qualified, synthetic, prepared.tokenizer)
-    path = _write_manifest(root, config.run_id, "screened_matches", [asdict(row) for row in matches])
-    return {"status": "screened", "manifest": str(path), "count": len(matches)}
+    completions = _load_verified_screening_completions(
+        store,
+        args.screening_manifest,
+        candidates,
+        questions,
+        config,
+        tokenizer=prepared.tokenizer,
+    )
+    results = tuple(
+        score_screening(candidate, completions.get(candidate.entity_id, ()))
+        for candidate in candidates
+    )
+    qualified = tuple(
+        candidate
+        for candidate, result in zip(candidates, results, strict=True)
+        if result.qualifies
+    )
+    audit_lineage = {
+        "config_sha256": config.config_hash,
+        "candidate_manifest_sha256": _candidate_manifest_sha256(candidates),
+        "questions_manifest_sha256": _screening_question_manifest_sha256(questions),
+        "synthetic_manifest_sha256": _synthetic_manifest_sha256(synthetic),
+        "screening_completion_sha256": screening_shard.sha256,
+        "screening_parser_sha256": _screening_parser_sha256(),
+    }
+    try:
+        selected = _select_domain_balanced_candidates(
+            qualified, required_count=required_count
+        )
+    except ValueError as error:
+        audit = _write_screening_audit(
+            store,
+            config,
+            screening_shard,
+            candidates,
+            results,
+            (),
+            required_count,
+            audit_lineage,
+            decision="stopped",
+            stop_reason=str(error),
+        )
+        raise ValueError(
+            f"{error}; screening audit: {audit.manifest_path}"
+        ) from error
+    matches = match_synthetic_entities(selected, synthetic, prepared.tokenizer)
+    audit = _write_screening_audit(
+        store,
+        config,
+        screening_shard,
+        candidates,
+        results,
+        selected,
+        required_count,
+        audit_lineage,
+        decision="passed",
+        stop_reason=None,
+    )
+    model_hash, tokenizer_hash = _config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
+    match_shard = _write_or_verify_screening_shard(
+        store,
+        config.run_id,
+        screening_shard.namespace,
+        f"screened-matches-{screening_shard.shard_id}",
+        [{"kind": "screened_match", **asdict(row)} for row in matches],
+        {
+            **audit_lineage,
+            "screening_audit_sha256": audit.sha256,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+            "screening_completion_manifest": str(
+                screening_shard.manifest_path.relative_to(store.root)
+            ),
+            "screening_audit_manifest": str(
+                audit.manifest_path.relative_to(store.root)
+            ),
+        },
+        record_kind="screened_match",
+    )
+    return {
+        "status": "screened",
+        "manifest": str(match_shard.manifest_path),
+        "audit_manifest": str(audit.manifest_path),
+        "count": len(matches),
+    }
+
+
+def _write_screening_audit(
+    store: FAArtifactStore,
+    config: FAConfig,
+    screening_shard: Any,
+    candidates: Sequence[CandidateEntity],
+    results: Sequence[Any],
+    selected: Sequence[CandidateEntity],
+    required_count: int,
+    lineage: Mapping[str, Any],
+    *,
+    decision: str,
+    stop_reason: str | None,
+):
+    domains = tuple(REGISTERED_ENTITY_DOMAINS)
+    quota = required_count // len(domains)
+    qualified_ids = {
+        domain: [
+            candidate.entity_id
+            for candidate, result in zip(candidates, results, strict=True)
+            if candidate.coarse_type == domain and result.qualifies
+        ]
+        for domain in domains
+    }
+    row = {
+        "kind": "screening_audit",
+        "schema_version": 1,
+        "decision": decision,
+        "stop_reason": stop_reason,
+        "required_count": required_count,
+        "quota_per_domain": quota,
+        "candidate_order": [candidate.entity_id for candidate in candidates],
+        "candidate_scores": [asdict(result) for result in results],
+        "qualified_entity_ids_by_domain": qualified_ids,
+        "selected_entity_ids": [candidate.entity_id for candidate in selected],
+        "config_sha256": config.config_hash,
+        "screening_completion_sha256": screening_shard.sha256,
+        "screening_parser_sha256": _screening_parser_sha256(),
+    }
+    return _write_or_verify_screening_shard(
+        store,
+        config.run_id,
+        screening_shard.namespace,
+        f"screening-audit-{screening_shard.shard_id}",
+        [row],
+        lineage,
+        record_kind="screening_audit",
+    )
+
+
+def _write_or_verify_screening_shard(
+    store: FAArtifactStore,
+    run_id: str,
+    namespace: str,
+    shard_id: str,
+    rows: Sequence[Mapping[str, Any]],
+    lineage: Mapping[str, Any],
+    *,
+    record_kind: str,
+):
+    expected_rows = tuple(_json_safe(dict(row)) for row in rows)
+    expected_lineage = _json_safe(dict(lineage))
+    try:
+        return store.write_completed_shard(
+            run_id,
+            namespace,
+            shard_id,
+            expected_rows,
+            expected_lineage,
+            record_kind=record_kind,
+        )
+    except FileExistsError:
+        matches = tuple(
+            shard
+            for shard in store.resume_verified_shards(run_id, namespace)
+            if shard.shard_id == shard_id
+        )
+        if len(matches) != 1:
+            raise ValueError(
+                "existing screening artifact is incomplete or ambiguous"
+            ) from None
+        shard = matches[0]
+        if shard.record_kind != record_kind:
+            raise ValueError("existing screening artifact has the wrong kind")
+        if _read_json_rows(shard.data_path) != expected_rows:
+            raise ValueError("existing screening artifact rows do not match")
+        if _read_json_object(shard.manifest_path).get("lineage") != expected_lineage:
+            raise ValueError("existing screening artifact lineage does not match")
+        return shard
+
+
+def _screening_required_count(
+    candidates: Sequence[CandidateEntity],
+    config: FAConfig,
+) -> int:
+    candidate_rows = tuple(candidates)
+    if len({candidate.entity_id for candidate in candidate_rows}) != len(candidate_rows):
+        raise ValueError("screening candidates contain duplicate entity IDs")
+    if len({candidate.qid for candidate in candidate_rows}) != len(candidate_rows):
+        raise ValueError("screening candidates contain duplicate QIDs")
+    candidate_splits = {candidate.split for candidate in candidate_rows}
+    if len(candidate_splits) != 1:
+        raise ValueError("screening candidates must belong to exactly one split")
+    candidate_split = next(iter(candidate_splits))
+    try:
+        return config.split_counts[candidate_split]
+    except KeyError as error:
+        raise ValueError("screening candidate split is not registered in the config") from error
+
+
+def _select_domain_balanced_candidates(
+    qualified: Sequence[CandidateEntity],
+    *,
+    required_count: int,
+) -> tuple[CandidateEntity, ...]:
+    domains = tuple(REGISTERED_ENTITY_DOMAINS)
+    if type(required_count) is not int or required_count <= 0:
+        raise ValueError("required screening count must be a positive integer")
+    if required_count % len(domains) != 0:
+        raise ValueError("required screening count must divide evenly across domains")
+    quota = required_count // len(domains)
+    selected_counts = {domain: 0 for domain in domains}
+    selected: list[CandidateEntity] = []
+    for candidate in qualified:
+        if candidate.coarse_type not in selected_counts:
+            raise ValueError("qualified candidate uses an unregistered entity domain")
+        if selected_counts[candidate.coarse_type] >= quota:
+            continue
+        selected.append(candidate)
+        selected_counts[candidate.coarse_type] += 1
+    shortages = {
+        domain: quota - selected_counts[domain]
+        for domain in domains
+        if selected_counts[domain] < quota
+    }
+    if shortages:
+        details = ", ".join(
+            f"{domain}:{missing}" for domain, missing in sorted(shortages.items())
+        )
+        raise ValueError(f"qualified candidates do not meet exact domain balance ({details})")
+    return tuple(selected)
+
+
+def _load_verified_screening_completions(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    candidates: Sequence[CandidateEntity],
+    questions: Sequence[ScreeningQuestion],
+    config: FAConfig,
+    *,
+    tokenizer: Any | None = None,
+) -> dict[str, tuple[str, str, str]]:
+    shard = _require_verified_shard_kind(
+        store,
+        manifest_path,
+        "screening_completion",
+        "verified screening completion manifest",
+    )
+    candidate_splits = {candidate.split for candidate in candidates}
+    if len(candidate_splits) != 1 or shard.namespace != next(iter(candidate_splits)):
+        raise ValueError("screening completion namespace does not match candidate split")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    model_hash, tokenizer_hash = _config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": _candidate_manifest_sha256(candidates),
+            "questions_manifest_sha256": _screening_question_manifest_sha256(
+                questions
+            ),
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+    )
+
+    by_entity = {candidate.entity_id: candidate for candidate in candidates}
+    expected_questions = {
+        (candidate.entity_id, index): question
+        for candidate, candidate_questions in order_screening_questions(
+            candidates, questions
+        )
+        for index, question in enumerate(candidate_questions)
+    }
+    if tokenizer is None:
+        tokenizer = load_pinned_tokenizer(
+            config, tokenizer_loader=_TOKENIZER_LOADER
+        ).tokenizer
+    grouped: dict[str, dict[int, str]] = {}
+    rows = _read_json_rows(shard.data_path)
+    for row in rows:
+        entity_id = row.get("entity_id")
+        candidate = by_entity.get(entity_id)
+        index = row.get("question_index")
+        question = expected_questions.get((entity_id, index))
+        if (
+            candidate is None
+            or question is None
+            or row.get("kind") != "screening_completion"
+            or row.get("qid") != candidate.qid
+            or row.get("question_id") != question.question_id
+            or row.get("prompt") != question.prompt
+            or row.get("source_provenance") != question.source_provenance
+            or row.get("rendered_prompt_sha256")
+            != _screening_rendered_prompt_sha256(
+                config, tokenizer, question.prompt
+            )
+            or type(index) is not int
+            or index not in {0, 1, 2}
+            or row.get("accepted_aliases") != list(question.accepted_aliases)
+            or row.get("generation") != dict(config.generation)
+            or row.get("config_sha256") != config.config_hash
+            or row.get("model_sha256") != model_hash
+            or row.get("tokenizer_sha256") != tokenizer_hash
+            or row.get("chat_template_sha256") != template_hash
+            or row.get("status") != "completed"
+            or row.get("exception_class") is not None
+            or not isinstance(row.get("raw_output"), str)
+            or not isinstance(row.get("answer_text"), str)
+            or row.get("answer_text")
+            != _screening_answer_text(row.get("raw_output"))
+        ):
+            raise ValueError("screening completion row has invalid data or provenance")
+        entity_rows = grouped.setdefault(entity_id, {})
+        if index in entity_rows:
+            raise ValueError("screening completion contains a duplicate question index")
+        entity_rows[index] = row["answer_text"]
+
+    if set(grouped) != set(by_entity) or any(
+        set(entity_rows) != {0, 1, 2} for entity_rows in grouped.values()
+    ):
+        raise ValueError(
+            "screening completion must contain exactly three rows per candidate"
+        )
+    return {
+        entity_id: (
+            entity_rows[0],
+            entity_rows[1],
+            entity_rows[2],
+        )
+        for entity_id, entity_rows in grouped.items()
+    }
+
+
+def _candidate_manifest_sha256(candidates: Sequence[CandidateEntity]) -> str:
+    return _sha256_json([asdict(candidate) for candidate in candidates])
+
+
+def _screening_question_manifest_sha256(
+    questions: Sequence[ScreeningQuestion],
+) -> str:
+    return _sha256_json(
+        [
+            asdict(question)
+            for question in sorted(questions, key=lambda value: value.question_id)
+        ]
+    )
+
+
+def _synthetic_manifest_sha256(
+    synthetic: Sequence[SyntheticCandidate],
+) -> str:
+    return _sha256_json([asdict(candidate) for candidate in synthetic])
+
+
+def _screening_parser_sha256() -> str:
+    return _sha256_json(
+        {
+            "revision": "fa-screening-answer-v1",
+            "implementation": inspect.getsource(_screening_answer_text),
+            "rules": (
+                "strip",
+                "suffix-after-final-think-close",
+                "last-nonempty-line",
+                "suffix-after-final-colon",
+                "single-matching-quote-pair",
+            ),
+        }
+    )
+
+
+def _render_screening_prompt(runner: Any, prompt: str) -> str:
+    render = getattr(runner, "render_prompt", None)
+    if not callable(render):
+        return prompt
+    value = render(prompt)
+    if not isinstance(value, str):
+        raise ValueError("screening runner rendered prompt must be text")
+    return value
+
+
+def _screening_rendered_prompt_sha256(
+    config: FAConfig,
+    tokenizer: Any,
+    prompt: str,
+) -> str:
+    options = {
+        "tokenize": False,
+        "add_generation_prompt": True,
+    }
+    if config.model_id.startswith("Qwen/Qwen3-"):
+        options["enable_thinking"] = False
+    rendered = tokenizer.apply_chat_template(
+        [{"role": "user", "content": prompt}],
+        **options,
+    )
+    if not isinstance(rendered, str):
+        raise ValueError("screening tokenizer rendered prompt must be text")
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def _screening_answer_text(raw_output: str) -> str:
+    value = raw_output.strip()
+    if "</think>" in value:
+        value = value.rsplit("</think>", 1)[1].strip()
+    lines = tuple(line.strip() for line in value.splitlines() if line.strip())
+    value = lines[-1] if lines else ""
+    if ":" in value:
+        value = value.rsplit(":", 1)[1].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    return value
 
 
 def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, confirmatory: bool) -> dict[str, Any]:
@@ -354,7 +898,17 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         )
         if gate.get("status") != "passed":
             raise ValueError("confirmatory construction requires a verified passed pilot gate")
-    matches = tuple(EntityMatch(**_without_schema(row)) for row in _read_json_rows(args.matches_manifest))
+    elif config.profile != "smoke":
+        raise ValueError("pilot construction requires the smoke config")
+    if confirmatory:
+        matches = tuple(
+            EntityMatch(**_without_schema(row))
+            for row in _read_json_rows(args.matches_manifest)
+        )
+    else:
+        matches = _load_verified_screened_matches(
+            store, args.matches_manifest, config
+        )
     if confirmatory:
         ratings, ratings_shard = _load_verified_naturalness_ratings(
             store,
@@ -369,6 +923,14 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
         naturalness_shard = _write_naturalness_audit(
             store, config, audited_matches, audit, ratings, ratings_shard
         )
+    else:
+        pilot_count = config.split_counts["pilot"]
+        if len(matches) != pilot_count or any(
+            match.split != "pilot" for match in matches
+        ):
+            raise ValueError(
+                f"pilot construction requires exactly {pilot_count} pilot matches"
+            )
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
     factorial_rows = build_factorial_examples(config, matches, tokenizer=prepared.tokenizer)
     rows = factorial_rows
@@ -2953,6 +3515,136 @@ def _load_verified_pilot_gate(
         },
     )
     return {"status": gate["status"], "evidence_sha256": evidence_hash}
+
+
+def _load_verified_screened_matches(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    config: FAConfig,
+) -> tuple[EntityMatch, ...]:
+    shard = _require_verified_shard_kind(
+        store,
+        manifest_path,
+        "screened_match",
+        "verified screened-match manifest",
+    )
+    if shard.namespace != "pilot":
+        raise ValueError("screened-match manifest must use the pilot namespace")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    model_hash, tokenizer_hash = _config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+    )
+    lineage = _read_json_object(shard.manifest_path)["lineage"]
+    for field in (
+        "candidate_manifest_sha256",
+        "questions_manifest_sha256",
+        "synthetic_manifest_sha256",
+        "screening_completion_sha256",
+        "screening_audit_sha256",
+        "screening_parser_sha256",
+    ):
+        _required_sha256(lineage.get(field), field)
+    completion = _require_verified_shard_kind(
+        store,
+        _artifact_path_from_record(
+            store,
+            lineage.get("screening_completion_manifest"),
+            "screening completion parent manifest",
+        ),
+        "screening_completion",
+        "verified screening completion parent manifest",
+    )
+    audit = _require_verified_shard_kind(
+        store,
+        _artifact_path_from_record(
+            store,
+            lineage.get("screening_audit_manifest"),
+            "screening audit parent manifest",
+        ),
+        "screening_audit",
+        "verified screening audit parent manifest",
+    )
+    if completion.sha256 != lineage["screening_completion_sha256"]:
+        raise ValueError("screened-match completion parent hash does not verify")
+    if audit.sha256 != lineage["screening_audit_sha256"]:
+        raise ValueError("screened-match audit parent hash does not verify")
+    parent_lineage = {
+        name: lineage[name]
+        for name in (
+            "config_sha256",
+            "candidate_manifest_sha256",
+            "questions_manifest_sha256",
+            "synthetic_manifest_sha256",
+            "screening_completion_sha256",
+            "screening_parser_sha256",
+        )
+    }
+    _verify_shard_lineage(audit, parent_lineage)
+    _verify_shard_lineage(
+        completion,
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": lineage["candidate_manifest_sha256"],
+            "questions_manifest_sha256": lineage["questions_manifest_sha256"],
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+    )
+
+    matches = []
+    for row in _read_json_rows(shard.data_path):
+        if row.get("kind") != "screened_match":
+            raise ValueError("screened-match row has an invalid record kind")
+        values = {
+            key: value
+            for key, value in row.items()
+            if key not in {"kind", "schema_version"}
+        }
+        matches.append(EntityMatch(**values))
+    unique_fields = (
+        ("pair IDs", (match.pair_id for match in matches)),
+        ("real entity IDs", (match.real_entity_id for match in matches)),
+        ("real QIDs", (match.real_qid for match in matches)),
+        (
+            "synthetic candidate IDs",
+            (match.synthetic_candidate_id for match in matches),
+        ),
+    )
+    for label, values in unique_fields:
+        items = tuple(values)
+        if len(set(items)) != len(items):
+            raise ValueError(f"screened-match manifest contains duplicate {label}")
+    expected_count = config.split_counts["pilot"]
+    if len(matches) != expected_count:
+        raise ValueError(
+            f"screened-match manifest must contain exactly {expected_count} pairs"
+        )
+    domains = tuple(REGISTERED_ENTITY_DOMAINS)
+    if expected_count % len(domains) != 0:
+        raise ValueError("pilot count cannot be balanced across registered domains")
+    quota = expected_count // len(domains)
+    domain_counts = Counter(match.coarse_type for match in matches)
+    if domain_counts != Counter({domain: quota for domain in domains}):
+        raise ValueError("screened-match manifest is not exactly domain balanced")
+    audit_rows = _read_json_rows(audit.data_path)
+    if len(audit_rows) != 1 or audit_rows[0].get("decision") != "passed":
+        raise ValueError("screened-match manifest requires a passed screening audit")
+    if audit_rows[0].get("screening_completion_sha256") != completion.sha256:
+        raise ValueError("screening audit does not bind its completion parent")
+    if audit_rows[0].get("selected_entity_ids") != [
+        match.real_entity_id for match in matches
+    ]:
+        raise ValueError("screened-match rows do not match the audited selection")
+    return tuple(matches)
 
 
 def _require_generation_sidecar_manifest(

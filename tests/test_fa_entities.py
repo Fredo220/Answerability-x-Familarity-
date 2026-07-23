@@ -9,9 +9,11 @@ from trajectory_extractor.fa_entities import (
     CandidateEntity,
     EntityMatch,
     NaturalnessRating,
+    ScreeningQuestion,
     SyntheticCandidate,
     audit_naturalness_manifest,
     match_synthetic_entities,
+    order_screening_questions,
     score_screening,
 )
 
@@ -122,6 +124,143 @@ def test_screening_rejects_substring_and_requires_three_completions():
     assert result.correct_answers == (False, True, False)
     with pytest.raises(ValueError, match="three completions"):
         score_screening(candidate(), ["Paris"])
+
+
+def test_screening_questions_join_exactly_three_alias_consistent_rows():
+    entity = candidate()
+    questions = tuple(
+        ScreeningQuestion(
+            question_id=f"Q90-{index}",
+            qid="Q90",
+            prompt=f"Question {index}",
+            accepted_aliases=aliases,
+            source_provenance="https://www.wikidata.org/wiki/Q90",
+        )
+        for index, aliases in enumerate(entity.screening_aliases, start=1)
+    )
+
+    joined = order_screening_questions([entity], reversed(questions))
+
+    assert joined[0][0] == entity
+    assert tuple(question.question_id for question in joined[0][1]) == (
+        "Q90-1",
+        "Q90-2",
+        "Q90-3",
+    )
+    with pytest.raises(ValueError, match="exactly three"):
+        order_screening_questions([entity], questions[:2])
+    with pytest.raises(ValueError, match="aliases"):
+        order_screening_questions(
+            [entity],
+            (
+                ScreeningQuestion(
+                    question_id="Q90-1",
+                    qid="Q90",
+                    prompt="Question 1",
+                    accepted_aliases=("wrong",),
+                    source_provenance="source",
+                ),
+                *questions[1:],
+            ),
+        )
+
+
+def test_v3_pilot_pool_is_complete_balanced_and_alias_consistent():
+    input_dir = REPO_ROOT / "data" / "fa" / "pilot_inputs"
+    candidate_rows = json.loads(
+        (input_dir / "candidates_v3.json").read_text(encoding="utf-8")
+    )
+    question_rows = json.loads(
+        (input_dir / "screening_questions_v3.json").read_text(encoding="utf-8")
+    )
+    synthetic_rows = json.loads(
+        (input_dir / "synthetic_candidates_v3.json").read_text(encoding="utf-8")
+    )
+    candidates = tuple(
+        CandidateEntity(**{key: value for key, value in row.items() if key != "schema_version"})
+        for row in candidate_rows
+    )
+    questions = tuple(
+        ScreeningQuestion(**{key: value for key, value in row.items() if key != "schema_version"})
+        for row in question_rows
+    )
+    synthetics = tuple(
+        SyntheticCandidate(**{key: value for key, value in row.items() if key != "schema_version"})
+        for row in synthetic_rows
+    )
+
+    assert len(candidates) == 20
+    assert len(questions) == 60
+    assert len(synthetics) == 20
+    assert {
+        domain: sum(candidate.coarse_type == domain for candidate in candidates)
+        for domain in ("person", "place", "organization", "creative_work")
+    } == {
+        "person": 5,
+        "place": 5,
+        "organization": 5,
+        "creative_work": 5,
+    }
+    assert {
+        domain: sum(candidate.coarse_type == domain for candidate in synthetics)
+        for domain in ("person", "place", "organization", "creative_work")
+    } == {
+        "person": 5,
+        "place": 5,
+        "organization": 5,
+        "creative_work": 5,
+    }
+    assert len(order_screening_questions(candidates, questions)) == len(candidates)
+    assert {candidate.qid for candidate in candidates} == {
+        question.qid for question in questions
+    }
+
+
+def test_v4_pilot_pool_is_append_only_and_alias_consistent():
+    input_dir = REPO_ROOT / "data" / "fa" / "pilot_inputs"
+    candidate_v3 = json.loads(
+        (input_dir / "candidates_v3.json").read_text(encoding="utf-8")
+    )
+    question_v3 = json.loads(
+        (input_dir / "screening_questions_v3.json").read_text(encoding="utf-8")
+    )
+    synthetic_v3 = json.loads(
+        (input_dir / "synthetic_candidates_v3.json").read_text(encoding="utf-8")
+    )
+    candidate_rows = json.loads(
+        (input_dir / "candidates_v4.json").read_text(encoding="utf-8")
+    )
+    question_rows = json.loads(
+        (input_dir / "screening_questions_v4.json").read_text(encoding="utf-8")
+    )
+    synthetic_rows = json.loads(
+        (input_dir / "synthetic_candidates_v4.json").read_text(encoding="utf-8")
+    )
+    candidates = tuple(
+        CandidateEntity(**{key: value for key, value in row.items() if key != "schema_version"})
+        for row in candidate_rows
+    )
+    questions = tuple(
+        ScreeningQuestion(**{key: value for key, value in row.items() if key != "schema_version"})
+        for row in question_rows
+    )
+
+    assert candidate_rows[: len(candidate_v3)] == candidate_v3
+    assert question_rows[: len(question_v3)] == question_v3
+    assert synthetic_rows[: len(synthetic_v3)] == synthetic_v3
+    assert [row["entity_id"] for row in candidate_rows[len(candidate_v3) :]] == [
+        "pilot-work-jaws",
+        "pilot-work-mulan",
+        "pilot-work-moana",
+        "pilot-work-skyfall",
+    ]
+    assert len(candidates) == 24
+    assert len(questions) == 72
+    assert len(synthetic_rows) == 21
+    assert len(order_screening_questions(candidates, questions)) == len(candidates)
+    assert {candidate.qid for candidate in candidates} == {
+        question.qid for question in questions
+    }
 
 
 def test_matching_enforces_token_and_surface_constraints(fake_tokenizer):
@@ -256,6 +395,50 @@ def test_naturalness_audit_allows_registered_third_rater_only_for_disagreement(f
     [
         (candidate, {"schema_version": True}),
         (candidate, {"schema_version": 1.0}),
+        (
+            lambda **changes: ScreeningQuestion(
+                question_id="Q90-1",
+                qid="Q90",
+                prompt="What country is Paris in?",
+                accepted_aliases=("France",),
+                source_provenance="CC0-1.0",
+                **changes,
+            ),
+            {"schema_version": True},
+        ),
+        (
+            lambda **changes: ScreeningQuestion(
+                question_id="Q90-1",
+                qid="Q90",
+                prompt="What country is Paris in?",
+                accepted_aliases=("France",),
+                source_provenance="CC0-1.0",
+                **changes,
+            ),
+            {"schema_version": 1.0},
+        ),
+        (
+            lambda **changes: SyntheticCandidate(
+                "syn-2",
+                "New Vale",
+                "place",
+                "mechanism_train",
+                "names-v1",
+                **changes,
+            ),
+            {"schema_version": True},
+        ),
+        (
+            lambda **changes: SyntheticCandidate(
+                "syn-2",
+                "New Vale",
+                "place",
+                "mechanism_train",
+                "names-v1",
+                **changes,
+            ),
+            {"schema_version": 1.0},
+        ),
         (entity_match, {"schema_version": True}),
         (entity_match, {"schema_version": 1.0}),
         (lambda **changes: rating("Q90--syn-2", "rater-a", **changes), {"schema_version": True}),
@@ -276,6 +459,26 @@ def test_naturalness_rating_requires_a_canonical_pair_id():
     ("factory", "schema_name"),
     [
         (candidate, "candidate_entity.schema.json"),
+        (
+            lambda: ScreeningQuestion(
+                question_id="Q90-1",
+                qid="Q90",
+                prompt="What country is Paris in?",
+                accepted_aliases=("France",),
+                source_provenance="CC0-1.0",
+            ),
+            "screening_question.schema.json",
+        ),
+        (
+            lambda: SyntheticCandidate(
+                "syn-2",
+                "New Vale",
+                "place",
+                "mechanism_train",
+                "names-v1",
+            ),
+            "synthetic_candidate.schema.json",
+        ),
         (entity_match, "synthetic_match.schema.json"),
         (lambda: rating("Q90--syn-2", "rater-a"), "naturalness_rating.schema.json"),
     ],
@@ -292,6 +495,7 @@ def test_runtime_records_serialize_to_their_complete_schemas(factory, schema_nam
     [
         "candidate_entity.schema.json",
         "screening_question.schema.json",
+        "synthetic_candidate.schema.json",
         "synthetic_match.schema.json",
         "naturalness_rating.schema.json",
     ],
@@ -309,6 +513,15 @@ def test_contract_schemas_require_exact_integer_schema_version(schema_name, sche
             "accepted_aliases": ["France"],
             "source_provenance": "CC0-1.0",
         },
+        "synthetic_candidate.schema.json": asdict(
+            SyntheticCandidate(
+                "syn-2",
+                "New Vale",
+                "place",
+                "mechanism_train",
+                "names-v1",
+            )
+        ),
         "synthetic_match.schema.json": asdict(entity_match()),
         "naturalness_rating.schema.json": asdict(rating("Q90--syn-2", "rater-a")),
     }
@@ -324,6 +537,20 @@ def test_contract_schemas_require_exact_integer_schema_version(schema_name, sche
     [
         ("candidate_entity.schema.json", {"schema_version", "qid", "source_provenance", "split"}),
         ("screening_question.schema.json", {"schema_version", "question_id", "accepted_aliases"}),
+        (
+            "screening_completion.schema.json",
+            {
+                "schema_version",
+                "question_id",
+                "raw_output",
+                "answer_text",
+                "config_sha256",
+            },
+        ),
+        (
+            "synthetic_candidate.schema.json",
+            {"schema_version", "candidate_id", "generator_revision", "split"},
+        ),
         ("synthetic_match.schema.json", {"schema_version", "pair_id", "tokenizer_revision", "character_tolerance"}),
         ("naturalness_rating.schema.json", {"schema_version", "pair_id", "rater_id", "synthetic_malformed"}),
     ],

@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import inspect
 import json
 import math
 from dataclasses import asdict, replace
@@ -23,7 +24,13 @@ from trajectory_extractor.fa_data import (
     PowerCell,
     build_factorial_examples,
 )
-from trajectory_extractor.fa_entities import EntityMatch, NaturalnessAudit, NaturalnessRating
+from trajectory_extractor.fa_entities import (
+    CandidateEntity,
+    EntityMatch,
+    NaturalnessAudit,
+    NaturalnessRating,
+    ScreeningQuestion,
+)
 from trajectory_extractor.fa_features import OutputEvidence
 from trajectory_extractor.fa_runtime import run_generation_shard
 from trajectory_extractor.fa_probes import (
@@ -62,6 +69,101 @@ MATCH = {
 }
 
 
+def smoke_pilot_matches():
+    rows = []
+    domains = ("person", "place", "organization", "creative_work")
+    for index in range(8):
+        real_name = f"Old Vale {index}"
+        synthetic_name = f"New Vale {index}"
+        rows.append(
+            {
+                **MATCH,
+                "pair_id": f"Q{index + 1}--syn-{index + 1}",
+                "real_entity_id": f"Q{index + 1}",
+                "real_qid": f"Q{index + 1}",
+                "synthetic_candidate_id": f"syn-{index + 1}",
+                "real_name": real_name,
+                "synthetic_name": synthetic_name,
+                "coarse_type": domains[index % len(domains)],
+                "real_token_count": 3,
+                "synthetic_token_count": 3,
+                "real_word_count": 3,
+                "synthetic_word_count": 3,
+                "real_character_count": len(real_name),
+                "synthetic_character_count": len(synthetic_name),
+            }
+        )
+    return rows
+
+
+def screened_matches_manifest(tmp_path, config, rows, *, shard_id="screened-matches-test"):
+    model_hash, tokenizer_hash = fa_cli._config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or CHAT_TEMPLATE_SHA256
+    store = FAArtifactStore(tmp_path)
+    completion = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        f"{shard_id}-completion",
+        [],
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": "a" * 64,
+            "questions_manifest_sha256": "b" * 64,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+        record_kind="screening_completion",
+    )
+    audit = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        f"{shard_id}-audit",
+        [
+            {
+                "kind": "screening_audit",
+                "decision": "passed",
+                "screening_completion_sha256": completion.sha256,
+                "selected_entity_ids": [row["real_entity_id"] for row in rows],
+            }
+        ],
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": "a" * 64,
+            "questions_manifest_sha256": "b" * 64,
+            "synthetic_manifest_sha256": "c" * 64,
+            "screening_completion_sha256": completion.sha256,
+            "screening_parser_sha256": "f" * 64,
+        },
+        record_kind="screening_audit",
+    )
+    return store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        shard_id,
+        [{"kind": "screened_match", **row} for row in rows],
+        {
+            "config_sha256": config.config_hash,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+            "candidate_manifest_sha256": "a" * 64,
+            "questions_manifest_sha256": "b" * 64,
+            "synthetic_manifest_sha256": "c" * 64,
+            "screening_completion_sha256": completion.sha256,
+            "screening_audit_sha256": audit.sha256,
+            "screening_parser_sha256": "f" * 64,
+            "screening_completion_manifest": str(
+                completion.manifest_path.relative_to(store.root)
+            ),
+            "screening_audit_manifest": str(
+                audit.manifest_path.relative_to(store.root)
+            ),
+        },
+        record_kind="screened_match",
+    ).manifest_path
+
+
 class FakeTokenizer:
     chat_template = "fake qwen template"
     all_special_ids = ()
@@ -69,7 +171,15 @@ class FakeTokenizer:
     def encode(self, text, add_special_tokens=False):
         return text.split()
 
-    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        tokenize,
+        add_generation_prompt,
+        enable_thinking=None,
+    ):
+        del enable_thinking
         rendered = messages[0]["content"] + " <assistant>"
         return self.encode(rendered) if tokenize else rendered
 
@@ -81,6 +191,7 @@ CHAT_TEMPLATE_SHA256 = hashlib.sha256(CHAT_TEMPLATE_BYTES).hexdigest()
 @pytest.fixture(autouse=True)
 def register_fake_smoke_template(monkeypatch):
     monkeypatch.setattr(fa_cli, "_SMOKE_CHAT_TEMPLATE_SHA256", CHAT_TEMPLATE_SHA256)
+    monkeypatch.setattr(fa_cli, "_SMOKE_CONFIG_PATH", CONFIG_PATH)
 
 
 def install_fake_tokenizer(monkeypatch):
@@ -126,32 +237,76 @@ def confirmatory_reserve_matches(config, *, reserve_per_cell=1):
 def test_screening_matching_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
     config = FAConfig.from_json(CONFIG_PATH)
     sentinel = object()
-    candidate = {
-        "entity_id": "Q90",
-        "qid": "Q90",
-        "name": "Old Vale",
-        "coarse_type": "place",
-        "split": "pilot",
-        "source_query": "registered-query-v1",
-        "source_provenance": "CC0-1.0",
-        "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
-    }
-    synthetic = {
-        "candidate_id": "syn-90",
-        "name": "New Vale",
-        "coarse_type": "place",
-        "split": "pilot",
-        "generator_revision": "names-v1",
-    }
+    read_json_rows = fa_cli._read_json_rows
+    domains = ("person", "place", "organization", "creative_work")
+    candidates = []
+    synthetics = []
+    for index in range(8):
+        domain = domains[index % len(domains)]
+        candidates.append(
+            {
+                "entity_id": f"entity-{index}",
+                "qid": f"Q{index + 1}",
+                "name": f"Old Vale {index}",
+                "coarse_type": domain,
+                "split": "pilot",
+                "source_query": "registered-query-v1",
+                "source_provenance": "CC0-1.0",
+                "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
+            }
+        )
+        synthetics.append(
+            {
+                "candidate_id": f"syn-{index}",
+                "name": f"New Vale {index}",
+                "coarse_type": domain,
+                "split": "pilot",
+                "generator_revision": "names-v1",
+            }
+        )
+    questions = [
+        {
+            "question_id": f"entity-{index}-{question_index}",
+            "qid": f"Q{index + 1}",
+            "prompt": f"Question {question_index}",
+            "accepted_aliases": [answer],
+            "source_provenance": "CC0-1.0",
+        }
+        for index in range(8)
+        for question_index, answer in enumerate(
+            ("alpha", "beta", "gamma"), start=1
+        )
+    ]
     monkeypatch.setattr(
         fa_cli,
         "_read_json_rows",
-        lambda path: [candidate] if path.name == "candidates.json" else [synthetic],
+        lambda path: (
+            candidates
+            if path.name == "candidates.json"
+            else questions
+            if path.name == "questions.json"
+            else synthetics
+            if path.name == "synthetic.json"
+            else read_json_rows(path)
+        ),
     )
     monkeypatch.setattr(
         fa_cli,
-        "_read_json_object",
-        lambda _path: {"Q90": ["alpha", "beta", "gamma"]},
+        "_load_verified_screening_completions",
+        lambda *args, **kwargs: {
+            candidate["entity_id"]: ("alpha", "beta", "gamma")
+            for candidate in candidates
+        },
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_require_verified_shard_kind",
+        lambda *args, **kwargs: SimpleNamespace(
+            namespace="pilot",
+            shard_id="screening-0001",
+            sha256="a" * 64,
+            manifest_path=tmp_path / "screening.jsonl.manifest.json",
+        ),
     )
     monkeypatch.setattr(
         fa_cli,
@@ -170,13 +325,615 @@ def test_screening_matching_uses_the_pinned_model_tokenizer(tmp_path, monkeypatc
         tmp_path,
         SimpleNamespace(
             candidates_manifest=Path("candidates.json"),
+            questions_manifest=Path("questions.json"),
+            synthetic_manifest=Path("synthetic.json"),
+            screening_manifest=Path("screening.json"),
+        ),
+    )
+    resumed = fa_cli._screen_entities(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            candidates_manifest=Path("candidates.json"),
+            questions_manifest=Path("questions.json"),
             synthetic_manifest=Path("synthetic.json"),
             screening_manifest=Path("screening.json"),
         ),
     )
 
     assert payload["status"] == "screened"
-    assert observed == [sentinel]
+    assert resumed == payload
+    assert observed == [sentinel, sentinel]
+    store = FAArtifactStore(tmp_path)
+    match_shard = store.verify_shard(payload["manifest"])
+    audit_shard = store.verify_shard(payload["audit_manifest"])
+    match_lineage = json.loads(
+        match_shard.manifest_path.read_text(encoding="utf-8")
+    )["lineage"]
+    assert match_shard.record_kind == "screened_match"
+    assert audit_shard.record_kind == "screening_audit"
+    assert match_lineage["screening_audit_sha256"] == audit_shard.sha256
+    assert len(match_lineage["screening_parser_sha256"]) == 64
+
+
+def test_screening_failure_writes_a_machine_readable_audit(tmp_path, monkeypatch):
+    config = FAConfig.from_json(CONFIG_PATH)
+    domains = ("person", "place", "organization", "creative_work")
+    candidates = [
+        {
+            "entity_id": f"entity-{index}",
+            "qid": f"Q{index}",
+            "name": f"Entity {index}",
+            "coarse_type": domain,
+            "split": "pilot",
+            "source_query": "registered-query-v1",
+            "source_provenance": "CC0-1.0",
+            "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
+        }
+        for index, domain in enumerate(domains, start=1)
+    ]
+    questions = [
+        {
+            "question_id": f"entity-{index}-{question_index}",
+            "qid": f"Q{index}",
+            "prompt": f"Question {question_index}",
+            "accepted_aliases": [answer],
+            "source_provenance": "CC0-1.0",
+        }
+        for index in range(1, 5)
+        for question_index, answer in enumerate(
+            ("alpha", "beta", "gamma"), start=1
+        )
+    ]
+    synthetics = [
+        {
+            "candidate_id": f"syn-{index}",
+            "name": f"Synthetic {index}",
+            "coarse_type": domain,
+            "split": "pilot",
+            "generator_revision": "names-v1",
+        }
+        for index, domain in enumerate(domains, start=1)
+    ]
+    monkeypatch.setattr(
+        fa_cli,
+        "_read_json_rows",
+        lambda path: (
+            candidates
+            if path.name == "candidates.json"
+            else questions
+            if path.name == "questions.json"
+            else synthetics
+        ),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_screening_completions",
+        lambda *args, **kwargs: {
+            candidate["entity_id"]: ("alpha", "beta", "gamma")
+            for candidate in candidates
+        },
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_require_verified_shard_kind",
+        lambda *args, **kwargs: SimpleNamespace(
+            namespace="pilot",
+            shard_id="screening-failed",
+            sha256="a" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=object()),
+    )
+
+    with pytest.raises(ValueError, match="screening audit"):
+        fa_cli._screen_entities(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                candidates_manifest=Path("candidates.json"),
+                questions_manifest=Path("questions.json"),
+                synthetic_manifest=Path("synthetic.json"),
+                screening_manifest=Path("screening.json"),
+            ),
+        )
+
+    audit = next(
+        shard
+        for shard in FAArtifactStore(tmp_path).resume_verified_shards(
+            config.run_id, "pilot"
+        )
+        if shard.record_kind == "screening_audit"
+    )
+    row = json.loads(audit.data_path.read_text(encoding="utf-8"))
+    assert row["decision"] == "stopped"
+    assert row["selected_entity_ids"] == []
+    assert "exact domain balance" in row["stop_reason"]
+
+
+def test_screening_selection_is_manifest_ordered_and_exactly_domain_balanced():
+    domains = ("person", "place", "organization", "creative_work")
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    candidates = []
+    for round_index in range(3):
+        for domain_index, domain in enumerate(domains):
+            index = round_index * len(domains) + domain_index + 1
+            candidates.append(
+                CandidateEntity(
+                    entity_id=f"entity-{index}",
+                    qid=f"Q{index}",
+                    name=f"Entity {index}",
+                    coarse_type=domain,
+                    split="pilot",
+                    source_query="registered-query-v1",
+                    source_provenance="CC0-1.0",
+                    screening_aliases=aliases,
+                )
+            )
+
+    selected = fa_cli._select_domain_balanced_candidates(
+        candidates,
+        required_count=8,
+    )
+
+    assert tuple(candidate.entity_id for candidate in selected) == tuple(
+        f"entity-{index}" for index in range(1, 9)
+    )
+    assert {
+        domain: sum(candidate.coarse_type == domain for candidate in selected)
+        for domain in domains
+    } == {domain: 2 for domain in domains}
+
+
+def test_screening_selection_fails_closed_on_domain_shortage_and_unknown_domain():
+    aliases = (("alpha",), ("beta",), ("gamma",))
+
+    def candidate(index, domain):
+        return CandidateEntity(
+            entity_id=f"entity-{index}",
+            qid=f"Q{index}",
+            name=f"Entity {index}",
+            coarse_type=domain,
+            split="pilot",
+            source_query="registered-query-v1",
+            source_provenance="CC0-1.0",
+            screening_aliases=aliases,
+        )
+
+    shortage = [
+        candidate(1, "person"),
+        candidate(2, "place"),
+        candidate(3, "organization"),
+        candidate(4, "creative_work"),
+    ]
+    with pytest.raises(ValueError, match="exact domain balance"):
+        fa_cli._select_domain_balanced_candidates(shortage, required_count=8)
+
+    with pytest.raises(ValueError, match="unregistered entity domain"):
+        fa_cli._select_domain_balanced_candidates(
+            [candidate(5, "unknown")],
+            required_count=4,
+        )
+
+
+def test_screening_required_count_rejects_mixed_splits_and_duplicate_identities():
+    config = FAConfig.from_json(CONFIG_PATH)
+    aliases = (("alpha",), ("beta",), ("gamma",))
+
+    def candidate(entity_id, qid, split):
+        return CandidateEntity(
+            entity_id=entity_id,
+            qid=qid,
+            name=f"Entity {qid}",
+            coarse_type="person",
+            split=split,
+            source_query="registered-query-v1",
+            source_provenance="CC0-1.0",
+            screening_aliases=aliases,
+        )
+
+    with pytest.raises(ValueError, match="exactly one split"):
+        fa_cli._screening_required_count(
+            [
+                candidate("entity-1", "Q1", "pilot"),
+                candidate("entity-2", "Q2", "circuit_dev"),
+            ],
+            config,
+        )
+    with pytest.raises(ValueError, match="duplicate entity IDs"):
+        fa_cli._screening_required_count(
+            [
+                candidate("entity-1", "Q1", "pilot"),
+                candidate("entity-1", "Q2", "pilot"),
+            ],
+            config,
+        )
+    with pytest.raises(ValueError, match="duplicate QIDs"):
+        fa_cli._screening_required_count(
+            [
+                candidate("entity-1", "Q1", "pilot"),
+                candidate("entity-2", "Q1", "pilot"),
+            ],
+            config,
+        )
+
+
+def test_candidate_manifest_hash_binds_selection_order():
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    candidates = tuple(
+        CandidateEntity(
+            entity_id=f"entity-{index}",
+            qid=f"Q{index}",
+            name=f"Entity {index}",
+            coarse_type="person",
+            split="pilot",
+            source_query="registered-query-v1",
+            source_provenance="CC0-1.0",
+            screening_aliases=aliases,
+        )
+        for index in (1, 2)
+    )
+
+    assert fa_cli._candidate_manifest_sha256(candidates) != (
+        fa_cli._candidate_manifest_sha256(tuple(reversed(candidates)))
+    )
+
+
+def test_screening_loader_rejects_namespace_mismatched_to_candidate_split(
+    monkeypatch,
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    candidate = CandidateEntity(
+        entity_id="entity-1",
+        qid="Q1",
+        name="Entity One",
+        coarse_type="person",
+        split="pilot",
+        source_query="registered-query-v1",
+        source_provenance="CC0-1.0",
+        screening_aliases=(("alpha",), ("beta",), ("gamma",)),
+    )
+    shard = SimpleNamespace(namespace="circuit_dev")
+    monkeypatch.setattr(
+        fa_cli,
+        "_require_verified_shard_kind",
+        lambda *args, **kwargs: shard,
+    )
+    questions = tuple(
+        ScreeningQuestion(
+            question_id=f"entity-1-{index}",
+            qid="Q1",
+            prompt=f"Question {index}",
+            accepted_aliases=(answer,),
+            source_provenance="CC0-1.0",
+        )
+        for index, answer in enumerate(("alpha", "beta", "gamma"), start=1)
+    )
+
+    with pytest.raises(ValueError, match="namespace does not match"):
+        fa_cli._load_verified_screening_completions(
+            SimpleNamespace(),
+            Path("screening.json"),
+            [candidate],
+            questions,
+            config,
+        )
+
+
+def test_screening_loader_rejects_a_tampered_question_manifest(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    candidate = CandidateEntity(
+        entity_id="entity-1",
+        qid="Q1",
+        name="Entity One",
+        coarse_type="person",
+        split="pilot",
+        source_query="registered-query-v1",
+        source_provenance="CC0-1.0",
+        screening_aliases=(("alpha",), ("beta",), ("gamma",)),
+    )
+    questions = tuple(
+        ScreeningQuestion(
+            question_id=f"entity-1-{index}",
+            qid="Q1",
+            prompt=f"Question {index}",
+            accepted_aliases=(answer,),
+            source_provenance="CC0-1.0",
+        )
+        for index, answer in enumerate(("alpha", "beta", "gamma"), start=1)
+    )
+    model_hash, tokenizer_hash = fa_cli._config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or CHAT_TEMPLATE_SHA256
+    rows = [
+        {
+            "kind": "screening_completion",
+            "entity_id": candidate.entity_id,
+            "qid": candidate.qid,
+            "question_id": question.question_id,
+            "question_index": index,
+            "prompt": question.prompt,
+            "accepted_aliases": list(question.accepted_aliases),
+            "source_provenance": question.source_provenance,
+            "raw_output": answer,
+            "answer_text": answer,
+            "status": "completed",
+            "exception_class": None,
+            "generation": dict(config.generation),
+            "config_sha256": config.config_hash,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        }
+        for index, (question, answer) in enumerate(
+            zip(questions, ("alpha", "beta", "gamma"), strict=True)
+        )
+    ]
+    shard = FAArtifactStore(tmp_path).write_completed_shard(
+        config.run_id,
+        "pilot",
+        "screening-question-lineage",
+        rows,
+        {
+            "config_sha256": config.config_hash,
+            "candidate_manifest_sha256": fa_cli._candidate_manifest_sha256(
+                [candidate]
+            ),
+            "questions_manifest_sha256": fa_cli._screening_question_manifest_sha256(
+                questions
+            ),
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        },
+        record_kind="screening_completion",
+    )
+    tampered = (
+        replace(questions[0], prompt="Tampered question"),
+        questions[1],
+        questions[2],
+    )
+
+    with pytest.raises(ValueError, match="questions_manifest_sha256"):
+        fa_cli._load_verified_screening_completions(
+            FAArtifactStore(tmp_path),
+            shard.manifest_path,
+            [candidate],
+            tampered,
+            config,
+        )
+
+
+def test_screening_loader_rejects_a_tampered_rendered_prompt_hash(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    candidate = CandidateEntity(
+        entity_id="entity-1",
+        qid="Q1",
+        name="Entity One",
+        coarse_type="person",
+        split="pilot",
+        source_query="registered-query-v1",
+        source_provenance="CC0-1.0",
+        screening_aliases=(("alpha",), ("beta",), ("gamma",)),
+    )
+    questions = tuple(
+        ScreeningQuestion(
+            question_id=f"entity-1-{index}",
+            qid="Q1",
+            prompt=f"Question {index}",
+            accepted_aliases=(answer,),
+            source_provenance="CC0-1.0",
+        )
+        for index, answer in enumerate(("alpha", "beta", "gamma"), start=1)
+    )
+    model_hash, tokenizer_hash = fa_cli._config_runtime_hashes(config)
+    template_hash = config.chat_template_sha256 or CHAT_TEMPLATE_SHA256
+    rows = [
+        {
+            "kind": "screening_completion",
+            "entity_id": candidate.entity_id,
+            "qid": candidate.qid,
+            "question_id": question.question_id,
+            "question_index": index,
+            "prompt": question.prompt,
+            "accepted_aliases": list(question.accepted_aliases),
+            "source_provenance": question.source_provenance,
+            "rendered_prompt_sha256": (
+                "0" * 64
+                if index == 0
+                else fa_cli._screening_rendered_prompt_sha256(
+                    config, FakeTokenizer(), question.prompt
+                )
+            ),
+            "raw_output": answer,
+            "answer_text": answer,
+            "status": "completed",
+            "exception_class": None,
+            "generation": dict(config.generation),
+            "config_sha256": config.config_hash,
+            "model_sha256": model_hash,
+            "tokenizer_sha256": tokenizer_hash,
+            "chat_template_sha256": template_hash,
+        }
+        for index, (question, answer) in enumerate(
+            zip(questions, ("alpha", "beta", "gamma"), strict=True)
+        )
+    ]
+    shard = SimpleNamespace(
+        namespace="pilot",
+        manifest_path=tmp_path / "screening.jsonl.manifest.json",
+        data_path=tmp_path / "screening.jsonl",
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_require_verified_shard_kind",
+        lambda *args, **kwargs: shard,
+    )
+    monkeypatch.setattr(fa_cli, "_verify_artifact_run_id", lambda *args: None)
+    monkeypatch.setattr(fa_cli, "_verify_shard_lineage", lambda *args: None)
+    monkeypatch.setattr(fa_cli, "_read_json_rows", lambda *args: rows)
+
+    with pytest.raises(ValueError, match="invalid data or provenance"):
+        fa_cli._load_verified_screening_completions(
+            SimpleNamespace(),
+            shard.manifest_path,
+            [candidate],
+            questions,
+            config,
+            tokenizer=FakeTokenizer(),
+        )
+
+
+def test_screening_generation_writes_provenance_bound_completion_shard(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    candidates = tmp_path / "candidates.json"
+    questions = tmp_path / "questions.json"
+    candidates.write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": "Q90",
+                    "qid": "Q90",
+                    "name": "Old Vale",
+                    "coarse_type": "place",
+                    "split": "pilot",
+                    "source_query": "registered-query-v1",
+                    "source_provenance": "CC0-1.0",
+                    "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    questions.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": f"Q90-{index}",
+                    "qid": "Q90",
+                    "prompt": f"Question {index}",
+                    "accepted_aliases": [answer],
+                    "source_provenance": "CC0-1.0",
+                }
+                for index, answer in enumerate(("alpha", "beta", "gamma"), start=1)
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeScreeningRunner:
+        model_id = config.model_id
+        model_revision = config.model_revision
+        tokenizer_revision = config.tokenizer_revision
+        chat_template_sha256 = CHAT_TEMPLATE_SHA256
+
+        def render_prompt(self, value):
+            return f"rendered:{value}"
+
+        def generate(self, prompts, generation):
+            assert prompts == (
+                "rendered:Question 1",
+                "rendered:Question 2",
+                "rendered:Question 3",
+            )
+            assert generation == dict(config.generation)
+            return ("<think>\n</think>\nalpha", "beta", "gamma")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", lambda _config: FakeScreeningRunner())
+    payload = fa_cli._run_screening(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            candidates_manifest=candidates,
+            questions_manifest=questions,
+            shard_id="screening-0001",
+            namespace="pilot",
+        ),
+    )
+
+    shard = FAArtifactStore(tmp_path).verify_shard(payload["shard_manifest"])
+    rows = fa_cli._read_json_rows(shard.data_path)
+    assert shard.record_kind == "screening_completion"
+    assert payload["count"] == 3
+    assert tuple(row["answer_text"] for row in rows) == ("alpha", "beta", "gamma")
+    assert all(row["config_sha256"] == config.config_hash for row in rows)
+
+
+@pytest.mark.parametrize(
+    ("raw_output", "answer"),
+    [
+        ("<think>\nwork\n</think>\nalpha", "alpha"),
+        (": Radioactivity", "Radioactivity"),
+        ("Answer: New York", "New York"),
+        ("first line\nFinal: 'physics'", "physics"),
+        ("plain answer.", "plain answer."),
+        ("", ""),
+    ],
+)
+def test_screening_answer_extraction_is_deterministic(raw_output, answer):
+    assert fa_cli._screening_answer_text(raw_output) == answer
+
+
+def test_screening_parser_hash_binds_the_parser_implementation():
+    expected = fa_cli._sha256_json(
+        {
+            "revision": "fa-screening-answer-v1",
+            "implementation": inspect.getsource(fa_cli._screening_answer_text),
+            "rules": (
+                "strip",
+                "suffix-after-final-think-close",
+                "last-nonempty-line",
+                "suffix-after-final-colon",
+                "single-matching-quote-pair",
+            ),
+        }
+    )
+
+    assert fa_cli._screening_parser_sha256() == expected
+
+
+def test_screening_artifact_write_is_idempotent_and_fail_closed(tmp_path):
+    store = FAArtifactStore(tmp_path)
+    rows = [{"kind": "screening_audit", "decision": "passed"}]
+    lineage = {"config_sha256": "a" * 64}
+
+    first = fa_cli._write_or_verify_screening_shard(
+        store,
+        "smoke-v1",
+        "pilot",
+        "idempotent-screening-audit",
+        rows,
+        lineage,
+        record_kind="screening_audit",
+    )
+    second = fa_cli._write_or_verify_screening_shard(
+        store,
+        "smoke-v1",
+        "pilot",
+        "idempotent-screening-audit",
+        rows,
+        lineage,
+        record_kind="screening_audit",
+    )
+
+    assert second.manifest_path == first.manifest_path
+    assert second.sha256 == first.sha256
+    with pytest.raises(ValueError, match="rows do not match"):
+        fa_cli._write_or_verify_screening_shard(
+            store,
+            "smoke-v1",
+            "pilot",
+            "idempotent-screening-audit",
+            [{"kind": "screening_audit", "decision": "stopped"}],
+            lineage,
+            record_kind="screening_audit",
+        )
 
 
 def test_dataset_audit_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
@@ -437,7 +1194,7 @@ def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     register_fa_subcommands(subparsers)
 
     matches = tmp_path / "matches.json"
-    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    matches.write_text(json.dumps(smoke_pilot_matches()), encoding="utf-8")
     args = parser.parse_args(
         [
             "fa-build-pilot",
@@ -453,6 +1210,57 @@ def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     assert args.command == "fa-build-pilot"
     assert args.config == str(CONFIG_PATH)
     assert args.root == str(tmp_path)
+
+
+def test_screening_parser_requires_explicit_inputs_namespace_and_shard(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    args = parser.parse_args(
+        [
+            "fa-run-screening",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--candidates-manifest",
+            str(tmp_path / "candidates.json"),
+            "--questions-manifest",
+            str(tmp_path / "questions.json"),
+            "--namespace",
+            "pilot",
+            "--shard-id",
+            "screening-0001",
+        ]
+    )
+
+    assert args.command == "fa-run-screening"
+    assert args.namespace == "pilot"
+    assert args.shard_id == "screening-0001"
+
+
+def test_screening_scoring_parser_requires_the_question_manifest(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "fa-screen-entities",
+                "--config",
+                str(CONFIG_PATH),
+                "--root",
+                str(tmp_path),
+                "--candidates-manifest",
+                str(tmp_path / "candidates.json"),
+                "--screening-manifest",
+                str(tmp_path / "screening.json"),
+                "--synthetic-manifest",
+                str(tmp_path / "synthetic.json"),
+            ]
+        )
 
 
 def test_generation_parser_accepts_explicit_resume_flag(tmp_path):
@@ -928,8 +1736,8 @@ def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, mo
     args = argparse.Namespace(command="rlmf-prepare-data")
     assert dispatch_fa(args) is None
 
-    matches = tmp_path / "matches.json"
-    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    config = FAConfig.from_json(CONFIG_PATH)
+    matches = screened_matches_manifest(tmp_path, config, smoke_pilot_matches())
     exit_code = cli.main(
         [
             "fa-build-pilot",
@@ -951,8 +1759,7 @@ def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, mo
 def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, monkeypatch):
     install_fake_tokenizer(monkeypatch)
     config = FAConfig.from_json(CONFIG_PATH)
-    matches = tmp_path / "matches.json"
-    matches.write_text(json.dumps([MATCH]), encoding="utf-8")
+    matches = screened_matches_manifest(tmp_path, config, smoke_pilot_matches())
 
     payload = fa_cli._build_manifest(
         config,
@@ -977,6 +1784,82 @@ def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, mon
     assert hashlib.sha256(bytes.fromhex(pin_row["chat_template_utf8_hex"])).hexdigest() == (
         pin_row["chat_template_sha256"]
     )
+
+
+def test_pilot_construction_requires_the_registered_match_count(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    matches = screened_matches_manifest(tmp_path, config, [MATCH])
+
+    with pytest.raises(ValueError, match="exactly 8"):
+        fa_cli._build_manifest(
+            config,
+            tmp_path,
+            SimpleNamespace(matches_manifest=matches),
+            confirmatory=False,
+        )
+
+
+def test_pilot_construction_rejects_raw_screened_matches(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    raw_matches = tmp_path / "matches.json"
+    raw_matches.write_text(json.dumps(smoke_pilot_matches()), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="immutable shard manifest"):
+        fa_cli._build_manifest(
+            config,
+            tmp_path,
+            SimpleNamespace(matches_manifest=raw_matches),
+            confirmatory=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("real_entity", "duplicate real entity IDs"),
+        ("real_qid", "duplicate real QIDs"),
+        ("synthetic", "duplicate synthetic candidate IDs"),
+        ("domain", "not exactly domain balanced"),
+    ],
+)
+def test_pilot_construction_rejects_invalid_screened_match_structure(
+    tmp_path, mutation, message
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    rows = smoke_pilot_matches()
+    if mutation == "real_entity":
+        rows[1]["real_entity_id"] = rows[0]["real_entity_id"]
+        rows[1]["pair_id"] = (
+            f"{rows[1]['real_entity_id']}--{rows[1]['synthetic_candidate_id']}"
+        )
+    elif mutation == "real_qid":
+        rows[1]["real_qid"] = rows[0]["real_qid"]
+    elif mutation == "synthetic":
+        rows[1]["synthetic_candidate_id"] = rows[0]["synthetic_candidate_id"]
+        rows[1]["synthetic_name"] = rows[0]["synthetic_name"]
+        rows[1]["synthetic_token_count"] = rows[0]["synthetic_token_count"]
+        rows[1]["synthetic_word_count"] = rows[0]["synthetic_word_count"]
+        rows[1]["synthetic_character_count"] = rows[0][
+            "synthetic_character_count"
+        ]
+        rows[1]["character_length_delta"] = (
+            rows[1]["synthetic_character_count"]
+            - rows[1]["real_character_count"]
+        )
+        rows[1]["pair_id"] = (
+            f"{rows[1]['real_entity_id']}--{rows[1]['synthetic_candidate_id']}"
+        )
+    else:
+        rows[1]["coarse_type"] = "person"
+    matches = screened_matches_manifest(tmp_path, config, rows)
+
+    with pytest.raises(ValueError, match=message):
+        fa_cli._build_manifest(
+            config,
+            tmp_path,
+            SimpleNamespace(matches_manifest=matches),
+            confirmatory=False,
+        )
 
 
 def test_probe_selection_reads_only_hash_bound_prompt_identities(

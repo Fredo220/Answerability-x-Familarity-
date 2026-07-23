@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "profile": "smoke",
+  "study_id": "familiarity-answerability-qwen17b-smoke-v1",
+  "run_id": "smoke-qwen17b-v1",
+  "model_id": "Qwen/Qwen3-1.7B",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+  "split_seed": 20260722,
+  "split_counts": {
+    "pilot": 8,
+    "circuit_dev": 4
+  },
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 16,
+    "temperature": 0.0
+  },
+  "bootstrap_replicates": 10,
+  "bootstrap_seed": 20260722,
+  "thresholds": {},
+  "anchors": []
+}

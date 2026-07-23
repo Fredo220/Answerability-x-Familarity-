@@ -82,8 +82,15 @@ class HFModelRunner:
         self.model.eval()
 
     def render_prompt(self, user_text: str) -> str:
+        options = {
+            "tokenize": False,
+            "add_generation_prompt": True,
+        }
+        if self.model_id.startswith("Qwen/Qwen3-"):
+            options["enable_thinking"] = False
         return self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": user_text}], tokenize=False, add_generation_prompt=True
+            [{"role": "user", "content": user_text}],
+            **options,
         )
 
     def generate(self, prompts: Sequence[str], generation: Mapping[str, Any]) -> Sequence[str]:

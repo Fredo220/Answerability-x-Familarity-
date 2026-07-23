@@ -36,10 +36,28 @@ CONFIRMATORY_GENERATION = {
     "max_new_tokens": 16,
     "temperature": 0.0,
 }
-SMOKE_MODEL_ID = "Qwen/Qwen3-0.6B"
-SMOKE_MODEL_REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"
+LEGACY_SMOKE_MODEL_ID = "Qwen/Qwen3-0.6B"
+LEGACY_SMOKE_MODEL_REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"
+SMOKE_MODEL_ID = "Qwen/Qwen3-1.7B"
+SMOKE_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 SMOKE_CHAT_TEMPLATE_SHA256 = (
     "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+)
+SMOKE_MODEL_PINS = MappingProxyType(
+    {
+        LEGACY_SMOKE_MODEL_ID: MappingProxyType(
+            {
+                "revision": LEGACY_SMOKE_MODEL_REVISION,
+                "chat_template_sha256": SMOKE_CHAT_TEMPLATE_SHA256,
+            }
+        ),
+        SMOKE_MODEL_ID: MappingProxyType(
+            {
+                "revision": SMOKE_MODEL_REVISION,
+                "chat_template_sha256": SMOKE_CHAT_TEMPLATE_SHA256,
+            }
+        ),
+    }
 )
 CONFIRMATORY_THRESHOLDS = {
     "format_validity_min": 0.95,
@@ -164,12 +182,19 @@ class FAConfig:
                     raise ValueError("split_counts contains an unregistered split")
                 raise ValueError("confirmatory split_counts must match the preregistration")
         else:
-            if self.model_id != SMOKE_MODEL_ID:
+            smoke_pin = SMOKE_MODEL_PINS.get(self.model_id)
+            if smoke_pin is None:
                 raise ValueError("smoke profile must use the registered Qwen model")
-            if self.model_revision != SMOKE_MODEL_REVISION:
+            if self.model_revision != smoke_pin["revision"]:
                 raise ValueError("smoke model_revision must match the registered Qwen pin")
-            if self.tokenizer_revision != SMOKE_MODEL_REVISION:
+            if self.tokenizer_revision != smoke_pin["revision"]:
                 raise ValueError("smoke tokenizer_revision must match the registered Qwen pin")
+            expected_template = smoke_pin["chat_template_sha256"]
+            if self.model_id == SMOKE_MODEL_ID:
+                if self.chat_template_sha256 != expected_template:
+                    raise ValueError(
+                        "active smoke chat_template_sha256 must match the registered Qwen pin"
+                    )
             if set(self.split_counts) - NON_CONFIRMATORY_NAMESPACES:
                 raise ValueError("smoke split_counts contains an unregistered split")
             if set(self.split_counts) != NON_CONFIRMATORY_NAMESPACES:

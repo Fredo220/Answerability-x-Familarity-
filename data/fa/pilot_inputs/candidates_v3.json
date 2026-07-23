@@ -1,0 +1,302 @@
+[
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-person-einstein",
+    "qid": "Q937",
+    "name": "Albert Einstein",
+    "coarse_type": "person",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q937.json",
+    "source_provenance": "Wikidata EntityData Q937 (CC0) and Nobel Foundation facts, verified 2026-07-23: https://www.nobelprize.org/prizes/physics/1921/einstein/facts/",
+    "screening_aliases": [
+      ["physicist", "physicist.", "theoretical physicist", "theoretical physicist."],
+      ["relativity", "relativity.", "theory of relativity", "theory of relativity."],
+      ["physics", "physics."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-person-curie",
+    "qid": "Q7186",
+    "name": "Marie Curie",
+    "coarse_type": "person",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q7186.json",
+    "source_provenance": "Wikidata EntityData Q7186 (CC0) and Nobel Foundation facts, verified 2026-07-23: https://www.nobelprize.org/prizes/physics/1903/marie-curie/facts/",
+    "screening_aliases": [
+      ["Poland", "Poland.", "Polish", "Polish."],
+      ["radioactivity", "radioactivity."],
+      ["polonium", "polonium."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-place-new-york-city",
+    "qid": "Q60",
+    "name": "New York City",
+    "coarse_type": "place",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q60.json",
+    "source_provenance": "Wikidata EntityData Q60 (CC0) and NYC311, verified 2026-07-23: https://portal.311.nyc.gov/article/?kanumber=KA-02877",
+    "screening_aliases": [
+      ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"],
+      ["New York", "New York.", "New York State", "New York State.", "State of New York", "State of New York.", "NY", "N.Y."],
+      ["5", "5.", "five", "five."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-place-los-angeles",
+    "qid": "Q65",
+    "name": "Los Angeles",
+    "coarse_type": "place",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q65.json",
+    "source_provenance": "Wikidata EntityData Q65 (CC0) and City of Los Angeles history, verified 2026-07-23: https://griffithobservatory.lacity.gov/about/city-of-los-angeles/",
+    "screening_aliases": [
+      ["California", "California.", "State of California", "State of California.", "CA", "CA.", "Calif."],
+      ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"],
+      ["Los Angeles County", "Los Angeles County.", "County of Los Angeles", "County of Los Angeles.", "LA County", "LA County.", "L.A. County", "L.A. County."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-organization-un",
+    "qid": "Q1065",
+    "name": "United Nations",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1065.json",
+    "source_provenance": "Wikidata EntityData Q1065 (CC0) and United Nations history, verified 2026-07-23: https://www.un.org/en/about-us/history-of-the-un",
+    "screening_aliases": [
+      ["1945", "1945."],
+      ["New York City", "New York City.", "New York", "New York.", "NYC", "NYC.", "New York, NY", "New York, NY."],
+      ["United Nations", "United Nations."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-organization-who",
+    "qid": "Q7817",
+    "name": "World Health Organization",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q7817.json",
+    "source_provenance": "Wikidata EntityData Q7817 (CC0) and WHO history and FAQ, verified 2026-07-23: https://www.who.int/about/history/",
+    "screening_aliases": [
+      ["World Health Organization", "World Health Organization."],
+      ["health", "health.", "public health", "public health."],
+      ["United Nations", "United Nations.", "UN", "UN.", "the UN", "the UN."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-work-hamlet",
+    "qid": "Q41567",
+    "name": "Hamlet",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q41567.json",
+    "source_provenance": "Wikidata EntityData Q41567 (CC0) and Folger Shakespeare Library, verified 2026-07-23: https://www.folger.edu/explore/shakespeares-works/hamlet/",
+    "screening_aliases": [
+      ["William Shakespeare", "William Shakespeare.", "Shakespeare", "Shakespeare."],
+      ["tragedy", "tragedy.", "a tragedy", "a tragedy.", "revenge tragedy", "revenge tragedy."],
+      ["Hamlet", "Hamlet.", "Prince Hamlet", "Prince Hamlet.", "Hamlet, Prince of Denmark", "Hamlet, Prince of Denmark."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-work-mona-lisa",
+    "qid": "Q12418",
+    "name": "Mona Lisa",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q12418.json",
+    "source_provenance": "Wikidata EntityData Q12418 (CC0) and Musee du Louvre, verified 2026-07-23: https://www.louvre.fr/en/explore/the-palace/from-the-mona-lisa-to-the-wedding-feast-at-cana",
+    "screening_aliases": [
+      ["Leonardo da Vinci", "Leonardo da Vinci."],
+      ["Louvre Museum", "Louvre Museum.", "the Louvre", "the Louvre.", "Louvre", "Louvre.", "Musee du Louvre", "Musee du Louvre."],
+      ["Paris", "Paris.", "Paris, France", "Paris, France."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-person-shakespeare",
+    "qid": "Q692",
+    "name": "William Shakespeare",
+    "coarse_type": "person",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q692.json",
+    "source_provenance": "Wikidata EntityData Q692 (CC0) and Shakespeare Birthplace Trust, verified 2026-07-23: https://www.shakespeare.org.uk/explore-shakespeare/shakespedia/william-shakespeare/when-was-shakespeare-born/",
+    "screening_aliases": [
+      ["1564", "1564."],
+      ["Stratford-upon-Avon", "Stratford-upon-Avon.", "Stratford upon Avon", "Stratford upon Avon."],
+      ["playwright", "playwright.", "dramatist", "dramatist."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-person-armstrong",
+    "qid": "Q1615",
+    "name": "Neil Armstrong",
+    "coarse_type": "person",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1615.json",
+    "source_provenance": "Wikidata EntityData Q1615 (CC0) and NASA biography, verified 2026-07-23: https://www.nasa.gov/people/neil-a-armstrong/",
+    "screening_aliases": [
+      ["astronaut", "astronaut.", "NASA astronaut", "NASA astronaut."],
+      ["Apollo 11", "Apollo 11."],
+      ["Ohio", "Ohio."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-person-mandela",
+    "qid": "Q8023",
+    "name": "Nelson Mandela",
+    "coarse_type": "person",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q8023.json",
+    "source_provenance": "Wikidata EntityData Q8023 (CC0) and Nelson Mandela Foundation, verified 2026-07-23: https://www.nelsonmandela.org/news/entry/30-years-after-madibas-nobel-peace-prize",
+    "screening_aliases": [
+      ["South Africa", "South Africa."],
+      ["Robben Island", "Robben Island."],
+      ["1993", "1993."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-place-paris",
+    "qid": "Q90",
+    "name": "Paris",
+    "coarse_type": "place",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q90.json",
+    "source_provenance": "Wikidata EntityData Q90 (CC0), verified 2026-07-23: https://www.wikidata.org/wiki/Q90",
+    "screening_aliases": [
+      ["France", "France."],
+      ["Seine", "Seine.", "the Seine", "the Seine."],
+      ["Eiffel Tower", "Eiffel Tower.", "the Eiffel Tower", "the Eiffel Tower."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-place-tokyo",
+    "qid": "Q1490",
+    "name": "Tokyo",
+    "coarse_type": "place",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1490.json",
+    "source_provenance": "Wikidata EntityData Q1490 (CC0) and Tokyo Metropolitan Government profile, verified 2026-07-23: https://www.english.metro.tokyo.lg.jp/documents/d/english/tokyo-city-profile-and-government_2023-pdf-1",
+    "screening_aliases": [
+      ["Japan", "Japan."],
+      ["Edo", "Edo."],
+      ["Tokyo", "Tokyo."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-place-grand-canyon",
+    "qid": "Q118841",
+    "name": "Grand Canyon",
+    "coarse_type": "place",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q118841.json",
+    "source_provenance": "Wikidata EntityData Q118841 (CC0) and U.S. National Park Service, verified 2026-07-23: https://www.nps.gov/grca/index.htm",
+    "screening_aliases": [
+      ["Arizona", "Arizona."],
+      ["Colorado River", "Colorado River.", "the Colorado River", "the Colorado River."],
+      ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-organization-nasa",
+    "qid": "Q23548",
+    "name": "NASA",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q23548.json",
+    "source_provenance": "Wikidata EntityData Q23548 (CC0) and NASA history, verified 2026-07-23: https://www.nasa.gov/history/65-years-ago-the-national-aeronautics-and-space-act-of-1958-creates-nasa/",
+    "screening_aliases": [
+      ["National Aeronautics and Space Administration", "National Aeronautics and Space Administration."],
+      ["United States", "United States.", "United States of America", "United States of America.", "USA", "USA.", "U.S.", "US"],
+      ["1958", "1958."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-organization-unesco",
+    "qid": "Q7809",
+    "name": "UNESCO",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q7809.json",
+    "source_provenance": "Wikidata EntityData Q7809 (CC0) and UNESCO about page, verified 2026-07-23: https://www.unesco.org/en/about-us",
+    "screening_aliases": [
+      ["United Nations Educational, Scientific and Cultural Organization", "United Nations Educational, Scientific and Cultural Organization."],
+      ["Paris", "Paris.", "Paris, France", "Paris, France."],
+      ["1945", "1945."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-organization-unicef",
+    "qid": "Q740308",
+    "name": "UNICEF",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q740308.json",
+    "source_provenance": "Wikidata EntityData Q740308 (CC0) and UNICEF history, verified 2026-07-23: https://www.unicef.org/about-unicef/unicef-logo-history",
+    "screening_aliases": [
+      ["1946", "1946."],
+      ["children", "children.", "children worldwide", "children worldwide."],
+      ["United Nations", "United Nations.", "UN", "UN.", "the UN", "the UN."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-work-starry-night",
+    "qid": "Q45585",
+    "name": "The Starry Night",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q45585.json",
+    "source_provenance": "Wikidata EntityData Q45585 (CC0) and Museum of Modern Art collection record, verified 2026-07-23: https://www.moma.org/collection/works/79802",
+    "screening_aliases": [
+      ["Vincent van Gogh", "Vincent van Gogh.", "van Gogh", "van Gogh."],
+      ["1889", "1889."],
+      ["Museum of Modern Art", "Museum of Modern Art.", "MoMA", "MoMA."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-work-girl-pearl-earring",
+    "qid": "Q185372",
+    "name": "Girl with a Pearl Earring",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q185372.json",
+    "source_provenance": "Wikidata EntityData Q185372 (CC0) and Mauritshuis collection record, verified 2026-07-23: https://www.mauritshuis.nl/en/our-collection/artworks/670-girl-with-a-pearl-earring",
+    "screening_aliases": [
+      ["Johannes Vermeer", "Johannes Vermeer.", "Vermeer", "Vermeer."],
+      ["painting", "painting.", "a painting", "a painting.", "tronie", "tronie."],
+      ["Mauritshuis", "Mauritshuis.", "the Mauritshuis", "the Mauritshuis."]
+    ]
+  },
+  {
+    "schema_version": 1,
+    "entity_id": "pilot-work-guernica",
+    "qid": "Q175036",
+    "name": "Guernica",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q175036.json",
+    "source_provenance": "Wikidata EntityData Q175036 (CC0) and Museo Reina Sofia collection record, verified 2026-07-23: https://www.museoreinasofia.es/en/collections/artwork/guernica-0/",
+    "screening_aliases": [
+      ["Pablo Picasso", "Pablo Picasso.", "Picasso", "Picasso."],
+      ["1937", "1937."],
+      ["Museo Reina Sofia", "Museo Reina Sofia.", "Reina Sofia", "Reina Sofia.", "Museo Nacional Centro de Arte Reina Sofia", "Museo Nacional Centro de Arte Reina Sofia."]
+    ]
+  }
+]

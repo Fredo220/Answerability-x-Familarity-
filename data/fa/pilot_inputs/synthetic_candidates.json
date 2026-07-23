@@ -1,0 +1,66 @@
+[
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-adrian-norton",
+    "name": "Adrian Norton",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-laura-morien",
+    "name": "Laura Morien",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-new-cedar-city",
+    "name": "New Cedar City",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-port-vernon",
+    "name": "Port Vernon",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-global-council",
+    "name": "Global Council",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-world-learning-federation",
+    "name": "World Learning Federation",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-eldara",
+    "name": "Eldara",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-amber-sky",
+    "name": "Amber Sky",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  }
+]

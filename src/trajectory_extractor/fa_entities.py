@@ -69,6 +69,34 @@ class ScreeningResult:
 
 
 @dataclass(frozen=True)
+class ScreeningQuestion:
+    """One provenance-bound forced-answer question for entity recall screening."""
+
+    question_id: str
+    qid: str
+    prompt: str
+    accepted_aliases: tuple[str, ...]
+    source_provenance: str
+    schema_version: int = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _schema_version(self.schema_version)
+        _safe_id(self.question_id, "question_id")
+        _qid(self.qid, "qid")
+        _nonempty_text(self.prompt, "prompt")
+        aliases = tuple(self.accepted_aliases)
+        if not aliases or any(
+            not isinstance(alias, str) or not _normal_form(alias)
+            for alias in aliases
+        ):
+            raise ValueError("accepted_aliases must contain nonempty strings")
+        if len({_normal_form(alias) for alias in aliases}) != len(aliases):
+            raise ValueError("accepted_aliases must not contain duplicates")
+        _nonempty_text(self.source_provenance, "source_provenance")
+        object.__setattr__(self, "accepted_aliases", aliases)
+
+
+@dataclass(frozen=True)
 class SyntheticCandidate:
     """A deterministic pseudonym candidate reserved for exactly one split."""
 
@@ -77,8 +105,10 @@ class SyntheticCandidate:
     coarse_type: str
     split: str
     generator_revision: str
+    schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        _schema_version(self.schema_version)
         _safe_id(self.candidate_id, "candidate_id")
         _nonempty_text(self.name, "name")
         _nonempty_text(self.coarse_type, "coarse_type")
@@ -225,6 +255,50 @@ def score_screening(candidate: CandidateEntity, completions: Sequence[str]) -> S
         recall_score=recall_score,
         qualifies=sum(correct) >= 2,
     )
+
+
+def order_screening_questions(
+    candidates: Sequence[CandidateEntity],
+    questions: Sequence[ScreeningQuestion],
+) -> tuple[tuple[CandidateEntity, tuple[ScreeningQuestion, ScreeningQuestion, ScreeningQuestion]], ...]:
+    """Join exactly three ordered, alias-consistent questions to every candidate."""
+
+    candidate_rows = tuple(candidates)
+    question_rows = tuple(questions)
+    if any(not isinstance(candidate, CandidateEntity) for candidate in candidate_rows):
+        raise TypeError("candidates must contain CandidateEntity records")
+    if any(not isinstance(question, ScreeningQuestion) for question in question_rows):
+        raise TypeError("questions must contain ScreeningQuestion records")
+    _reject_duplicates(candidate_rows, lambda candidate: candidate.entity_id, "candidate entity IDs")
+    _reject_duplicates(candidate_rows, lambda candidate: candidate.qid, "candidate QIDs")
+    _reject_duplicates(question_rows, lambda question: question.question_id, "screening question IDs")
+
+    candidates_by_qid = {candidate.qid: candidate for candidate in candidate_rows}
+    if {question.qid for question in question_rows} != set(candidates_by_qid):
+        raise ValueError("screening questions must cover exactly the candidate QIDs")
+
+    grouped: dict[str, list[ScreeningQuestion]] = defaultdict(list)
+    for question in question_rows:
+        grouped[question.qid].append(question)
+
+    ordered = []
+    for candidate in sorted(candidate_rows, key=lambda value: value.entity_id):
+        candidate_questions = tuple(
+            sorted(grouped[candidate.qid], key=lambda value: value.question_id)
+        )
+        if len(candidate_questions) != 3:
+            raise ValueError("screening requires exactly three questions per candidate")
+        for aliases, question in zip(
+            candidate.screening_aliases, candidate_questions, strict=True
+        ):
+            if {_normal_form(alias) for alias in aliases} != {
+                _normal_form(alias) for alias in question.accepted_aliases
+            }:
+                raise ValueError(
+                    "screening question aliases must match the candidate alias set"
+                )
+        ordered.append((candidate, candidate_questions))
+    return tuple(ordered)
 
 
 def match_synthetic_entities(

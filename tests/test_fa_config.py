@@ -13,6 +13,9 @@ from trajectory_extractor.fa_config import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIRMATORY_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_gemma2_2b.json"
 SMOKE_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_qwen06b_smoke.json"
+ACTIVE_SMOKE_CONFIG = (
+    REPO_ROOT / "configs" / "familiarity_answerability_qwen17b_smoke.json"
+)
 SOURCE_PINS = REPO_ROOT / "data" / "fa" / "source_pins.json"
 PROTOCOL_AMENDMENT = (
     REPO_ROOT / "docs" / "familiarity_answerability_protocol_amendment_2026-07-22.md"
@@ -209,12 +212,42 @@ def test_smoke_config_uses_only_nonconfirmatory_namespaces():
     assert config.anchors == ()
 
 
+def test_active_smoke_config_is_pinned_to_qwen17b():
+    config = FAConfig.from_json(ACTIVE_SMOKE_CONFIG)
+
+    assert config.model_id == "Qwen/Qwen3-1.7B"
+    assert config.model_revision == "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+    assert config.tokenizer_revision == config.model_revision
+    assert (
+        config.chat_template_sha256
+        == "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    )
+    assert config.run_id == "smoke-qwen17b-v1"
+
+
+def test_active_smoke_config_rejects_unregistered_template_hash(tmp_path):
+    payload = json.loads(ACTIVE_SMOKE_CONFIG.read_text(encoding="utf-8"))
+    payload["chat_template_sha256"] = "a" * 64
+    path = tmp_path / "active-smoke-template.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="active smoke chat_template"):
+        FAConfig.from_json(path)
+
+
 def test_source_pins_use_the_official_gemma_scope_repository_and_revision():
     pins = json.loads(SOURCE_PINS.read_text(encoding="utf-8"))
 
     assert pins["gemma_scope"] == {
         "repository": "google/gemma-scope-2b-pt-res",
         "revision": "fd571b47c1c64851e9b1989792367b9babb4af63",
+    }
+    assert pins["qwen_active_smoke_model_and_tokenizer"] == {
+        "repository": "Qwen/Qwen3-1.7B",
+        "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "chat_template_sha256": (
+            "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+        ),
     }
 
 

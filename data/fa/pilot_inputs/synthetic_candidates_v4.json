@@ -1,0 +1,170 @@
+[
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-adrian-norton",
+    "name": "Adrian Norton",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-laura-morien",
+    "name": "Laura Morien",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-new-cedar-city",
+    "name": "New Cedar City",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-port-vernon",
+    "name": "Port Vernon",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-global-council",
+    "name": "Global Council",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-world-learning-federation",
+    "name": "World Learning Federation",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-eldara",
+    "name": "Eldara",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-amber-sky",
+    "name": "Amber Sky",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v1-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-michael-alexander",
+    "name": "Michael Alexander",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-david-harrison",
+    "name": "David Harrison",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-calvin-dawson",
+    "name": "Calvin Dawson",
+    "coarse_type": "person",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-aster",
+    "name": "Aster",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-loren",
+    "name": "Loren",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-amber-valley",
+    "name": "Amber Valley",
+    "coarse_type": "place",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-nxt",
+    "name": "NXT",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-union",
+    "name": "UNION",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-univor",
+    "name": "UNIVOR",
+    "coarse_type": "organization",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-the-astral-dawn",
+    "name": "The Astral Dawn",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-girl-crystal-brooch",
+    "name": "Girl with a Crystal Brooch",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-elarion",
+    "name": "Elarion",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v3-20260723"
+  },
+  {
+    "schema_version": 1,
+    "candidate_id": "pilot-synthetic-velora",
+    "name": "Velora",
+    "coarse_type": "creative_work",
+    "split": "pilot",
+    "generator_revision": "fa-pilot-names-v4-20260723"
+  }
+]
