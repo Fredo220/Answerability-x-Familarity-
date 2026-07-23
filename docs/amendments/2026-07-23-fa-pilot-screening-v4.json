@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "record_kind": "fa_screening_preregistration",
+  "preregistration_id": "fa-pilot-screening-v4-20260723",
+  "created_at_utc": "2026-07-23T11:37:46Z",
+  "pre_outcome": true,
+  "scope": {
+    "namespace": "pilot",
+    "confirmatory_impact": "none",
+    "hypothesis_impact": "candidate-feasibility-only"
+  },
+  "protocol": {
+    "base_preregistration_path": "docs/familiarity_answerability_preregistration.md",
+    "base_preregistration_sha256": "1bc81440b507cc30ac899962c8ca3121718870e22a62fc0988fa9f7b8a8ccdf7",
+    "amendment_path": "docs/amendments/2026-07-23-fa-pilot-screening-v4.md",
+    "amendment_sha256": "4ad6c563ba2fd686d8a794e6d369fbac76dbba1331d1fe5f970da8b00359ae4e"
+  },
+  "repository": {
+    "branch": "codex/familiarity-answerability",
+    "execution_code_commit_sha": "ebc9f427f6fd30dd30fa3919b8c1532f2bbdf9d2",
+    "fa_source_sha256": "b8adf0b04f3fd73c2080e097be97e379607610eee3f1c55d114419e5d976bd81"
+  },
+  "config": {
+    "path": "configs/familiarity_answerability_qwen17b_smoke.json",
+    "raw_sha256": "34f21049b1bfb2aeec6250c1ea6ac99f717f0abd2cbd65b5aaec006c1315fde8",
+    "canonical_sha256": "c8df1f013c2cc7281c6d29584e6f1bbcaabc5798d6ed88b6fe1007dbd4c2ce3c"
+  },
+  "runtime": {
+    "model_id": "Qwen/Qwen3-1.7B",
+    "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+    "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+    "model_sha256": "3eb49f66d83ac35f0d36d6901c92a1b9b02622e955bd84b6043f9c3e631d320c",
+    "tokenizer_sha256": "3eb49f66d83ac35f0d36d6901c92a1b9b02622e955bd84b6043f9c3e631d320c",
+    "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+    "generation": {
+      "do_sample": false,
+      "max_new_tokens": 16,
+      "temperature": 0.0
+    }
+  },
+  "inputs": {
+    "candidate_path": "data/fa/pilot_inputs/candidates_v4.json",
+    "candidate_raw_sha256": "a4e5071b8a1c39751526d891cf53dc45c8cf24efba2a17989c977e3ecc75b7e2",
+    "candidate_semantic_sha256": "91fae378d19410d9216c54aa2043ad3a247b3d072d79306d8fb7e22d91dedd3f",
+    "questions_path": "data/fa/pilot_inputs/screening_questions_v4.json",
+    "questions_raw_sha256": "a051c18f624f3e63ddf953f8117600973e6060250979457cc0a5b2150bfa0749",
+    "questions_semantic_sha256": "60c7d7ab04d493bb511dd101df59d58b1476243e569376641505b65e9870428d",
+    "synthetic_path": "data/fa/pilot_inputs/synthetic_candidates_v4.json",
+    "synthetic_raw_sha256": "7b12ef6c9382b1ea4033f8abb785d627b2a9377a8d5e5e32768ad79c994b8d50",
+    "synthetic_semantic_sha256": "02d2b27b3fe098a7844da9a51b02fee66c35c8d7737a7790b66e793059290763"
+  },
+  "parent_v3": {
+    "completion_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/entity-screening-20260723-v3-0002.jsonl.manifest.json",
+    "completion_sha256": "d5df18a78f8629e99d9b72596c7f589691f138a82f7fafafc057423e686d58d3",
+    "audit_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/screening-audit-entity-screening-20260723-v3-0002.jsonl.manifest.json",
+    "audit_sha256": "28a0b7462d61b8f8efb909a6ec86d1a20d9e2d5936d1a5d51ec6b944f82a684e",
+    "decision": "stopped"
+  },
+  "preflight": {
+    "matchability_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/matchability-audit-v4-20260723.jsonl.manifest.json",
+    "matchability_sha256": "e0bf803a8a59845b8aae165d63fbcef19cb2a7a2e7cd48b84eb63fb0911d323a",
+    "validated_pairs": 66,
+    "expected_pairs": 66,
+    "decision": "passed"
+  },
+  "screening": {
+    "candidate_count": 24,
+    "expected_rows": 72,
+    "questions_per_candidate": 3,
+    "qualification_rule": "at_least_2_of_3_exact_normalized_alias_matches",
+    "required_count": 8,
+    "quota_per_domain": 2,
+    "registered_domains": [
+      "person",
+      "place",
+      "organization",
+      "creative_work"
+    ],
+    "selection_rule": "first_qualified_in_candidate_manifest_order",
+    "parser_sha256": "38fa1a9d7960b9ac72b6f7f68d6ef58caf14730ae9de6de3614da3e0e8d87be7"
+  },
+  "attempt_policy": {
+    "attempt_ids": [
+      "entity-screening-20260723-v4-0001",
+      "entity-screening-20260723-v4-0002",
+      "entity-screening-20260723-v4-0003"
+    ],
+    "advance_only_on_infrastructure_failure": true,
+    "reuse_previous_completions": false
+  },
+  "gate_order": [
+    "verify_preregistration_and_code_freeze",
+    "verify_inputs_and_append_only_contract",
+    "verify_matchability_preflight",
+    "generate_exactly_72_new_completions",
+    "verify_completion_shard_and_rendered_prompts",
+    "score_two_of_three_gate",
+    "write_screening_audit",
+    "require_exact_domain_balance",
+    "match_with_pinned_tokenizer",
+    "seal_screened_match_artifact",
+    "build_pilot_from_verified_screened_match_artifact"
+  ],
+  "software_acceptance": {
+    "focused_command": "PYTHONPATH=src ../../.venv/bin/python -m pytest tests/test_fa_entities.py tests/test_fa_cli.py tests/test_fa_runtime.py tests/test_fa_config.py tests/test_fa_graphify_contract.py -q",
+    "focused_result": "195 passed",
+    "cli_command": "PYTHONPATH=src ../../.venv/bin/python -m pytest tests/test_fa_cli.py -q",
+    "cli_result": "77 passed"
+  }
+}
