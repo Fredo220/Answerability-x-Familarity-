@@ -48,6 +48,9 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert '"torch" not in sys.modules' in source
     assert 'repo_import_path = str((REPO / "src").resolve())' in source
     assert "sys.path.insert(0, repo_import_path)" in source
+    assert "sys.path_importer_cache.pop(repo_import_path, None)" in source
+    assert "importlib.invalidate_caches()" in source
+    assert 'importlib.util.find_spec("trajectory_extractor")' in source
     assert source.index("sys.path.insert(0, repo_import_path)") < source.index(
         "from trajectory_extractor.fa_artifacts import FAArtifactStore"
     )
