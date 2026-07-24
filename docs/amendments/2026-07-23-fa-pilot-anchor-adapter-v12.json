@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "preregistration_id": "fa-pilot-anchor-adapter-v12-20260723",
+  "date": "2026-07-23",
+  "scope": "Qwen tokenized-chat-template adapter repair",
+  "amendment_path": "docs/amendments/2026-07-23-fa-pilot-anchor-adapter-v12.md",
+  "supersedes_failed_extraction_only": "fa-pilot-mechanistic-v11-20260723",
+  "failed_activation_shard_id": "pilot-activations-v11-l0-9-18-27",
+  "failed_artifact_written": false,
+  "activation_values_inspected": false,
+  "replacement_activation_shard_id": "pilot-activations-v12-l0-9-18-27",
+  "layer_ids": [
+    0,
+    9,
+    18,
+    27
+  ],
+  "anchors": [
+    "target_intro_end",
+    "user_prompt_end",
+    "assistant_prefix_end"
+  ],
+  "fa_activations_sha256": "fff6b4ead080ba991061228cb9fced7cf292357fd87728f28888b3ebfe7277ae",
+  "extraction_started": false,
+  "activation_outcomes_inspected": false,
+  "confirmatory_claims_allowed": false
+}

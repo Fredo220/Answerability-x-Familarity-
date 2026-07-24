@@ -22,7 +22,11 @@ from typing import Any
 import numpy as np
 
 from trajectory_extractor.fa_config import FAConfig
-from trajectory_extractor.fa_entities import EntityMatch
+from trajectory_extractor.fa_entities import (
+    SAME_STRING_EXPOSURE_FACTS,
+    EntityMatch,
+    render_same_string_exposure_prefix,
+)
 
 
 _GAUSS_HERMITE_NODES, _GAUSS_HERMITE_WEIGHTS = np.polynomial.hermite.hermgauss(32)
@@ -164,13 +168,11 @@ _TEMPLATE_TEXT = {
         "Return the archive code recorded for {query}; otherwise return UNKNOWN."
     ),
 }
-
-_SAME_STRING_FACTS = (
-    ("visits", "Cedar Park on Tuesdays"),
-    ("keeps", "a blue notebook near the window"),
-    ("prefers", "cardamom tea after lunch"),
-    ("collects", "postcards from coastal towns"),
+_EXACT_OUTPUT_INSTRUCTION = (
+    " Final answer: output only the five-character archive code or UNKNOWN. "
+    "Do not explain or use Markdown."
 )
+
 _TARGET_INTRO_MARKER = "__FA_TARGET_INTRO_SPAN_8F31C2__"
 _TARGET_QUERY_MARKER = "__FA_TARGET_QUERY_SPAN_5A74D9__"
 _PROHIBITED_EXPOSURE_CONCEPTS = frozenset(
@@ -710,7 +712,7 @@ def _build_same_string_row(
     target = unicodedata.normalize("NFC", match.synthetic_name)
     distractor = unicodedata.normalize("NFC", match.real_name)
     subject = target if exposure == "high_exposure" else distractor
-    prefix = " ".join(f"{subject} {relation} {value}." for relation, value in _SAME_STRING_FACTS)
+    prefix = render_same_string_exposure_prefix(subject)
     target_relation, target_value = (
         ("code", code) if answerability == "target_bound" else ("color", "amber")
     )
@@ -826,7 +828,7 @@ def _structured_user_text(
     if block == "factorial":
         return task, intro_span, query_span
     subject = target if exposure == "high_exposure" else distractor
-    prefix = " ".join(f"{subject} {relation} {value}." for relation, value in _SAME_STRING_FACTS)
+    prefix = render_same_string_exposure_prefix(subject)
     offset = len(prefix) + len(" Task: ")
     return (
         f"{prefix} Task: {task}",
@@ -869,7 +871,8 @@ def _render_template_with_target_spans(
                 second_value=second_value,
                 query=_TARGET_QUERY_MARKER,
             )
-        ),
+        )
+        + _EXACT_OUTPUT_INSTRUCTION,
     )
     if marked.count(_TARGET_INTRO_MARKER) != 1 or marked.count(_TARGET_QUERY_MARKER) != 1:
         raise ValueError("registered template must contain one target introduction and query slot")
@@ -1301,16 +1304,14 @@ def _check_same_string_budget(rows: Sequence[FAExample], tokenizer: Any | None) 
                 if not separator:
                     return False
                 subject = row.target_text if row.exposure == "high_exposure" else row.distractor_text
-                expected_prefix = " ".join(
-                    f"{subject} {relation} {value}." for relation, value in _SAME_STRING_FACTS
-                )
+                expected_prefix = render_same_string_exposure_prefix(subject)
                 if prefix != expected_prefix:
                     return False
                 words = {word.casefold().strip(".,:;?!") for word in prefix.split()}
                 if not words.isdisjoint(_PROHIBITED_EXPOSURE_CONCEPTS):
                     return False
                 if row.exposure == "high_exposure":
-                    if prefix.count(row.target_text) != len(_SAME_STRING_FACTS):
+                    if prefix.count(row.target_text) != len(SAME_STRING_EXPOSURE_FACTS):
                         return False
                 elif row.target_text in prefix:
                     return False

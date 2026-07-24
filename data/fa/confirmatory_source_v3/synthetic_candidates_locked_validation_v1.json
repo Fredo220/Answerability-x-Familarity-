@@ -1,0 +1,554 @@
+[
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q103569-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ember",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q103569-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Light",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q103569-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Storm",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q132863-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Crystal Echo",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q132863-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Crystal Dawn",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q132863-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Crystal Song",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q19090-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ember Song",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q19090-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Storm Dawn",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q19090-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ember Echo",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24815-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Crystal Last",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24815-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Falling Song",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24815-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Journey Song",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24871-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Broken",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24871-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Silent",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q24871-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Winter",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q25139-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Midnight Silent",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q25139-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Midnight Astral",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-creative_work-q25139-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Midnight Winter",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q1005-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Nar Center",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q1005-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bib Center",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q1005-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Eso Global",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q177054-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Global Radi",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q177054-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Center Daya",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q177054-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Center Pisa",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q253414-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "FOTO",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q253414-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "MODE",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q253414-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "FINE",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q312-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Union Ici.",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q312-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "World Lat.",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q312-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Forum Ito.",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q41187-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ceci Trust",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q41187-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Digi Forum",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q41187-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Cura World",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7320-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bola Group",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7320-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Siga World",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7320-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Poke World",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7414-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Nem Erik Global Society",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7414-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Iva Lace Center Society",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-organization-q7414-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sed Jaya Global Council",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q1067-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Laura Joponelej",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q1067-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alina Nisadabeg",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q1067-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alina Pijeyevej",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q16867-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alina Alina Nel",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q16867-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Clara Celia Ren",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q16867-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Nadia Alden Yum",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q3335-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sutton Marian",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q3335-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Marian Parker",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q3335-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Amelia Selena",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q529-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Elena Ellison",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q529-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Laura Ellison",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q529-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Lucas Bennett",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q7245-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira Elena",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q7245-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira Caleb",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q7245-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira Elias",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9215-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ellison Silas",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9215-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ellison Nadia",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9215-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ellison Alden",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9696-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira O. Bennett",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9696-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira A. Bennett",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9696-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Mira A. Ellison",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q991-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Dalton Masurenojeb",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q991-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Julian Namewucupoc",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q991-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Helena Nokuwamunez",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9960-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Foster Victor",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9960-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Amelia Julian",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-person-q9960-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Amelia Mercer",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-place-q5465-v01",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "West West",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-place-q5465-v02",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "West Port",
+    "schema_version": 1,
+    "split": "locked_validation"
+  },
+  {
+    "candidate_id": "syn-confirmatory-locked_validation-place-q5465-v03",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Port West",
+    "schema_version": 1,
+    "split": "locked_validation"
+  }
+]

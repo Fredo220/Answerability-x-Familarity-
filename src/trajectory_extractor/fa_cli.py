@@ -6,18 +6,26 @@ import inspect
 import json
 import math
 import re
+import stat
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import trajectory_extractor.fa_entities as fa_entities
+import trajectory_extractor.fa_confirmatory_source as fa_confirmatory_source
+import trajectory_extractor.fa_confirmatory_synthetics as fa_confirmatory_synthetics
 from trajectory_extractor.fa_activations import (
     HFSelectedPositionRunner,
     load_activation_records,
+    resume_activation_shard,
     write_activation_shard,
 )
 from trajectory_extractor.fa_artifacts import FAArtifactStore
 from trajectory_extractor.fa_config import FAConfig, SMOKE_CHAT_TEMPLATE_SHA256
+from trajectory_extractor.fa_confirmatory_source import (
+    SOURCE_REVISION as CONFIRMATORY_SOURCE_REVISION,
+)
 from trajectory_extractor.fa_data import (
     CONFIRMATORY_POWER_SEED,
     CONFIRMATORY_POWER_SIMULATIONS,
@@ -80,12 +88,29 @@ from trajectory_extractor.fa_probes import (
     fit_selection,
     run_full_selection_nulls,
 )
+from trajectory_extractor.fa_pilot_analysis import (
+    PILOT_PERMUTATION_SEEDS,
+    analyze_pilot_rows,
+    build_pilot_analysis_rows,
+)
+from trajectory_extractor.fa_naturalness import (
+    compile_adjudication_response_from_issuance,
+    compile_initial_responses_from_issuance,
+    issuance_pair_stimulus_sha256s,
+    packet_issuance_record,
+    prepare_adjudication_packet,
+    prepare_initial_rating_packets,
+    naturalness_matches_sha256,
+    rating_record,
+    submission_record,
+    verify_submission_record,
+)
 
 
 FA_COMMANDS = (
-    "fa-run-screening", "fa-screen-entities", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
-    "fa-extract-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
+    "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
@@ -93,12 +118,17 @@ _IMPLEMENTED = frozenset(
     (
         "fa-run-screening",
         "fa-screen-entities",
+        "fa-assemble-screened-matches",
+        "fa-prepare-naturalness-ratings",
+        "fa-compile-naturalness-ratings",
+        "fa-finalize-naturalness-adjudication",
         "fa-build-pilot",
         "fa-build-confirmatory",
         "fa-audit-manifest",
         "fa-run-generation",
         "fa-score-behavior",
         "fa-extract-activations",
+        "fa-analyze-pilot-activations",
         "fa-materialize-probe-rows",
         "fa-fit-probes",
         "fa-seal-behavior-test",
@@ -111,6 +141,13 @@ _IMPLEMENTED = frozenset(
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
 _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
+_CONFIRMATORY_RESERVE_PER_DOMAIN = {
+    "mechanism_train": 4,
+    "locked_validation": 2,
+    "behavior_test": 3,
+    "probe_test": 2,
+    "intervention_test": 2,
+}
 _SMOKE_CONFIG_PATH = (
     Path(__file__).resolve().parents[2]
     / "configs"
@@ -120,6 +157,31 @@ _PREREGISTRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
     / "familiarity_answerability_preregistration.md"
+)
+_NATURALNESS_PROTOCOL_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "fa_naturalness_rating_protocol.md"
+)
+_PILOT_ANALYSIS_SPEC_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-07-23-fa-pilot-analysis-v13.json"
+)
+_PILOT_ANALYSIS_AMENDMENTS = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-07-23-fa-pilot-mechanistic-v11.md",
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-07-23-fa-pilot-anchor-adapter-v12.md",
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-07-23-fa-pilot-analysis-v13.md",
 )
 _TOKENIZER_LOADER = None
 _POWER_EXECUTOR = simulate_interaction_power
@@ -191,10 +253,43 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     screening.add_argument("--questions-manifest", required=True)
     screening.add_argument("--shard-id", required=True)
     screening.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
-    parsers["fa-screen-entities"].add_argument("--candidates-manifest", required=True)
-    parsers["fa-screen-entities"].add_argument("--questions-manifest", required=True)
-    parsers["fa-screen-entities"].add_argument("--screening-manifest", required=True)
-    parsers["fa-screen-entities"].add_argument("--synthetic-manifest", required=True)
+    screening.add_argument("--source-integrity-manifest")
+    screen_entities = parsers["fa-screen-entities"]
+    screen_entities.add_argument("--candidates-manifest", required=True)
+    screen_entities.add_argument("--questions-manifest", required=True)
+    screen_entities.add_argument("--screening-manifest", required=True)
+    screen_entities.add_argument("--synthetic-manifest", required=True)
+    screen_entities.add_argument("--source-integrity-manifest")
+    assemble = parsers["fa-assemble-screened-matches"]
+    assemble.add_argument(
+        "--screened-matches-manifest",
+        action="append",
+        required=True,
+    )
+    assemble.add_argument("--shard-id", required=True)
+    for command in (
+        "fa-prepare-naturalness-ratings",
+        "fa-compile-naturalness-ratings",
+        "fa-finalize-naturalness-adjudication",
+    ):
+        source = parsers[command].add_mutually_exclusive_group(required=True)
+        source.add_argument("--screened-matches-manifest")
+        source.add_argument("--matches-manifest")
+    prepare_ratings = parsers["fa-prepare-naturalness-ratings"]
+    prepare_ratings.add_argument("--output-dir", required=True)
+    prepare_ratings.add_argument("--rater-id", action="append", required=True)
+    prepare_ratings.add_argument("--shard-id", required=True)
+    compile_ratings = parsers["fa-compile-naturalness-ratings"]
+    compile_ratings.add_argument("--issuance-manifest", required=True)
+    compile_ratings.add_argument("--response", action="append", required=True)
+    compile_ratings.add_argument("--shard-id", required=True)
+    compile_ratings.add_argument("--adjudicator-id")
+    compile_ratings.add_argument("--adjudication-output-dir")
+    finalize_ratings = parsers["fa-finalize-naturalness-adjudication"]
+    finalize_ratings.add_argument("--initial-submission-manifest", required=True)
+    finalize_ratings.add_argument("--adjudication-issuance-manifest", required=True)
+    finalize_ratings.add_argument("--adjudication-response", required=True)
+    finalize_ratings.add_argument("--shard-id", required=True)
     parsers["fa-build-pilot"].add_argument("--matches-manifest", required=True)
     parsers["fa-build-confirmatory"].add_argument("--matches-manifest", required=True)
     parsers["fa-build-confirmatory"].add_argument("--pilot-gate-manifest", required=True)
@@ -216,6 +311,11 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     activations.add_argument("--layers")
     activations.add_argument("--resume", action="store_true")
+    pilot_analysis = parsers["fa-analyze-pilot-activations"]
+    pilot_analysis.add_argument("--manifest", required=True)
+    pilot_analysis.add_argument("--activation-manifest", required=True)
+    pilot_analysis.add_argument("--pilot-gate-manifest", required=True)
+    pilot_analysis.add_argument("--shard-id", required=True)
     materialize = parsers["fa-materialize-probe-rows"]
     materialize.add_argument("--manifest", required=True)
     materialize.add_argument("--metadata-manifest", required=True)
@@ -280,6 +380,14 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _run_screening(config, root, args)
         elif command == "fa-screen-entities":
             payload = _screen_entities(config, root, args)
+        elif command == "fa-assemble-screened-matches":
+            payload = _assemble_screened_matches(config, root, args)
+        elif command == "fa-prepare-naturalness-ratings":
+            payload = _prepare_naturalness_ratings(config, root, args)
+        elif command == "fa-compile-naturalness-ratings":
+            payload = _compile_naturalness_ratings(config, root, args)
+        elif command == "fa-finalize-naturalness-adjudication":
+            payload = _finalize_naturalness_adjudication(config, root, args)
         elif command in {"fa-build-pilot", "fa-build-confirmatory"}:
             payload = _build_manifest(config, root, args, confirmatory=command == "fa-build-confirmatory")
         elif command == "fa-audit-manifest":
@@ -288,6 +396,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _run_generation(config, root, args)
         elif command == "fa-extract-activations":
             payload = _extract_activations(config, root, args)
+        elif command == "fa-analyze-pilot-activations":
+            payload = _analyze_pilot_activations(config, root, args)
         elif command == "fa-materialize-probe-rows":
             payload = _materialize_probe_rows(config, root, args)
         elif command == "fa-fit-probes":
@@ -329,6 +439,508 @@ def _reject_standalone_unlock() -> dict[str, Any]:
     )
 
 
+def _prepare_naturalness_ratings(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    matches = _load_naturalness_matches(config, root, args)
+    if len(args.rater_id) != 2:
+        raise ValueError("exactly two --rater-id values are required")
+    protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
+    rating_protocol_sha256 = hashlib.sha256(
+        _NATURALNESS_PROTOCOL_PATH.read_bytes()
+    ).hexdigest()
+    prepared = prepare_initial_rating_packets(
+        matches,
+        config_sha256=config.config_hash,
+        protocol_sha256=protocol_sha256,
+        rating_protocol_sha256=rating_protocol_sha256,
+        output_dir=args.output_dir,
+        rater_ids=args.rater_id,
+    )
+    row, lineage = packet_issuance_record(prepared["private_key"])
+    issuance = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        args.shard_id,
+        (row,),
+        lineage,
+        record_kind="naturalness_packet_issuance",
+    )
+    _restrict_private_naturalness_shard(issuance)
+    return {
+        **prepared,
+        "issuance_manifest": str(issuance.manifest_path),
+        "issuance_sha256": issuance.sha256,
+    }
+
+
+def _compile_naturalness_ratings(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    matches = _load_naturalness_matches(config, root, args)
+    protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
+    rating_protocol_sha256 = hashlib.sha256(
+        _NATURALNESS_PROTOCOL_PATH.read_bytes()
+    ).hexdigest()
+    issuance_row, issuance_shard = _load_naturalness_packet_issuance(
+        store, args.issuance_manifest, config, expected_purpose="initial"
+    )
+    ratings, assignments, disagreements, responses = (
+        compile_initial_responses_from_issuance(
+        matches,
+        issuance=issuance_row,
+        response_paths=args.response,
+        config_sha256=config.config_hash,
+        protocol_sha256=protocol_sha256,
+        rating_protocol_sha256=rating_protocol_sha256,
+        )
+    )
+    if disagreements:
+        if not args.adjudicator_id or not args.adjudication_output_dir:
+            raise ValueError(
+                "rater disagreement requires --adjudicator-id and "
+                "--adjudication-output-dir"
+            )
+        initial_raters = {value.rater_id for value in ratings}
+        if args.adjudicator_id in initial_raters:
+            raise ValueError("third rater must be independent")
+    submission_row, submission_lineage = submission_record(
+        ratings,
+        assignments,
+        responses,
+        config_sha256=config.config_hash,
+        issuance_manifest=str(issuance_shard.manifest_path.relative_to(store.root)),
+        issuance_sha256=issuance_shard.sha256,
+        disagreement_pair_ids=disagreements,
+    )
+    submission = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"{args.shard_id}-initial",
+        (submission_row,),
+        submission_lineage,
+        record_kind="naturalness_submission",
+    )
+    if disagreements:
+        packet = prepare_adjudication_packet(
+            matches,
+            pair_ids=disagreements,
+            config_sha256=config.config_hash,
+            protocol_sha256=protocol_sha256,
+            rating_protocol_sha256=rating_protocol_sha256,
+            output_dir=args.adjudication_output_dir,
+            adjudicator_id=args.adjudicator_id,
+        )
+        adjudication_row, adjudication_lineage = packet_issuance_record(
+            packet["private_key"]
+        )
+        adjudication = store.write_completed_shard(
+            config.run_id,
+            "mechanism_train",
+            f"{args.shard_id}-adjudication-issuance",
+            (adjudication_row,),
+            {
+                **adjudication_lineage,
+                "initial_submission_sha256": submission.sha256,
+            },
+            record_kind="naturalness_packet_issuance",
+        )
+        _restrict_private_naturalness_shard(adjudication)
+        return {
+            "status": "needs_adjudication",
+            "disagreement_pair_count": len(disagreements),
+            "initial_submission_manifest": str(submission.manifest_path),
+            "initial_submission_sha256": submission.sha256,
+            "adjudication": packet,
+            "adjudication_issuance_manifest": str(adjudication.manifest_path),
+            "adjudication_issuance_sha256": adjudication.sha256,
+        }
+
+    audit_naturalness_manifest(matches, ratings)
+    row, lineage = rating_record(
+        ratings,
+        assignments,
+        config_sha256=config.config_hash,
+        protocol_sha256=protocol_sha256,
+        additional_lineage={
+            "rating_protocol_sha256": rating_protocol_sha256,
+            "matches_sha256": naturalness_matches_sha256(matches),
+            "initial_submission_manifest": str(
+                submission.manifest_path.relative_to(store.root)
+            ),
+            "initial_submission_sha256": submission.sha256,
+        },
+    )
+    shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        args.shard_id,
+        (row,),
+        lineage,
+        record_kind="naturalness_ratings",
+    )
+    return {
+        "status": "compiled",
+        "pair_count": len(matches),
+        "rating_count": len(ratings),
+        "initial_submission_manifest": str(submission.manifest_path),
+        "ratings_manifest": str(shard.manifest_path),
+        "sha256": shard.sha256,
+    }
+
+
+def _finalize_naturalness_adjudication(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    store = FAArtifactStore(root)
+    matches = _load_naturalness_matches(config, root, args)
+    protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
+    rating_protocol_sha256 = hashlib.sha256(
+        _NATURALNESS_PROTOCOL_PATH.read_bytes()
+    ).hexdigest()
+    initial_row, initial_shard = _load_naturalness_submission(
+        store, args.initial_submission_manifest, config
+    )
+    disagreements = tuple(initial_row["disagreement_pair_ids"])
+    if not disagreements:
+        raise ValueError("initial submission has no registered disagreements")
+    issuance_row, issuance_shard = _load_naturalness_packet_issuance(
+        store,
+        args.adjudication_issuance_manifest,
+        config,
+        expected_purpose="adjudication",
+    )
+    issuance_lineage = _read_json_object(issuance_shard.manifest_path)["lineage"]
+    if issuance_lineage.get("initial_submission_sha256") != initial_shard.sha256:
+        raise ValueError(
+            "adjudication issuance does not bind the initial disagreement artifact"
+        )
+    third_ratings, third_assignments, third_responses = (
+        compile_adjudication_response_from_issuance(
+            matches,
+            issuance=issuance_row,
+            response_path=args.adjudication_response,
+            expected_pair_ids=disagreements,
+            config_sha256=config.config_hash,
+            protocol_sha256=protocol_sha256,
+            rating_protocol_sha256=rating_protocol_sha256,
+        )
+    )
+    initial_ratings = tuple(
+        NaturalnessRating(**value) for value in initial_row["ratings"]
+    )
+    initial_assignments = tuple(initial_row["assignments"])
+    initial_raters = {value.rater_id for value in initial_ratings}
+    if any(value.rater_id in initial_raters for value in third_ratings):
+        raise ValueError("third rater must be independent")
+    ratings = (*initial_ratings, *third_ratings)
+    assignments = (*initial_assignments, *third_assignments)
+    audit_naturalness_manifest(matches, ratings)
+
+    adjudication_row, adjudication_lineage = submission_record(
+        third_ratings,
+        third_assignments,
+        third_responses,
+        config_sha256=config.config_hash,
+        issuance_manifest=str(issuance_shard.manifest_path.relative_to(store.root)),
+        issuance_sha256=issuance_shard.sha256,
+        disagreement_pair_ids=(),
+    )
+    adjudication_submission = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"{args.shard_id}-adjudication",
+        (adjudication_row,),
+        {
+            **adjudication_lineage,
+            "initial_submission_sha256": initial_shard.sha256,
+        },
+        record_kind="naturalness_submission",
+    )
+    row, lineage = rating_record(
+        ratings,
+        assignments,
+        config_sha256=config.config_hash,
+        protocol_sha256=protocol_sha256,
+        additional_lineage={
+            "rating_protocol_sha256": rating_protocol_sha256,
+            "matches_sha256": naturalness_matches_sha256(matches),
+            "initial_submission_manifest": str(
+                initial_shard.manifest_path.relative_to(store.root)
+            ),
+            "initial_submission_sha256": initial_shard.sha256,
+            "adjudication_submission_manifest": str(
+                adjudication_submission.manifest_path.relative_to(store.root)
+            ),
+            "adjudication_submission_sha256": adjudication_submission.sha256,
+        },
+    )
+    shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        args.shard_id,
+        (row,),
+        lineage,
+        record_kind="naturalness_ratings",
+    )
+    return {
+        "status": "compiled",
+        "pair_count": len(matches),
+        "rating_count": len(ratings),
+        "initial_submission_manifest": str(initial_shard.manifest_path),
+        "adjudication_submission_manifest": str(
+            adjudication_submission.manifest_path
+        ),
+        "ratings_manifest": str(shard.manifest_path),
+        "sha256": shard.sha256,
+    }
+
+
+def _load_naturalness_matches(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> tuple[EntityMatch, ...]:
+    screened = getattr(args, "screened_matches_manifest", None)
+    raw = getattr(args, "matches_manifest", None)
+    if screened:
+        store = FAArtifactStore(root)
+        shard = store.verify_shard(screened)
+        if shard.record_kind == "screened_match_collection":
+            return _load_verified_screened_match_collection(
+                store, screened, config
+            )
+        if config.profile == "confirmatory":
+            raise ValueError(
+                "confirmatory naturalness requires a verified screened-match collection"
+            )
+        return _load_verified_screened_matches(store, screened, config)
+    if config.profile == "confirmatory":
+        raise ValueError(
+            "confirmatory naturalness requires a verified screened-match collection"
+        )
+    rows = _read_json_rows(raw)
+    try:
+        matches = tuple(EntityMatch(**_without_schema(row)) for row in rows)
+    except (TypeError, ValueError) as error:
+        raise ValueError("naturalness matches manifest is invalid") from error
+    if not matches or len({value.pair_id for value in matches}) != len(matches):
+        raise ValueError("naturalness matches must contain unique pairs")
+    return matches
+
+
+def _assemble_screened_matches(
+    config: FAConfig,
+    root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Bind all split-specific screening shards into one immutable collection."""
+    if config.profile != "confirmatory":
+        raise ValueError("screened-match assembly requires the confirmatory config")
+    store = FAArtifactStore(root)
+    manifest_paths = tuple(Path(value) for value in args.screened_matches_manifest)
+    if len(manifest_paths) != len(config.split_counts):
+        raise ValueError("screened-match assembly requires exactly one shard per split")
+    children = []
+    matches = []
+    seen_namespaces = set()
+    for path in manifest_paths:
+        shard = store.verify_shard(path)
+        if shard.namespace in seen_namespaces:
+            raise ValueError("screened-match assembly contains a duplicate split shard")
+        split_matches = _load_verified_screened_matches(store, path, config)
+        seen_namespaces.add(shard.namespace)
+        matches.extend(split_matches)
+        children.append(
+            {
+                "namespace": shard.namespace,
+                "manifest_path": str(shard.manifest_path.relative_to(store.root)),
+                "sha256": shard.sha256,
+            }
+        )
+    if seen_namespaces != set(config.split_counts):
+        raise ValueError("screened-match assembly does not cover every confirmatory split")
+    _audit_confirmatory_match_pool(config, matches)
+    ordered = tuple(sorted(matches, key=lambda row: (row.split, row.pair_id)))
+    lineage = {
+        "config_sha256": config.config_hash,
+        "matching_policy_sha256": _matching_policy_sha256(),
+        "children": sorted(children, key=lambda row: row["namespace"]),
+        "matches_sha256": naturalness_matches_sha256(ordered),
+    }
+    shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        _safe_cli_id(args.shard_id, "screened-match collection shard-id"),
+        [
+            {"kind": "screened_match_collection", **asdict(row)}
+            for row in ordered
+        ],
+        lineage,
+        record_kind="screened_match_collection",
+    )
+    return {
+        "status": "assembled",
+        "manifest": str(shard.manifest_path),
+        "count": len(ordered),
+        "matches_sha256": lineage["matches_sha256"],
+    }
+
+
+def _load_naturalness_packet_issuance(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+    *,
+    expected_purpose: str,
+) -> tuple[dict[str, Any], Any]:
+    shard = _require_verified_shard_kind(
+        store,
+        path,
+        "naturalness_packet_issuance",
+        "verified naturalness packet issuance manifest",
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    if shard.namespace != "mechanism_train":
+        raise ValueError("naturalness packet issuance must use mechanism_train")
+    rows = _read_json_rows(shard.data_path)
+    if len(rows) != 1:
+        raise ValueError("naturalness packet issuance must contain one record")
+    row = rows[0]
+    required = {
+        "kind",
+        "schema_version",
+        "purpose",
+        "config_sha256",
+        "protocol_sha256",
+        "rating_protocol_sha256",
+        "matches_sha256",
+        "private_key",
+        "packets",
+    }
+    protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
+    rating_protocol_sha256 = hashlib.sha256(
+        _NATURALNESS_PROTOCOL_PATH.read_bytes()
+    ).hexdigest()
+    if (
+        set(row) != required
+        or row.get("kind") != "naturalness_packet_issuance"
+        or row.get("schema_version") != 1
+        or row.get("purpose") != expected_purpose
+        or row.get("config_sha256") != config.config_hash
+        or row.get("protocol_sha256") != protocol_sha256
+        or row.get("rating_protocol_sha256") != rating_protocol_sha256
+    ):
+        raise ValueError("naturalness packet issuance has an invalid schema")
+    _require_private_naturalness_shard(shard)
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "protocol_sha256": protocol_sha256,
+            "rating_protocol_sha256": rating_protocol_sha256,
+            "matches_sha256": row["matches_sha256"],
+            "issuance_sha256": _sha256_json(row),
+        },
+    )
+    return row, shard
+
+
+def _restrict_private_naturalness_shard(shard: Any) -> None:
+    for path in (shard.data_path, shard.manifest_path):
+        path.chmod(0o600)
+
+
+def _require_private_naturalness_shard(shard: Any) -> None:
+    for path in (shard.data_path, shard.manifest_path):
+        try:
+            mode = stat.S_IMODE(path.stat().st_mode)
+        except OSError as error:
+            raise ValueError("naturalness packet issuance permissions are unreadable") from error
+        if mode & 0o077:
+            raise ValueError(
+                "naturalness packet issuance must not be group- or world-readable"
+            )
+
+
+def _load_naturalness_submission(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+) -> tuple[dict[str, Any], Any]:
+    shard = _require_verified_shard_kind(
+        store,
+        path,
+        "naturalness_submission",
+        "verified naturalness submission manifest",
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    if shard.namespace != "mechanism_train":
+        raise ValueError("naturalness submission must use mechanism_train")
+    rows = _read_json_rows(shard.data_path)
+    required = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "issuance_manifest",
+        "issuance_sha256",
+        "ratings",
+        "assignments",
+        "responses",
+        "disagreement_pair_ids",
+    }
+    if (
+        len(rows) != 1
+        or set(rows[0]) != required
+        or rows[0].get("kind") != "naturalness_submission"
+        or rows[0].get("schema_version") != 1
+        or rows[0].get("config_sha256") != config.config_hash
+    ):
+        raise ValueError("naturalness submission has an invalid schema")
+    row = rows[0]
+    issuance_path = _artifact_path_from_record(
+        store, row["issuance_manifest"], "naturalness packet issuance manifest"
+    )
+    issuance = _require_verified_shard_kind(
+        store,
+        issuance_path,
+        "naturalness_packet_issuance",
+        "verified naturalness packet issuance manifest",
+    )
+    if issuance.sha256 != row["issuance_sha256"]:
+        raise ValueError("naturalness submission issuance hash does not verify")
+    issuance_rows = _read_json_rows(issuance.data_path)
+    if (
+        len(issuance_rows) != 1
+        or issuance_rows[0].get("purpose") not in {"initial", "adjudication"}
+    ):
+        raise ValueError("naturalness submission issuance is invalid")
+    issuance_row, verified_issuance = _load_naturalness_packet_issuance(
+        store,
+        issuance.manifest_path,
+        config,
+        expected_purpose=issuance_rows[0]["purpose"],
+    )
+    if verified_issuance != issuance:
+        raise ValueError("naturalness submission issuance identity changed")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "issuance_sha256": issuance.sha256,
+            "submission_sha256": _sha256_json(row),
+        },
+    )
+    try:
+        ratings = tuple(NaturalnessRating(**value) for value in row["ratings"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("naturalness submission ratings are invalid") from error
+    if len({(value.pair_id, value.rater_id) for value in ratings}) != len(ratings):
+        raise ValueError("naturalness submission ratings must be unique")
+    verify_submission_record(issuance_row, row)
+    return row, shard
+
+
 def _argument_error(command: str, message: str) -> None:
     print(
         json.dumps(
@@ -353,6 +965,15 @@ def _run_screening(
     questions = tuple(
         ScreeningQuestion(**_without_schema(row))
         for row in _read_json_rows(args.questions_manifest)
+    )
+    _screening_required_count(candidates, config)
+    source_integrity_sha256 = _verify_confirmatory_source_inputs(
+        config,
+        root,
+        args.namespace,
+        args.candidates_manifest,
+        args.questions_manifest,
+        getattr(args, "source_integrity_manifest", None),
     )
     joined = order_screening_questions(candidates, questions)
     if any(candidate.split != args.namespace for candidate, _ in joined):
@@ -433,6 +1054,7 @@ def _run_screening(
             "model_sha256": model_hash,
             "tokenizer_sha256": tokenizer_hash,
             "chat_template_sha256": template_hash,
+            "source_integrity_sha256": source_integrity_sha256,
         },
         record_kind="screening_completion",
     )
@@ -464,6 +1086,16 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
     synthetic = tuple(SyntheticCandidate(**_without_schema(row)) for row in _read_json_rows(args.synthetic_manifest))
     order_screening_questions(candidates, questions)
     required_count = _screening_required_count(candidates, config)
+    source_integrity_sha256 = _verify_confirmatory_source_inputs(
+        config,
+        root,
+        candidates[0].split if candidates else "",
+        args.candidates_manifest,
+        args.questions_manifest,
+        getattr(args, "source_integrity_manifest", None),
+        synthetic_manifest=args.synthetic_manifest,
+    )
+    reserve_per_domain = _screening_reserve_per_domain(candidates, config)
     screening_shard = _require_verified_shard_kind(
         store,
         args.screening_manifest,
@@ -478,6 +1110,7 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
         questions,
         config,
         tokenizer=prepared.tokenizer,
+        source_integrity_sha256=source_integrity_sha256,
     )
     results = tuple(
         score_screening(candidate, completions.get(candidate.entity_id, ()))
@@ -488,17 +1121,34 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
         for candidate, result in zip(candidates, results, strict=True)
         if result.qualifies
     )
+    matchable_qualified = _matchable_screening_candidates(
+        qualified,
+        synthetic,
+        prepared.tokenizer,
+        required_variants=3 if config.profile == "confirmatory" else 1,
+        generator_revision=(
+            fa_confirmatory_synthetics.GENERATOR_REVISION
+            if config.profile == "confirmatory"
+            else None
+        ),
+    )
     audit_lineage = {
         "config_sha256": config.config_hash,
         "candidate_manifest_sha256": _candidate_manifest_sha256(candidates),
         "questions_manifest_sha256": _screening_question_manifest_sha256(questions),
         "synthetic_manifest_sha256": _synthetic_manifest_sha256(synthetic),
+        "matchable_qualified_sha256": _sha256_json(
+            [candidate.entity_id for candidate in matchable_qualified]
+        ),
         "screening_completion_sha256": screening_shard.sha256,
         "screening_parser_sha256": _screening_parser_sha256(),
+        "source_integrity_sha256": source_integrity_sha256,
     }
     try:
         selected = _select_domain_balanced_candidates(
-            qualified, required_count=required_count
+            matchable_qualified,
+            required_count=required_count,
+            reserve_per_domain=reserve_per_domain,
         )
     except ValueError as error:
         audit = _write_screening_audit(
@@ -509,6 +1159,7 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
             results,
             (),
             required_count,
+            reserve_per_domain,
             audit_lineage,
             decision="stopped",
             stop_reason=str(error),
@@ -517,6 +1168,7 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
             f"{error}; screening audit: {audit.manifest_path}"
         ) from error
     matches = match_synthetic_entities(selected, synthetic, prepared.tokenizer)
+    matching_policy_hash = _matching_policy_sha256()
     audit = _write_screening_audit(
         store,
         config,
@@ -525,6 +1177,7 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
         results,
         selected,
         required_count,
+        reserve_per_domain,
         audit_lineage,
         decision="passed",
         stop_reason=None,
@@ -535,10 +1188,11 @@ def _screen_entities(config: FAConfig, root: Path, args: argparse.Namespace) -> 
         store,
         config.run_id,
         screening_shard.namespace,
-        f"screened-matches-{screening_shard.shard_id}",
+        f"screened-matches-{screening_shard.shard_id}-{matching_policy_hash[:12]}",
         [{"kind": "screened_match", **asdict(row)} for row in matches],
         {
             **audit_lineage,
+            "matching_policy_sha256": matching_policy_hash,
             "screening_audit_sha256": audit.sha256,
             "model_sha256": model_hash,
             "tokenizer_sha256": tokenizer_hash,
@@ -568,6 +1222,7 @@ def _write_screening_audit(
     results: Sequence[Any],
     selected: Sequence[CandidateEntity],
     required_count: int,
+    reserve_per_domain: int,
     lineage: Mapping[str, Any],
     *,
     decision: str,
@@ -575,6 +1230,7 @@ def _write_screening_audit(
 ):
     domains = tuple(REGISTERED_ENTITY_DOMAINS)
     quota = required_count // len(domains)
+    selected_quota = quota + reserve_per_domain
     qualified_ids = {
         domain: [
             candidate.entity_id
@@ -590,6 +1246,9 @@ def _write_screening_audit(
         "stop_reason": stop_reason,
         "required_count": required_count,
         "quota_per_domain": quota,
+        "reserve_per_domain": reserve_per_domain,
+        "selected_quota_per_domain": selected_quota,
+        "selected_count": len(selected),
         "candidate_order": [candidate.entity_id for candidate in candidates],
         "candidate_scores": [asdict(result) for result in results],
         "qualified_entity_ids_by_domain": qualified_ids,
@@ -602,7 +1261,10 @@ def _write_screening_audit(
         store,
         config.run_id,
         screening_shard.namespace,
-        f"screening-audit-{screening_shard.shard_id}",
+        (
+            f"screening-audit-{screening_shard.shard_id}-"
+            f"{_sha256_json(lineage)[:12]}"
+        ),
         [row],
         lineage,
         record_kind="screening_audit",
@@ -664,22 +1326,147 @@ def _screening_required_count(
         raise ValueError("screening candidates must belong to exactly one split")
     candidate_split = next(iter(candidate_splits))
     try:
-        return config.split_counts[candidate_split]
+        required_count = config.split_counts[candidate_split]
     except KeyError as error:
         raise ValueError("screening candidate split is not registered in the config") from error
+    if config.profile == "confirmatory":
+        expected_pool = required_count * 2
+        if len(candidate_rows) != expected_pool:
+            raise ValueError(
+                "confirmatory screening requires the exact registered 2x source pool"
+            )
+        expected_per_domain = expected_pool // len(REGISTERED_ENTITY_DOMAINS)
+        observed = {
+            domain: sum(
+                candidate.coarse_type == domain for candidate in candidate_rows
+            )
+            for domain in REGISTERED_ENTITY_DOMAINS
+        }
+        if observed != {
+            domain: expected_per_domain for domain in REGISTERED_ENTITY_DOMAINS
+        }:
+            raise ValueError(
+                "confirmatory screening requires exact registered domain balance"
+            )
+    return required_count
+
+
+def _verify_confirmatory_source_inputs(
+    config: FAConfig,
+    root: Path,
+    split: str,
+    candidate_manifest: str | Path,
+    question_manifest: str | Path,
+    integrity_manifest: str | Path | None,
+    *,
+    synthetic_manifest: str | Path | None = None,
+) -> str | None:
+    if config.profile != "confirmatory":
+        if integrity_manifest is not None:
+            raise ValueError("smoke screening cannot claim confirmatory source integrity")
+        return None
+    if integrity_manifest is None:
+        raise ValueError(
+            "confirmatory screening requires the frozen source-integrity manifest"
+        )
+    root = Path(root).resolve()
+
+    def resolve(value: str | Path) -> Path:
+        path = Path(value)
+        return path.resolve() if path.is_absolute() else (root / path).resolve()
+
+    integrity_path = resolve(integrity_manifest)
+    integrity = _read_json_object(integrity_path)
+    if (
+        integrity.get("schema_version") != 1
+        or integrity.get("source_revision") != CONFIRMATORY_SOURCE_REVISION
+    ):
+        raise ValueError("confirmatory source integrity has the wrong revision")
+    if (
+        integrity.get("source_matching_policy_sha256")
+        != fa_confirmatory_source.source_matching_policy_sha256()
+    ):
+        raise ValueError(
+            "confirmatory source matching policy hash does not verify"
+        )
+    files = integrity.get("materialized_files")
+    registered = files.get(split) if isinstance(files, Mapping) else None
+    if not isinstance(registered, Mapping):
+        raise ValueError("confirmatory source integrity does not register this split")
+    candidate_path = resolve(candidate_manifest)
+    question_path = resolve(question_manifest)
+    if (
+        resolve(str(registered.get("candidate_manifest", ""))) != candidate_path
+        or resolve(str(registered.get("question_manifest", ""))) != question_path
+    ):
+        raise ValueError("confirmatory source input paths do not match the frozen snapshot")
+    candidate_sha256 = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+    question_sha256 = hashlib.sha256(question_path.read_bytes()).hexdigest()
+    if (
+        registered.get("candidate_sha256") != candidate_sha256
+        or registered.get("question_sha256") != question_sha256
+    ):
+        raise ValueError("confirmatory source input hashes do not match the frozen snapshot")
+    snapshot_path = resolve(str(integrity.get("source_snapshot", "")))
+    if (
+        not snapshot_path.is_file()
+        or integrity.get("source_snapshot_sha256")
+        != hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    ):
+        raise ValueError("confirmatory source snapshot hash does not verify")
+    synthetic_snapshot_path = resolve(
+        str(integrity.get("synthetic_snapshot", ""))
+    )
+    if (
+        not synthetic_snapshot_path.is_file()
+        or integrity.get("synthetic_snapshot_sha256")
+        != hashlib.sha256(synthetic_snapshot_path.read_bytes()).hexdigest()
+    ):
+        raise ValueError("confirmatory synthetic snapshot hash does not verify")
+    synthetic_files = integrity.get("synthetic_files")
+    if not isinstance(synthetic_files, Mapping):
+        raise ValueError("confirmatory source integrity omits synthetic files")
+    for synthetic_split, synthetic_record in synthetic_files.items():
+        if (
+            not isinstance(synthetic_split, str)
+            or not isinstance(synthetic_record, Mapping)
+        ):
+            raise ValueError("confirmatory synthetic integrity is malformed")
+        synthetic_path = resolve(str(synthetic_record.get("path", "")))
+        if (
+            not synthetic_path.is_file()
+            or synthetic_record.get("sha256")
+            != hashlib.sha256(synthetic_path.read_bytes()).hexdigest()
+        ):
+            raise ValueError("confirmatory synthetic file hash does not verify")
+    if synthetic_manifest is not None:
+        registered_synthetic = synthetic_files.get(split)
+        if not isinstance(registered_synthetic, Mapping):
+            raise ValueError(
+                "confirmatory source integrity does not register split synthetics"
+            )
+        synthetic_path = resolve(synthetic_manifest)
+        if resolve(str(registered_synthetic.get("path", ""))) != synthetic_path:
+            raise ValueError(
+                "confirmatory synthetic input path does not match the frozen snapshot"
+            )
+    return hashlib.sha256(integrity_path.read_bytes()).hexdigest()
 
 
 def _select_domain_balanced_candidates(
     qualified: Sequence[CandidateEntity],
     *,
     required_count: int,
+    reserve_per_domain: int = 0,
 ) -> tuple[CandidateEntity, ...]:
     domains = tuple(REGISTERED_ENTITY_DOMAINS)
     if type(required_count) is not int or required_count <= 0:
         raise ValueError("required screening count must be a positive integer")
     if required_count % len(domains) != 0:
         raise ValueError("required screening count must divide evenly across domains")
-    quota = required_count // len(domains)
+    if type(reserve_per_domain) is not int or reserve_per_domain < 0:
+        raise ValueError("reserve_per_domain must be a nonnegative integer")
+    quota = required_count // len(domains) + reserve_per_domain
     selected_counts = {domain: 0 for domain in domains}
     selected: list[CandidateEntity] = []
     for candidate in qualified:
@@ -702,6 +1489,23 @@ def _select_domain_balanced_candidates(
     return tuple(selected)
 
 
+def _screening_reserve_per_domain(
+    candidates: Sequence[CandidateEntity],
+    config: FAConfig,
+) -> int:
+    """Return the pre-outcome reserve quota registered for one screening split."""
+    if config.profile != "confirmatory":
+        return 0
+    splits = {candidate.split for candidate in candidates}
+    if len(splits) != 1:
+        raise ValueError("screening candidates must belong to exactly one split")
+    split = next(iter(splits))
+    try:
+        return _CONFIRMATORY_RESERVE_PER_DOMAIN[split]
+    except KeyError as error:
+        raise ValueError("confirmatory screening split has no registered reserve") from error
+
+
 def _load_verified_screening_completions(
     store: FAArtifactStore,
     manifest_path: str | Path,
@@ -710,6 +1514,7 @@ def _load_verified_screening_completions(
     config: FAConfig,
     *,
     tokenizer: Any | None = None,
+    source_integrity_sha256: str | None = None,
 ) -> dict[str, tuple[str, str, str]]:
     shard = _require_verified_shard_kind(
         store,
@@ -723,9 +1528,7 @@ def _load_verified_screening_completions(
     _verify_artifact_run_id(shard.manifest_path, config.run_id)
     model_hash, tokenizer_hash = _config_runtime_hashes(config)
     template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
-    _verify_shard_lineage(
-        shard,
-        {
+    expected_lineage = {
             "config_sha256": config.config_hash,
             "candidate_manifest_sha256": _candidate_manifest_sha256(candidates),
             "questions_manifest_sha256": _screening_question_manifest_sha256(
@@ -734,8 +1537,10 @@ def _load_verified_screening_completions(
             "model_sha256": model_hash,
             "tokenizer_sha256": tokenizer_hash,
             "chat_template_sha256": template_hash,
-        },
-    )
+    }
+    if config.profile == "confirmatory":
+        expected_lineage["source_integrity_sha256"] = source_integrity_sha256
+    _verify_shard_lineage(shard, expected_lineage)
 
     by_entity = {candidate.entity_id: candidate for candidate in candidates}
     expected_questions = {
@@ -842,6 +1647,107 @@ def _screening_parser_sha256() -> str:
     )
 
 
+def _matching_policy_sha256() -> str:
+    return _sha256_json(
+        {
+            "revision": "fa-entity-matching-v5",
+            "source_matching_policy_sha256": (
+                fa_confirmatory_source.source_matching_policy_sha256()
+            ),
+            "character_tolerance": fa_entities.CHARACTER_TOLERANCE,
+            "sentence_frame": fa_entities.TOKENIZER_SENTENCE_FRAME,
+            "same_string_facts": fa_entities.SAME_STRING_EXPOSURE_FACTS,
+            "confirmatory_reserve_per_domain": (
+                _CONFIRMATORY_RESERVE_PER_DOMAIN
+            ),
+            "implementations": {
+                "source_matchability_filter": inspect.getsource(
+                    fa_confirmatory_source.filter_matchable_source_records
+                ),
+                "pseudonym_generator": inspect.getsource(
+                    fa_confirmatory_synthetics.generate_synthetic_candidates
+                ),
+                "pseudonym_proposal": inspect.getsource(
+                    fa_confirmatory_synthetics._pseudonym
+                ),
+                "matchability_filter": inspect.getsource(
+                    _matchable_screening_candidates
+                ),
+                "selection": inspect.getsource(
+                    _select_domain_balanced_candidates
+                ),
+                "match": inspect.getsource(
+                    fa_entities.match_synthetic_entities
+                ),
+                "assignment": inspect.getsource(
+                    fa_entities._deterministic_assignment
+                ),
+                "make_match": inspect.getsource(fa_entities._make_match),
+                "surface": inspect.getsource(fa_entities._surface_compatible),
+                "token_count": inspect.getsource(fa_entities._token_count),
+                "same_string_prefix": inspect.getsource(
+                    fa_entities.render_same_string_exposure_prefix
+                ),
+                "same_string_token_count": inspect.getsource(
+                    fa_entities._same_string_token_count
+                ),
+            },
+        }
+    )
+
+
+def _matchable_screening_candidates(
+    candidates: Sequence[CandidateEntity],
+    synthetic: Sequence[SyntheticCandidate],
+    tokenizer: Any,
+    *,
+    required_variants: int = 1,
+    generator_revision: str | None = None,
+) -> tuple[CandidateEntity, ...]:
+    """Keep candidates with the complete registered exact-surface reserve."""
+    if type(required_variants) is not int or required_variants < 1:
+        raise ValueError("required_variants must be a positive integer")
+    matchable = []
+    for candidate in candidates:
+        compatible = [
+            synthetic_candidate
+            for synthetic_candidate in synthetic
+            if (
+                candidate.split == synthetic_candidate.split
+                and (
+                    generator_revision is None
+                    or synthetic_candidate.generator_revision
+                    == generator_revision
+                )
+                and (
+                    required_variants == 1
+                    or synthetic_candidate.candidate_id.startswith(
+                        f"syn-{candidate.entity_id}-v"
+                    )
+                )
+                and fa_entities._surface_compatible(
+                    candidate,
+                    synthetic_candidate,
+                    tokenizer,
+                )
+            )
+        ]
+        if required_variants == 1 and compatible:
+            matchable.append(candidate)
+            continue
+        if len(compatible) != required_variants:
+            continue
+        if len({row.candidate_id for row in compatible}) != required_variants:
+            continue
+        if (
+            len({fa_entities._normal_form(row.name) for row in compatible})
+            != required_variants
+        ):
+            continue
+        matchable.append(candidate)
+    return tuple(matchable)
+
+
 def _render_screening_prompt(runner: Any, prompt: str) -> str:
     render = getattr(runner, "render_prompt", None)
     if not callable(render):
@@ -901,9 +1807,10 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
     elif config.profile != "smoke":
         raise ValueError("pilot construction requires the smoke config")
     if confirmatory:
-        matches = tuple(
-            EntityMatch(**_without_schema(row))
-            for row in _read_json_rows(args.matches_manifest)
+        matches = _load_verified_screened_match_collection(
+            store,
+            args.matches_manifest,
+            config,
         )
     else:
         matches = _load_verified_screened_matches(
@@ -933,11 +1840,12 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
             )
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
     factorial_rows = build_factorial_examples(config, matches, tokenizer=prepared.tokenizer)
-    rows = factorial_rows
+    rows = factorial_rows + build_same_string_examples(
+        config, matches, tokenizer=prepared.tokenizer
+    )
     power_shard = None
     power_audit = None
     if confirmatory:
-        rows += build_same_string_examples(config, matches, tokenizer=prepared.tokenizer)
         power_audit, power_shard = _prepare_power_audit(
             store,
             config,
@@ -1136,7 +2044,15 @@ def _run_generation(config: FAConfig, root: Path, args: argparse.Namespace) -> d
         config,
         expected_chat_template_sha256=manifest.chat_template_sha256,
     )
-    shard = run_generation_shard(runner, manifest, store, args.shard_id, config=config, namespace=args.namespace)
+    shard = run_generation_shard(
+        runner,
+        manifest,
+        store,
+        args.shard_id,
+        config=config,
+        namespace=args.namespace,
+        resume_partial=args.resume,
+    )
     records = _load_verified_generation_sidecar(
         store, shard.manifest_path, manifest, config
     )
@@ -1210,6 +2126,121 @@ def _extract_activations(
         "manifest": str(shard.manifest_path),
         "request_sha256": shard.request_sha256,
         "row_count": shard.row_count,
+    }
+
+
+def _analyze_pilot_activations(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Analyze only the frozen development pilot and publish immutable OOF evidence."""
+
+    if config.profile != "smoke":
+        raise ValueError("pilot activation analysis requires a smoke config")
+    store = FAArtifactStore(root)
+    manifest = _load_manifest(store, args.manifest, config)
+    if manifest.namespace != "pilot":
+        raise ValueError("pilot activation analysis requires the pilot namespace")
+    gate = _load_verified_pilot_gate(store, args.pilot_gate_manifest, config)
+    if gate["status"] != "passed":
+        raise ValueError("pilot activation analysis requires a verified passed gate")
+    gate_shard = _require_verified_shard_kind(
+        store,
+        args.pilot_gate_manifest,
+        "pilot_gate",
+        "verified pilot gate sidecar manifest",
+    )
+    gate_rows = _read_json_rows(gate_shard.data_path)
+    if gate_rows[0].get("prompt_manifest_sha256") != manifest.shard_sha256:
+        raise ValueError("pilot gate does not bind the explicit prompt manifest")
+
+    activation_manifest = Path(args.activation_manifest).absolute()
+    if not activation_manifest.is_relative_to(store.root):
+        raise ValueError("activation manifest must stay under the FA artifact root")
+    activation_sidecar = _read_json_object(activation_manifest)
+    npz_name = activation_sidecar.get("npz_file")
+    if not isinstance(npz_name, str) or Path(npz_name).name != npz_name:
+        raise ValueError("activation manifest has an invalid NPZ path")
+    activation_shard = resume_activation_shard(
+        activation_manifest.parent / npz_name
+    )
+    if activation_shard.manifest_path != activation_manifest:
+        raise ValueError("activation manifest path does not match its shard")
+    activations = load_activation_records(activation_manifest)
+    rows = build_pilot_analysis_rows(manifest.examples, activations)
+    result = analyze_pilot_rows(
+        rows,
+        permutation_seeds=PILOT_PERMUTATION_SEEDS,
+    )
+
+    if not _PILOT_ANALYSIS_SPEC_PATH.is_file() or any(
+        not path.is_file() for path in _PILOT_ANALYSIS_AMENDMENTS
+    ):
+        raise ValueError("pilot analysis registration files are missing")
+    spec_sha256 = _file_sha256(_PILOT_ANALYSIS_SPEC_PATH)
+    amendment_sha256s = {
+        path.name: _file_sha256(path) for path in _PILOT_ANALYSIS_AMENDMENTS
+    }
+    implementation_sha256 = _file_sha256(
+        Path(inspect.getfile(analyze_pilot_rows))
+    )
+    lineage = {
+        "config_sha256": config.config_hash,
+        "prompt_manifest": str(
+            manifest.shard_manifest_path.relative_to(store.root)
+        ),
+        "prompt_manifest_sha256": manifest.shard_sha256,
+        "pilot_gate_manifest": str(gate_shard.manifest_path.relative_to(store.root)),
+        "pilot_gate_sha256": gate_shard.sha256,
+        "pilot_gate_evidence_sha256": gate["evidence_sha256"],
+        "activation_manifest": str(activation_manifest.relative_to(store.root)),
+        "activation_manifest_sha256": _file_sha256(activation_manifest),
+        "activation_request_sha256": activation_shard.request_sha256,
+        "activation_npz_sha256": activation_shard.npz_sha256,
+        "activation_index_sha256": activation_shard.index_sha256,
+        "analysis_spec": str(_PILOT_ANALYSIS_SPEC_PATH.relative_to(store.root)),
+        "analysis_spec_sha256": spec_sha256,
+        "analysis_amendment_sha256s": amendment_sha256s,
+        "analysis_implementation_sha256": implementation_sha256,
+        "analysis_sha256": result.analysis_sha256,
+        "permutation_seed_sha256": _sha256_json(PILOT_PERMUTATION_SEEDS),
+    }
+    shard_id = _safe_cli_id(args.shard_id, "pilot analysis shard-id")
+    predictions = _write_or_resume_records(
+        store,
+        run_id=config.run_id,
+        namespace="pilot",
+        shard_id=f"{shard_id}-predictions",
+        rows=result.prediction_records,
+        lineage=lineage,
+        record_kind="pilot_predictions",
+        allow_resume=True,
+    )
+    metrics = _write_or_resume_records(
+        store,
+        run_id=config.run_id,
+        namespace="pilot",
+        shard_id=f"{shard_id}-metrics",
+        rows=result.metric_records,
+        lineage={
+            **lineage,
+            "predictions_manifest": str(
+                predictions.manifest_path.relative_to(store.root)
+            ),
+            "predictions_sha256": predictions.sha256,
+        },
+        record_kind="pilot_metrics",
+        allow_resume=True,
+    )
+    return {
+        "status": "analyzed",
+        "claim_scope": "development_only_model_specific_decodability",
+        "example_count": result.example_count,
+        "group_count": result.group_count,
+        "metric_count": len(result.metric_records),
+        "prediction_count": len(result.prediction_records),
+        "analysis_sha256": result.analysis_sha256,
+        "predictions_manifest": str(predictions.manifest_path),
+        "metrics_manifest": str(metrics.manifest_path),
     }
 
 
@@ -2946,12 +3977,13 @@ def _write_prompt_capability(
         "generation": dict(config.generation),
         "examples": [_record_value(example) for example in ordered],
     }
-    return store.write_completed_shard(
-        config.run_id,
-        namespace,
-        f"prompt-capability-{subset_hash[:16]}",
-        [row],
-        {
+    return _write_or_resume_single_record(
+        store,
+        run_id=config.run_id,
+        namespace=namespace,
+        shard_id=f"prompt-capability-{subset_hash[:16]}",
+        row=row,
+        lineage={
             "config_sha256": config.config_hash,
             "source_manifest_sha256": full_manifest_sha256,
             "subset_manifest_sha256": subset_hash,
@@ -3057,12 +4089,15 @@ def _write_probe_metadata(store, config, full_manifest_sha256, matches, examples
         "rows": metadata_rows,
     }
     metadata_sha256 = _sha256_json(row)
-    return store.write_completed_shard(
-        config.run_id,
-        "mechanism_train" if config.profile == "confirmatory" else "pilot",
-        f"probe-metadata-{metadata_sha256[:16]}",
-        (row,),
-        {
+    return _write_or_resume_single_record(
+        store,
+        run_id=config.run_id,
+        namespace=(
+            "mechanism_train" if config.profile == "confirmatory" else "pilot"
+        ),
+        shard_id=f"probe-metadata-{metadata_sha256[:16]}",
+        row=row,
+        lineage={
             "config_sha256": config.config_hash,
             "source_manifest_sha256": full_manifest_sha256,
             "metadata_sha256": metadata_sha256,
@@ -3122,6 +4157,13 @@ def _load_verified_naturalness_audit(
     recomputed = audit_naturalness_manifest(matches, ratings)
     if ratings != verified_ratings:
         raise ValueError("naturalness audit ratings differ from their source artifact")
+    ratings_lineage = _read_json_object(ratings_shard.manifest_path).get("lineage")
+    if (
+        not isinstance(ratings_lineage, dict)
+        or ratings_lineage.get("matches_sha256")
+        != naturalness_matches_sha256(matches)
+    ):
+        raise ValueError("naturalness ratings do not bind the audited entity pairs")
     recorded = {
         "accepted_pair_ids": list(recomputed.accepted_pair_ids),
         "excluded_pair_ids": list(recomputed.excluded_pair_ids),
@@ -3174,6 +4216,9 @@ def _load_verified_naturalness_ratings(store, path, config):
     protocol_sha256 = hashlib.sha256(_PREREGISTRATION_PATH.read_bytes()).hexdigest()
     if row.get("protocol_sha256") != protocol_sha256:
         raise ValueError("naturalness ratings protocol hash does not match preregistration")
+    rating_protocol_sha256 = hashlib.sha256(
+        _NATURALNESS_PROTOCOL_PATH.read_bytes()
+    ).hexdigest()
     assignments = row.get("assignments")
     raw_ratings = row.get("ratings")
     if not isinstance(assignments, list) or not isinstance(raw_ratings, list):
@@ -3225,9 +4270,145 @@ def _load_verified_naturalness_ratings(store, path, config):
         {
             "config_sha256": config.config_hash,
             "protocol_sha256": protocol_sha256,
+            "rating_protocol_sha256": rating_protocol_sha256,
             "blinding_manifest_sha256": row["blinding_manifest_sha256"],
         },
     )
+    lineage = _read_json_object(shard.manifest_path)["lineage"]
+    matches_sha256 = _required_sha256(
+        lineage.get("matches_sha256"), "naturalness matches sha256"
+    )
+    initial_path = _artifact_path_from_record(
+        store,
+        lineage.get("initial_submission_manifest"),
+        "initial naturalness submission manifest",
+    )
+    initial_row, initial_shard = _load_naturalness_submission(
+        store, initial_path, config
+    )
+    if initial_shard.sha256 != lineage.get("initial_submission_sha256"):
+        raise ValueError("initial naturalness submission identity does not verify")
+    initial_issuance_path = _artifact_path_from_record(
+        store,
+        initial_row["issuance_manifest"],
+        "initial naturalness packet issuance manifest",
+    )
+    initial_issuance_row, _ = _load_naturalness_packet_issuance(
+        store,
+        initial_issuance_path,
+        config,
+        expected_purpose="initial",
+    )
+    if initial_issuance_row["matches_sha256"] != matches_sha256:
+        raise ValueError(
+            "naturalness ratings entity pairs do not match the initial issuance"
+        )
+    evidence_ratings = list(initial_row["ratings"])
+    evidence_assignments = list(initial_row["assignments"])
+    has_round_two = any(value.round == 2 for value in ratings)
+    registered_disagreements = frozenset(initial_row["disagreement_pair_ids"])
+    if has_round_two != bool(registered_disagreements):
+        raise ValueError(
+            "naturalness adjudication must match the registered disagreement state"
+        )
+    adjudication_fields = {
+        "adjudication_submission_manifest",
+        "adjudication_submission_sha256",
+    }
+    present_adjudication_fields = adjudication_fields & set(lineage)
+    if has_round_two:
+        if present_adjudication_fields != adjudication_fields:
+            raise ValueError(
+                "round-two naturalness ratings require adjudication lineage"
+            )
+        adjudication_path = _artifact_path_from_record(
+            store,
+            lineage["adjudication_submission_manifest"],
+            "adjudication naturalness submission manifest",
+        )
+        adjudication_row, adjudication_shard = _load_naturalness_submission(
+            store, adjudication_path, config
+        )
+        if (
+            adjudication_shard.sha256
+            != lineage["adjudication_submission_sha256"]
+        ):
+            raise ValueError(
+                "adjudication naturalness submission identity does not verify"
+            )
+        adjudication_issuance_path = _artifact_path_from_record(
+            store,
+            adjudication_row["issuance_manifest"],
+            "adjudication naturalness packet issuance manifest",
+        )
+        adjudication_issuance_row, adjudication_issuance_shard = (
+            _load_naturalness_packet_issuance(
+                store,
+                adjudication_issuance_path,
+                config,
+                expected_purpose="adjudication",
+            )
+        )
+        adjudication_issuance_lineage = _read_json_object(
+            adjudication_issuance_shard.manifest_path
+        )["lineage"]
+        adjudication_submission_lineage = _read_json_object(
+            adjudication_shard.manifest_path
+        )["lineage"]
+        if (
+            adjudication_issuance_lineage.get("initial_submission_sha256")
+            != initial_shard.sha256
+            or adjudication_submission_lineage.get("initial_submission_sha256")
+            != initial_shard.sha256
+        ):
+            raise ValueError(
+                "naturalness adjudication does not bind the initial submission"
+            )
+        adjudication_pair_ids = {
+            value["pair_id"] for value in adjudication_row["ratings"]
+        }
+        issued_pair_ids = {
+            value["pair_id"]
+            for value in adjudication_issuance_row["private_key"]["items"]
+        }
+        initial_stimuli = issuance_pair_stimulus_sha256s(initial_issuance_row)
+        adjudication_stimuli = issuance_pair_stimulus_sha256s(
+            adjudication_issuance_row
+        )
+        if not registered_disagreements <= set(initial_stimuli):
+            raise ValueError(
+                "naturalness disagreements do not match the initial stimuli"
+            )
+        expected_adjudication_stimuli = {
+            pair_id: initial_stimuli[pair_id]
+            for pair_id in registered_disagreements
+        }
+        if (
+            adjudication_pair_ids != registered_disagreements
+            or issued_pair_ids != registered_disagreements
+            or adjudication_stimuli != expected_adjudication_stimuli
+        ):
+            raise ValueError(
+                "naturalness adjudication does not match registered stimuli"
+            )
+        evidence_ratings.extend(adjudication_row["ratings"])
+        evidence_assignments.extend(adjudication_row["assignments"])
+    elif present_adjudication_fields:
+        raise ValueError("adjudication lineage is invalid without round-two ratings")
+    evidence_ratings.sort(
+        key=lambda value: (value["pair_id"], value["round"], value["rater_id"])
+    )
+    evidence_assignments.sort(
+        key=lambda value: (
+            value["pair_id"],
+            value["blind_slot"],
+            value["rater_id"],
+        )
+    )
+    if row["ratings"] != evidence_ratings or row["assignments"] != evidence_assignments:
+        raise ValueError(
+            "naturalness ratings differ from immutable human submissions"
+        )
     return tuple(sorted(ratings, key=lambda value: (value.pair_id, value.round, value.rater_id))), shard
 
 
@@ -3251,25 +4432,31 @@ def _record_value(value: Any) -> dict[str, Any]:
 
 
 def _write_tokenizer_pin(store, config, prepared, source_manifest_sha256):
-    return store.write_completed_shard(
-        config.run_id,
-        "mechanism_train" if config.profile == "confirmatory" else "pilot",
-        f"tokenizer-pin-{prepared.chat_template_sha256[:16]}",
-        [
-            {
-                "kind": "tokenizer_pin",
-                "model_id": config.model_id,
-                "model_revision": config.model_revision,
-                "tokenizer_revision": config.tokenizer_revision,
-                "chat_template_sha256": prepared.chat_template_sha256,
-                "chat_template_utf8_hex": prepared.chat_template_bytes.hex(),
-            }
-        ],
-        {
+    source_hash = _required_sha256(
+        source_manifest_sha256, "source manifest sha256"
+    )
+    row = {
+        "kind": "tokenizer_pin",
+        "model_id": config.model_id,
+        "model_revision": config.model_revision,
+        "tokenizer_revision": config.tokenizer_revision,
+        "chat_template_sha256": prepared.chat_template_sha256,
+        "chat_template_utf8_hex": prepared.chat_template_bytes.hex(),
+    }
+    return _write_or_resume_single_record(
+        store,
+        run_id=config.run_id,
+        namespace=(
+            "mechanism_train" if config.profile == "confirmatory" else "pilot"
+        ),
+        shard_id=(
+            f"tokenizer-pin-{prepared.chat_template_sha256[:12]}-"
+            f"{source_hash[:12]}"
+        ),
+        row=row,
+        lineage={
             "config_sha256": config.config_hash,
-            "source_manifest_sha256": _required_sha256(
-                source_manifest_sha256, "source manifest sha256"
-            ),
+            "source_manifest_sha256": source_hash,
             "chat_template_sha256": prepared.chat_template_sha256,
         },
         record_kind="tokenizer_pin",
@@ -3528,8 +4715,9 @@ def _load_verified_screened_matches(
         "screened_match",
         "verified screened-match manifest",
     )
-    if shard.namespace != "pilot":
-        raise ValueError("screened-match manifest must use the pilot namespace")
+    allowed_namespaces = set(config.split_counts)
+    if shard.namespace not in allowed_namespaces:
+        raise ValueError("screened-match manifest uses an unregistered split namespace")
     _verify_artifact_run_id(shard.manifest_path, config.run_id)
     model_hash, tokenizer_hash = _config_runtime_hashes(config)
     template_hash = config.chat_template_sha256 or _SMOKE_CHAT_TEMPLATE_SHA256
@@ -3550,8 +4738,11 @@ def _load_verified_screened_matches(
         "screening_completion_sha256",
         "screening_audit_sha256",
         "screening_parser_sha256",
+        "matching_policy_sha256",
     ):
         _required_sha256(lineage.get(field), field)
+    if lineage["matching_policy_sha256"] != _matching_policy_sha256():
+        raise ValueError("screened-match matching policy does not match current code")
     completion = _require_verified_shard_kind(
         store,
         _artifact_path_from_record(
@@ -3623,7 +4814,20 @@ def _load_verified_screened_matches(
         items = tuple(values)
         if len(set(items)) != len(items):
             raise ValueError(f"screened-match manifest contains duplicate {label}")
-    expected_count = config.split_counts["pilot"]
+    if config.profile == "smoke":
+        if shard.namespace != "pilot":
+            raise ValueError("smoke screened-match manifest must use the pilot namespace")
+        reserve_per_domain = 0
+    elif config.profile == "confirmatory":
+        reserve_per_domain = _CONFIRMATORY_RESERVE_PER_DOMAIN.get(shard.namespace)
+        if reserve_per_domain is None:
+            raise ValueError("confirmatory screened-match split has no registered reserve")
+    else:
+        raise ValueError("screened-match config profile is not registered")
+    expected_count = (
+        config.split_counts[shard.namespace]
+        + reserve_per_domain * len(REGISTERED_ENTITY_DOMAINS)
+    )
     if len(matches) != expected_count:
         raise ValueError(
             f"screened-match manifest must contain exactly {expected_count} pairs"
@@ -3631,7 +4835,10 @@ def _load_verified_screened_matches(
     domains = tuple(REGISTERED_ENTITY_DOMAINS)
     if expected_count % len(domains) != 0:
         raise ValueError("pilot count cannot be balanced across registered domains")
-    quota = expected_count // len(domains)
+    quota = (
+        config.split_counts[shard.namespace] // len(domains)
+        + reserve_per_domain
+    )
     domain_counts = Counter(match.coarse_type for match in matches)
     if domain_counts != Counter({domain: quota for domain in domains}):
         raise ValueError("screened-match manifest is not exactly domain balanced")
@@ -3640,11 +4847,151 @@ def _load_verified_screened_matches(
         raise ValueError("screened-match manifest requires a passed screening audit")
     if audit_rows[0].get("screening_completion_sha256") != completion.sha256:
         raise ValueError("screening audit does not bind its completion parent")
-    if audit_rows[0].get("selected_entity_ids") != [
-        match.real_entity_id for match in matches
-    ]:
+    audited_entity_ids = audit_rows[0].get("selected_entity_ids")
+    matched_entity_ids = [match.real_entity_id for match in matches]
+    if (
+        not isinstance(audited_entity_ids, list)
+        or len(audited_entity_ids) != len(matched_entity_ids)
+        or len(set(audited_entity_ids)) != len(audited_entity_ids)
+        or set(audited_entity_ids) != set(matched_entity_ids)
+    ):
         raise ValueError("screened-match rows do not match the audited selection")
+    if any(match.split != shard.namespace for match in matches):
+        raise ValueError("screened-match rows do not match their split namespace")
+    if (
+        audit_rows[0].get("required_count")
+        != config.split_counts[shard.namespace]
+        or audit_rows[0].get("reserve_per_domain") != reserve_per_domain
+        or audit_rows[0].get("selected_count") != expected_count
+    ):
+        raise ValueError("screening audit does not bind the registered reserve policy")
     return tuple(matches)
+
+
+def _audit_confirmatory_match_pool(
+    config: FAConfig,
+    matches: Sequence[EntityMatch],
+) -> None:
+    rows = tuple(matches)
+    expected_total = sum(
+        count
+        + _CONFIRMATORY_RESERVE_PER_DOMAIN[split]
+        * len(REGISTERED_ENTITY_DOMAINS)
+        for split, count in config.split_counts.items()
+    )
+    if len(rows) != expected_total:
+        raise ValueError(
+            f"confirmatory screened-match pool must contain exactly {expected_total} pairs"
+        )
+    for label, values in (
+        ("pair IDs", (row.pair_id for row in rows)),
+        ("real entity IDs", (row.real_entity_id for row in rows)),
+        ("real QIDs", (row.real_qid for row in rows)),
+        (
+            "synthetic candidate IDs",
+            (row.synthetic_candidate_id for row in rows),
+        ),
+        ("real names", (row.real_name.casefold() for row in rows)),
+        ("synthetic names", (row.synthetic_name.casefold() for row in rows)),
+    ):
+        items = tuple(values)
+        if len(items) != len(set(items)):
+            raise ValueError(f"confirmatory screened-match pool has duplicate {label}")
+    for split, split_count in config.split_counts.items():
+        reserve = _CONFIRMATORY_RESERVE_PER_DOMAIN[split]
+        quota = split_count // len(REGISTERED_ENTITY_DOMAINS) + reserve
+        counts = Counter(
+            row.coarse_type for row in rows if row.split == split
+        )
+        if counts != Counter(
+            {domain: quota for domain in REGISTERED_ENTITY_DOMAINS}
+        ):
+            raise ValueError(
+                f"confirmatory screened-match pool is not balanced for {split}"
+            )
+
+
+def _load_verified_screened_match_collection(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    config: FAConfig,
+) -> tuple[EntityMatch, ...]:
+    if config.profile != "confirmatory":
+        raise ValueError("screened-match collection requires the confirmatory config")
+    shard = _require_verified_shard_kind(
+        store,
+        manifest_path,
+        "screened_match_collection",
+        "verified screened-match collection manifest",
+    )
+    if shard.namespace != "mechanism_train":
+        raise ValueError("screened-match collection must use mechanism_train")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    lineage = _read_json_object(shard.manifest_path).get("lineage")
+    if not isinstance(lineage, Mapping):
+        raise ValueError("screened-match collection lineage is missing")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "matching_policy_sha256": _matching_policy_sha256(),
+        },
+    )
+    children = lineage.get("children")
+    if not isinstance(children, list) or len(children) != len(config.split_counts):
+        raise ValueError("screened-match collection has invalid child lineage")
+    child_matches = []
+    child_namespaces = set()
+    for child in children:
+        if (
+            not isinstance(child, Mapping)
+            or set(child) != {"namespace", "manifest_path", "sha256"}
+        ):
+            raise ValueError("screened-match collection child has invalid schema")
+        namespace = child.get("namespace")
+        if namespace in child_namespaces:
+            raise ValueError("screened-match collection repeats a child namespace")
+        child_path = _artifact_path_from_record(
+            store,
+            child.get("manifest_path"),
+            "screened-match child manifest",
+        )
+        child_shard = store.verify_shard(child_path)
+        if (
+            child_shard.namespace != namespace
+            or child_shard.sha256 != child.get("sha256")
+        ):
+            raise ValueError("screened-match collection child identity changed")
+        child_matches.extend(
+            _load_verified_screened_matches(store, child_path, config)
+        )
+        child_namespaces.add(namespace)
+    if child_namespaces != set(config.split_counts):
+        raise ValueError("screened-match collection does not cover every split")
+    expected = tuple(
+        sorted(child_matches, key=lambda row: (row.split, row.pair_id))
+    )
+    rows = _read_json_rows(shard.data_path)
+    try:
+        observed = tuple(
+            EntityMatch(
+                **{
+                    key: value
+                    for key, value in _without_schema(row).items()
+                    if key != "kind"
+                }
+            )
+            for row in rows
+            if row.get("kind") == "screened_match_collection"
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("screened-match collection rows are invalid") from error
+    if len(observed) != len(rows) or observed != expected:
+        raise ValueError("screened-match collection rows differ from child shards")
+    _audit_confirmatory_match_pool(config, observed)
+    if lineage.get("matches_sha256") != naturalness_matches_sha256(observed):
+        raise ValueError("screened-match collection hash does not verify")
+    return observed
 
 
 def _require_generation_sidecar_manifest(

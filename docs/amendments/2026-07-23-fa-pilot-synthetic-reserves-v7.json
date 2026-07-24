@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "preregistration_id": "fa-pilot-synthetic-reserves-v7-20260723",
+  "date": "2026-07-23",
+  "scope": "development-only deterministic rematching",
+  "amendment_path": "docs/amendments/2026-07-23-fa-pilot-synthetic-reserves-v7.md",
+  "config_path": "configs/familiarity_answerability_qwen17b_smoke.json",
+  "config_sha256": "c8df1f013c2cc7281c6d29584e6f1bbcaabc5798d6ed88b6fe1007dbd4c2ce3c",
+  "screening_completion_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/entity-screening-20260723-v4-0001.jsonl.manifest.json",
+  "screening_completion_sha256": "9287c555c9b596358301c81e5d35da2db79104cd19889f6f585bc254007370e0",
+  "source_screening_audit_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/screening-audit-entity-screening-20260723-v4-0001.jsonl.manifest.json",
+  "source_screening_audit_sha256": "f80338015675d4e391cde85f7d32e5c85b57e0e251674a29283ceaaa26e3cd91",
+  "synthetic_manifest_path": "data/fa/pilot_inputs/synthetic_candidates_v5.json",
+  "synthetic_manifest_sha256": "8773115e757bd36ce8f276d9b3964749f988d4f7d4f108389df5d64c89933645",
+  "matching_policy_sha256": "317bd6333f1ba7c366b6e86eb4dd217428d58124847e2cf4b20dd2adbab4da5f",
+  "generation_started": false,
+  "outcomes_inspected": false
+}

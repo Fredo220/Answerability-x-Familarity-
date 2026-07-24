@@ -23,6 +23,9 @@ beyond the registered task.
 
 - [Preregistration](docs/familiarity_answerability_preregistration.md)
 - [Protocol amendment](docs/familiarity_answerability_protocol_amendment_2026-07-22.md)
+- [Confirmatory corpus reserve amendment](docs/amendments/2026-07-24-fa-confirmatory-corpus-reserves.md)
+- [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
+- [Current confirmatory execution status](docs/confirmatory_execution_status_2026-07-24.md)
 - [Execution plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
 - [Runbook](docs/familiarity_answerability_runbook.md)
 - [Claim ladder](docs/familiarity_answerability_claims.md)

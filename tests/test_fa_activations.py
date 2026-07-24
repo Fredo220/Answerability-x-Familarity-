@@ -106,6 +106,20 @@ class AddedSpecialMaskTokenizer(FakeTokenizer):
         return result
 
 
+class MappingChatTemplateTokenizer(FakeTokenizer):
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+        rendered = super().apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+        if not tokenize:
+            return rendered
+        return {
+            "input_ids": self(rendered, add_special_tokens=False)["input_ids"]
+        }
+
+
 def example(
     user_text="Ada has archive code K7M2Q. What is Ada's archive code?",
     *,
@@ -257,6 +271,14 @@ def test_special_token_mask_marks_template_ids_even_when_added_token_mask_is_zer
 
     assert record.special_tokens_mask[0] == 1
     assert record.special_tokens_mask[-1] == 1
+
+
+def test_anchor_resolution_accepts_mapping_from_tokenized_chat_template():
+    record = resolve_registered_anchors(
+        example(), MappingChatTemplateTokenizer()
+    )
+
+    assert record.input_ids
 
 
 def test_same_string_anchor_ignores_repeated_exposure_mentions_before_task():

@@ -1156,6 +1156,8 @@ def _required_revision(value: Any, label: str) -> str:
 
 
 def _normalize_ids(value: Any) -> tuple[int, ...]:
+    if isinstance(value, Mapping):
+        value = value.get("input_ids")
     values = _normalize_sequence(value, "input_ids")
     if len(values) == 1 and isinstance(values[0], Sequence) and not isinstance(values[0], (str, bytes)):
         values = tuple(values[0])

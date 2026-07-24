@@ -1,0 +1,554 @@
+[
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q106316-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Last River Journey",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q106316-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Dawn Storm Journey",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q106316-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Echo Storm Falling",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q166262-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Broken Winter",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q166262-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Beyond Broken",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q166262-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Silent Silent",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q182153-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Dawn",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q182153-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Echo",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q182153-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Song",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190086-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Last Song Hi Sky",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190086-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Echo Last It Sky",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190086-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Echo Last Eb Sky",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190135-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sky Winter Crystal",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190135-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sky Harbor Falling",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q190135-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sky Silent Crystal",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q216929-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Golden & Crystal",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q216929-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Harbor & Journey",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q216929-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Golden & Journey",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q47221-v01",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Dawn Golden",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q47221-v02",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Song Broken",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-creative_work-q47221-v03",
+    "coarse_type": "creative_work",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Dawn Broken",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q246-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Laboratory",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q246-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Foundation",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q246-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Collective",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q37156-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "ONE",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q37156-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "ESA",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q37156-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "FEM",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q41506-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research Federation",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q41506-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alliance Foundation",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q41506-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research Collective",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q44294-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Curi Trust Society",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q44294-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Here Forum Council",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q44294-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Evid Union Society",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q458-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alliance Forum",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q458-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research Union",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q458-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Alliance Union",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q47488-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Research Trust",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q47488-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Alliance Trust",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q47488-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Research Forum",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q7804-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Alliance Suma",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q7804-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Alliance Duma",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q7804-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "International Research Mojo",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q9592-v01",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research Global",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q9592-v02",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research Center",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-organization-q9592-v03",
+    "coarse_type": "organization",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Research United",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q22686-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Adrian Silas",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q22686-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Sutton Felix",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q22686-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Marian Elias",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q302-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Rowan Lennox",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q302-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Caleb Selena",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q302-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Caleb Foster",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q4616-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bennett Selena",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q4616-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bennett Dorian",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q4616-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bennett Foster",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q6101-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Lucas Thea",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q6101-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Felix Mira",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q6101-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Elias Mira",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q7243-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ras Ellison",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q7243-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Ato Ellison",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q7243-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Jad Ellison",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q859-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Caleb",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q859-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Jonas",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q859-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Oscar",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q9036-v01",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Helena Rowan",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q9036-v02",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Adrian Elena",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-person-q9036-v03",
+    "coarse_type": "person",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Amelia Leona",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-place-q23768-v01",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Pok North",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-place-q23768-v02",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Bow North",
+    "schema_version": 1,
+    "split": "intervention_test"
+  },
+  {
+    "candidate_id": "syn-confirmatory-intervention_test-place-q23768-v03",
+    "coarse_type": "place",
+    "generator_revision": "fa-confirmatory-pseudonyms-v1",
+    "name": "Nep North",
+    "schema_version": 1,
+    "split": "intervention_test"
+  }
+]

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "api_retrieval_date": "2026-07-23",
-  "gated_model_access_tested": false,
+  "api_retrieval_date": "2026-07-24",
+  "gated_model_access_tested": true,
   "gemma_model_and_tokenizer": {
     "repository": "google/gemma-2-2b-it",
     "revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
@@ -9,6 +9,13 @@
   "gemma_chat_template": {
     "repository": "google/gemma-2-2b-it",
     "sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
+  },
+  "confirmatory_source_frame": {
+    "revision": "fa-confirmatory-wikidata-v4",
+    "qlever_max_rank_per_domain": 1200,
+    "pseudonym_generator_revision": "fa-confirmatory-pseudonyms-v2",
+    "pseudonym_attempt_limit": 5000,
+    "matchability_before_split_assignment": true
   },
   "qwen_smoke_chat_template": {
     "repository": "Qwen/Qwen3-0.6B",

@@ -18,6 +18,12 @@ CHARACTER_TOLERANCE = 2
 SCHEMA_VERSION = 1
 REGISTERED_SPLITS = frozenset(CONFIRMATORY_SPLIT_COUNTS) | NON_CONFIRMATORY_NAMESPACES
 TOKENIZER_SENTENCE_FRAME = "In the Alder Registry, {name} has archive color amber."
+SAME_STRING_EXPOSURE_FACTS = (
+    ("visits", "Cedar Park on Tuesdays"),
+    ("keeps", "a blue notebook near the window"),
+    ("prefers", "cardamom tea after lunch"),
+    ("collects", "postcards from coastal towns"),
+)
 _QID = re.compile(r"Q[1-9][0-9]*\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _PAIR_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*--[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -382,7 +388,7 @@ def audit_naturalness_manifest(
             raise ValueError("naturalness audit requires two independent initial raters")
         if len(third) > 1 or len(pair_ratings) != len(initial) + len(third):
             raise ValueError("naturalness audit has an invalid rater count")
-        initial_verdicts = [_rating_passes(rating) for rating in initial]
+        initial_verdicts = [naturalness_rating_passes(rating) for rating in initial]
         disagreement = initial_verdicts[0] != initial_verdicts[1]
         if third:
             adjudicator = third[0]
@@ -469,6 +475,8 @@ def _surface_compatible(entity: CandidateEntity, synthetic: SyntheticCandidate, 
     return (
         entity.coarse_type == synthetic.coarse_type
         and _token_count(tokenizer, entity.name) == _token_count(tokenizer, synthetic.name)
+        and _same_string_token_count(tokenizer, entity.name)
+        == _same_string_token_count(tokenizer, synthetic.name)
         and len(entity.name.split()) == len(synthetic.name.split())
         and _capitalization_pattern(entity.name) == _capitalization_pattern(synthetic.name)
         and abs(len(entity.name) - len(synthetic.name)) <= CHARACTER_TOLERANCE
@@ -478,10 +486,29 @@ def _surface_compatible(entity: CandidateEntity, synthetic: SyntheticCandidate, 
 
 def _token_count(tokenizer: Any, name: str) -> int:
     frame = TOKENIZER_SENTENCE_FRAME.format(name=name)
+    return _encoded_length(tokenizer, frame)
+
+
+def render_same_string_exposure_prefix(subject: str) -> str:
+    """Render the registered neutral exposure prefix used by same-string controls."""
+    return " ".join(
+        f"{subject} {relation} {value}."
+        for relation, value in SAME_STRING_EXPOSURE_FACTS
+    )
+
+
+def _same_string_token_count(tokenizer: Any, name: str) -> int:
+    return _encoded_length(
+        tokenizer,
+        f"{render_same_string_exposure_prefix(name)} Task:",
+    )
+
+
+def _encoded_length(tokenizer: Any, text: str) -> int:
     if hasattr(tokenizer, "encode"):
-        tokens = tokenizer.encode(frame, add_special_tokens=False)
+        tokens = tokenizer.encode(text, add_special_tokens=False)
     elif callable(tokenizer):
-        result = tokenizer(frame, add_special_tokens=False)
+        result = tokenizer(text, add_special_tokens=False)
         tokens = result["input_ids"] if isinstance(result, Mapping) else result
     else:
         raise TypeError("tokenizer must provide encode() or be callable")
@@ -521,7 +548,11 @@ def _tokenizer_revision(tokenizer: Any) -> str:
     return "unregistered-test-tokenizer"
 
 
-def _rating_passes(rating: NaturalnessRating) -> bool:
+def naturalness_rating_passes(rating: NaturalnessRating) -> bool:
+    """Return the preregistered per-rater naturalness verdict."""
+
+    if not isinstance(rating, NaturalnessRating):
+        raise TypeError("rating must be a NaturalnessRating")
     return not rating.synthetic_malformed and abs(rating.real_naturalness - rating.synthetic_naturalness) <= 1
 
 

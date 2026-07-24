@@ -1,0 +1,97 @@
+{
+  "ambiguous_type_qids_excluded": [
+    "Q1085",
+    "Q12439",
+    "Q16554",
+    "Q16559",
+    "Q35765",
+    "Q3624"
+  ],
+  "assigned_counts": {
+    "behavior_test": 96,
+    "intervention_test": 48,
+    "locked_validation": 64,
+    "mechanism_train": 128,
+    "probe_test": 48
+  },
+  "eligible_counts": {
+    "creative_work": 127,
+    "organization": 143,
+    "person": 157,
+    "place": 150
+  },
+  "excluded_qids": [
+    "Q1065",
+    "Q118841",
+    "Q12418",
+    "Q1490",
+    "Q1615",
+    "Q175036",
+    "Q185372",
+    "Q18647981",
+    "Q189505",
+    "Q23548",
+    "Q41567",
+    "Q45585",
+    "Q4941",
+    "Q537407",
+    "Q60",
+    "Q65",
+    "Q692",
+    "Q7186",
+    "Q740308",
+    "Q7809",
+    "Q7817",
+    "Q8023",
+    "Q90",
+    "Q937"
+  ],
+  "files": {
+    "behavior_test": {
+      "candidate_count": 96,
+      "candidate_manifest": "data/fa/confirmatory_source_v2/candidate_entities_behavior_test_v1.json",
+      "question_count": 288,
+      "question_manifest": "data/fa/confirmatory_source_v2/screening_questions_behavior_test_v1.json"
+    },
+    "intervention_test": {
+      "candidate_count": 48,
+      "candidate_manifest": "data/fa/confirmatory_source_v2/candidate_entities_intervention_test_v1.json",
+      "question_count": 144,
+      "question_manifest": "data/fa/confirmatory_source_v2/screening_questions_intervention_test_v1.json"
+    },
+    "locked_validation": {
+      "candidate_count": 64,
+      "candidate_manifest": "data/fa/confirmatory_source_v2/candidate_entities_locked_validation_v1.json",
+      "question_count": 192,
+      "question_manifest": "data/fa/confirmatory_source_v2/screening_questions_locked_validation_v1.json"
+    },
+    "mechanism_train": {
+      "candidate_count": 128,
+      "candidate_manifest": "data/fa/confirmatory_source_v2/candidate_entities_mechanism_train_v1.json",
+      "question_count": 384,
+      "question_manifest": "data/fa/confirmatory_source_v2/screening_questions_mechanism_train_v1.json"
+    },
+    "probe_test": {
+      "candidate_count": 48,
+      "candidate_manifest": "data/fa/confirmatory_source_v2/candidate_entities_probe_test_v1.json",
+      "question_count": 144,
+      "question_manifest": "data/fa/confirmatory_source_v2/screening_questions_probe_test_v1.json"
+    }
+  },
+  "query_sha256s": {
+    "creative_work": "3dc139da5efb84e303f4d29255fe8d99c4bafee6074ce5d77801c1992c9488ae",
+    "organization": "6bff3034c3372bd447c0e9711d64f1ebdc187d9fe01bb70742ab0fb3f8f50e40",
+    "person": "06e2190c67ad2bfce5384a442c310b32536cfe3efe3deca2f12ed109ba57a87f",
+    "place": "c03c50eb9a24efc1b18bc533eac2b6c3be0488d688ec14114971bcd95837c73f"
+  },
+  "retrieval_date": "2026-07-24",
+  "schema_version": 1,
+  "screening_pool_multiplier": 2,
+  "source_audit": {
+    "candidate_count": 384,
+    "question_count": 1152,
+    "split_count": 5
+  },
+  "source_revision": "fa-confirmatory-wikidata-v2",
+  "split_seed": 20260722
+}

@@ -425,6 +425,18 @@ def test_template_families_have_distinct_labels_and_registered_prompt_bytes():
     assert len(rendered) == len(flattened)
 
 
+def test_every_rendered_prompt_ends_with_the_exact_output_contract():
+    rows, matches = registered_examples()
+    same_string = build_same_string_examples(
+        config(), matches, tokenizer=FakeTokenizer()
+    )
+
+    assert all(
+        row.user_text.endswith(fa_data._EXACT_OUTPUT_INSTRUCTION)
+        for row in (*rows, *same_string)
+    )
+
+
 def test_template_audit_rejects_duplicate_registered_content(monkeypatch):
     monkeypatch.setitem(
         fa_data._TEMPLATE_TEXT,

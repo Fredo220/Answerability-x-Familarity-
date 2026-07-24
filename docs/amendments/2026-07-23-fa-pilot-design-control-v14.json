@@ -1,0 +1,12 @@
+{
+  "amendment_id": "fa-pilot-design-control-v14",
+  "artifact_key_retained": "surface_design_oracle",
+  "diagnosis": "raw_linear_model_omits_entity_order_by_code_position_interaction",
+  "incremental_answerability_status": "not_evaluable_without_registered_paired_contrast",
+  "metrics_manifest_sha256": "d00792c48a88c453701f7b10883d86370ac88794d30721692e499ec0d7eda299",
+  "observed_answerability_macro_auroc": 0.8333333333333334,
+  "report_label": "linear_design_feature_control",
+  "schema_version": 1,
+  "timing": "post_v13_metrics_open",
+  "v13_analysis_sha256": "f71f8a05830609b442c693911e85a7b39c20c9be732a1291b53b3df18e9731d5"
+}

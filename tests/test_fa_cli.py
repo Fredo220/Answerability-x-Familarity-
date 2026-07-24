@@ -1,8 +1,10 @@
 import argparse
+import csv
 import hashlib
 import inspect
 import json
 import math
+from collections import Counter
 from dataclasses import asdict, replace
 from itertools import product
 from pathlib import Path
@@ -30,8 +32,16 @@ from trajectory_extractor.fa_entities import (
     NaturalnessAudit,
     NaturalnessRating,
     ScreeningQuestion,
+    SyntheticCandidate,
 )
 from trajectory_extractor.fa_features import OutputEvidence
+from trajectory_extractor.fa_naturalness import (
+    compile_initial_responses_from_issuance,
+    naturalness_matches_sha256,
+    packet_issuance_record,
+    prepare_initial_rating_packets,
+    submission_record,
+)
 from trajectory_extractor.fa_runtime import run_generation_shard
 from trajectory_extractor.fa_probes import (
     OUTPUT_CONTROL_SCHEMA_SHA256,
@@ -96,13 +106,21 @@ def smoke_pilot_matches():
     return rows
 
 
-def screened_matches_manifest(tmp_path, config, rows, *, shard_id="screened-matches-test"):
+def screened_matches_manifest(
+    tmp_path,
+    config,
+    rows,
+    *,
+    shard_id="screened-matches-test",
+    audited_entity_ids=None,
+    namespace="pilot",
+):
     model_hash, tokenizer_hash = fa_cli._config_runtime_hashes(config)
     template_hash = config.chat_template_sha256 or CHAT_TEMPLATE_SHA256
     store = FAArtifactStore(tmp_path)
     completion = store.write_completed_shard(
         config.run_id,
-        "pilot",
+        namespace,
         f"{shard_id}-completion",
         [],
         {
@@ -117,14 +135,25 @@ def screened_matches_manifest(tmp_path, config, rows, *, shard_id="screened-matc
     )
     audit = store.write_completed_shard(
         config.run_id,
-        "pilot",
+        namespace,
         f"{shard_id}-audit",
         [
             {
                 "kind": "screening_audit",
                 "decision": "passed",
                 "screening_completion_sha256": completion.sha256,
-                "selected_entity_ids": [row["real_entity_id"] for row in rows],
+                "selected_entity_ids": (
+                    [row["real_entity_id"] for row in rows]
+                    if audited_entity_ids is None
+                    else list(audited_entity_ids)
+                ),
+                "required_count": config.split_counts[namespace],
+                "reserve_per_domain": (
+                    0
+                    if config.profile == "smoke"
+                    else fa_cli._CONFIRMATORY_RESERVE_PER_DOMAIN[namespace]
+                ),
+                "selected_count": len(rows),
             }
         ],
         {
@@ -139,7 +168,7 @@ def screened_matches_manifest(tmp_path, config, rows, *, shard_id="screened-matc
     )
     return store.write_completed_shard(
         config.run_id,
-        "pilot",
+        namespace,
         shard_id,
         [{"kind": "screened_match", **row} for row in rows],
         {
@@ -153,6 +182,7 @@ def screened_matches_manifest(tmp_path, config, rows, *, shard_id="screened-matc
             "screening_completion_sha256": completion.sha256,
             "screening_audit_sha256": audit.sha256,
             "screening_parser_sha256": "f" * 64,
+            "matching_policy_sha256": fa_cli._matching_policy_sha256(),
             "screening_completion_manifest": str(
                 completion.manifest_path.relative_to(store.root)
             ),
@@ -234,9 +264,148 @@ def confirmatory_reserve_matches(config, *, reserve_per_cell=1):
     return tuple(rows)
 
 
+def confirmatory_registered_match_pool(config):
+    base = EntityMatch(**MATCH)
+    domains = ("person", "place", "organization", "creative_work")
+    rows = []
+    index = 1000
+    for split, split_count in config.split_counts.items():
+        quota = (
+            split_count // len(domains)
+            + fa_cli._CONFIRMATORY_RESERVE_PER_DOMAIN[split]
+        )
+        for domain in domains:
+            for _ in range(quota):
+                real_name = f"Old Vale {index}"
+                synthetic_name = f"New Vale {index}"
+                rows.append(
+                    replace(
+                        base,
+                        pair_id=f"Q{index}--syn-{index}",
+                        real_entity_id=f"Q{index}",
+                        real_qid=f"Q{index}",
+                        synthetic_candidate_id=f"syn-{index}",
+                        real_name=real_name,
+                        synthetic_name=synthetic_name,
+                        coarse_type=domain,
+                        split=split,
+                        real_word_count=3,
+                        synthetic_word_count=3,
+                        real_character_count=len(real_name),
+                        synthetic_character_count=len(synthetic_name),
+                    )
+                )
+                index += 1
+    return tuple(rows)
+
+
+def confirmatory_screened_collection(tmp_path, config):
+    manifests = []
+    rows = confirmatory_registered_match_pool(config)
+    for split in config.split_counts:
+        split_rows = [
+            asdict(row)
+            for row in rows
+            if row.split == split
+        ]
+        manifests.append(
+            screened_matches_manifest(
+                tmp_path,
+                config,
+                split_rows,
+                shard_id=f"screened-{split}",
+                namespace=split,
+            )
+        )
+    payload = fa_cli._assemble_screened_matches(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            screened_matches_manifest=manifests,
+            shard_id="confirmatory-screened-collection",
+        ),
+    )
+    return Path(payload["manifest"]), rows
+
+
+def test_confirmatory_screened_collection_binds_every_split_and_reserve(tmp_path):
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    manifest, expected = confirmatory_screened_collection(tmp_path, config)
+
+    observed = fa_cli._load_verified_screened_match_collection(
+        FAArtifactStore(tmp_path),
+        manifest,
+        config,
+    )
+
+    assert len(observed) == 244
+    assert set(observed) == set(expected)
+    assert {row.split for row in observed} == set(config.split_counts)
+
+
+def test_confirmatory_naturalness_rejects_raw_match_files(tmp_path):
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    raw = tmp_path / "raw-matches.json"
+    raw.write_text(json.dumps([MATCH]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="verified screened-match collection"):
+        fa_cli._load_naturalness_matches(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                screened_matches_manifest=None,
+                matches_manifest=raw,
+            ),
+        )
+
+
+def test_confirmatory_naturalness_rejects_single_screened_child_shard(tmp_path):
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    rows = [
+        asdict(row)
+        for row in confirmatory_registered_match_pool(config)
+        if row.split == "mechanism_train"
+    ]
+    child = screened_matches_manifest(
+        tmp_path,
+        config,
+        rows,
+        shard_id="screened-mechanism-train",
+        namespace="mechanism_train",
+    )
+
+    with pytest.raises(ValueError, match="verified screened-match collection"):
+        fa_cli._load_naturalness_matches(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                screened_matches_manifest=child,
+                matches_manifest=None,
+            ),
+        )
+
+
 def test_screening_matching_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
     config = FAConfig.from_json(CONFIG_PATH)
-    sentinel = object()
+
+    class SentinelTokenizer:
+        def encode(self, text, add_special_tokens=False):
+            del add_special_tokens
+            return text.split()
+
+    sentinel = SentinelTokenizer()
     read_json_rows = fa_cli._read_json_rows
     domains = ("person", "place", "organization", "creative_work")
     candidates = []
@@ -354,10 +523,26 @@ def test_screening_matching_uses_the_pinned_model_tokenizer(tmp_path, monkeypatc
     assert audit_shard.record_kind == "screening_audit"
     assert match_lineage["screening_audit_sha256"] == audit_shard.sha256
     assert len(match_lineage["screening_parser_sha256"]) == 64
+    assert match_lineage["matching_policy_sha256"] == fa_cli._matching_policy_sha256()
+    audit_lineage = json.loads(
+        audit_shard.manifest_path.read_text(encoding="utf-8")
+    )["lineage"]
+    assert audit_shard.shard_id == (
+        f"screening-audit-screening-0001-{fa_cli._sha256_json(audit_lineage)[:12]}"
+    )
+    assert match_shard.shard_id.endswith(
+        f"-{fa_cli._matching_policy_sha256()[:12]}"
+    )
 
 
 def test_screening_failure_writes_a_machine_readable_audit(tmp_path, monkeypatch):
     config = FAConfig.from_json(CONFIG_PATH)
+
+    class WordTokenizer:
+        def encode(self, text, add_special_tokens=False):
+            del add_special_tokens
+            return text.split()
+
     domains = ("person", "place", "organization", "creative_work")
     candidates = [
         {
@@ -426,7 +611,7 @@ def test_screening_failure_writes_a_machine_readable_audit(tmp_path, monkeypatch
     monkeypatch.setattr(
         fa_cli,
         "load_pinned_tokenizer",
-        lambda *args, **kwargs: SimpleNamespace(tokenizer=object()),
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=WordTokenizer()),
     )
 
     with pytest.raises(ValueError, match="screening audit"):
@@ -486,6 +671,64 @@ def test_screening_selection_is_manifest_ordered_and_exactly_domain_balanced():
         domain: sum(candidate.coarse_type == domain for candidate in selected)
         for domain in domains
     } == {domain: 2 for domain in domains}
+
+
+def test_confirmatory_screening_selection_retains_registered_reserves():
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    domains = ("person", "place", "organization", "creative_work")
+    candidates = tuple(
+        CandidateEntity(
+            entity_id=f"entity-{index}",
+            qid=f"Q{index}",
+            name=f"Entity {index}",
+            coarse_type=domains[(index - 1) % len(domains)],
+            split="behavior_test",
+            source_query="registered-query-v1",
+            source_provenance="Wikidata CC0",
+            screening_aliases=aliases,
+        )
+        for index in range(1, 61)
+    )
+
+    selected = fa_cli._select_domain_balanced_candidates(
+        candidates,
+        required_count=48,
+        reserve_per_domain=3,
+    )
+
+    assert len(selected) == 60
+    assert {
+        domain: sum(candidate.coarse_type == domain for candidate in selected)
+        for domain in domains
+    } == {domain: 15 for domain in domains}
+
+
+def test_confirmatory_reserve_table_is_frozen_per_split():
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    expected = {
+        "mechanism_train": 4,
+        "locked_validation": 2,
+        "behavior_test": 3,
+        "probe_test": 2,
+        "intervention_test": 2,
+    }
+    for split, reserve in expected.items():
+        candidate = CandidateEntity(
+            entity_id=f"entity-{split}",
+            qid=f"Q{len(split) + 1}",
+            name="Entity Name",
+            coarse_type="person",
+            split=split,
+            source_query="registered-query-v1",
+            source_provenance="Wikidata CC0",
+            screening_aliases=aliases,
+        )
+        assert fa_cli._screening_reserve_per_domain((candidate,), config) == reserve
 
 
 def test_screening_selection_fails_closed_on_domain_shortage_and_unknown_domain():
@@ -558,6 +801,181 @@ def test_screening_required_count_rejects_mixed_splits_and_duplicate_identities(
                 candidate("entity-2", "Q1", "pilot"),
             ],
             config,
+        )
+
+
+def test_confirmatory_screening_requires_exact_frozen_2x_source_pool():
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    rows = []
+    index = 1
+    for domain in ("person", "place", "organization", "creative_work"):
+        for _ in range(32):
+            rows.append(
+                CandidateEntity(
+                    entity_id=f"entity-{index}",
+                    qid=f"Q{index}",
+                    name=f"Entity {index}",
+                    coarse_type=domain,
+                    split="mechanism_train",
+                    source_query="registered-query-v2",
+                    source_provenance="Wikidata CC0 v2",
+                    screening_aliases=aliases,
+                )
+            )
+            index += 1
+
+    assert fa_cli._screening_required_count(rows, config) == 64
+    with pytest.raises(ValueError, match="exact registered 2x source pool"):
+        fa_cli._screening_required_count(rows[:-1], config)
+
+
+def test_screening_excludes_candidates_without_complete_surface_match():
+    aliases = (("alpha",), ("beta",), ("gamma",))
+    candidates = (
+        CandidateEntity(
+            entity_id="entity-1",
+            qid="Q1",
+            name="Old Vale",
+            coarse_type="place",
+            split="mechanism_train",
+            source_query="registered-query-v3",
+            source_provenance="Wikidata CC0 v3",
+            screening_aliases=aliases,
+        ),
+        CandidateEntity(
+            entity_id="entity-2",
+            qid="Q2",
+            name="Oppenheimer",
+            coarse_type="creative_work",
+            split="mechanism_train",
+            source_query="registered-query-v3",
+            source_provenance="Wikidata CC0 v3",
+            screening_aliases=aliases,
+        ),
+    )
+    synthetic = tuple(
+        SyntheticCandidate(
+            candidate_id=f"syn-entity-1-v{index:02d}",
+            name=name,
+            coarse_type="place",
+            split="mechanism_train",
+            generator_revision="fa-confirmatory-pseudonyms-v2",
+        )
+        for index, name in enumerate(
+            ("New Vale", "Red Vale", "Sun Vale"),
+            start=1,
+        )
+    )
+
+    assert fa_cli._matchable_screening_candidates(
+        candidates,
+        synthetic,
+        FakeTokenizer(),
+        required_variants=3,
+        generator_revision="fa-confirmatory-pseudonyms-v2",
+    ) == (candidates[0],)
+    assert fa_cli._matchable_screening_candidates(
+        candidates,
+        synthetic[:1],
+        FakeTokenizer(),
+        required_variants=3,
+        generator_revision="fa-confirmatory-pseudonyms-v2",
+    ) == ()
+
+
+def test_confirmatory_screening_binds_the_v4_source_revision(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    config = FAConfig.from_json(
+        root / "configs" / "familiarity_answerability_gemma2_2b.json"
+    )
+    source = tmp_path / "confirmatory_source_v4"
+    source.mkdir()
+    candidates = source / "candidate_entities_mechanism_train_v1.json"
+    questions = source / "screening_questions_mechanism_train_v1.json"
+    snapshot = source / "source_snapshot_v1.json"
+    synthetic = source / "synthetic_candidates_mechanism_train_v1.json"
+    synthetic_snapshot = source / "synthetic_source_snapshot_v1.json"
+    candidates.write_text("[]\n", encoding="utf-8")
+    questions.write_text("[]\n", encoding="utf-8")
+    synthetic.write_text("[]\n", encoding="utf-8")
+    synthetic_snapshot.write_text(
+        json.dumps({"generator_revision": "test-generator"}),
+        encoding="utf-8",
+    )
+    snapshot.write_text(
+        json.dumps({"source_revision": fa_cli.CONFIRMATORY_SOURCE_REVISION}),
+        encoding="utf-8",
+    )
+    integrity = source / "source_integrity_v1.json"
+    integrity.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source_revision": fa_cli.CONFIRMATORY_SOURCE_REVISION,
+                "source_matching_policy_sha256": (
+                    fa_cli.fa_confirmatory_source.source_matching_policy_sha256()
+                ),
+                "source_snapshot": str(snapshot),
+                "source_snapshot_sha256": hashlib.sha256(
+                    snapshot.read_bytes()
+                ).hexdigest(),
+                "synthetic_snapshot": str(synthetic_snapshot),
+                "synthetic_snapshot_sha256": hashlib.sha256(
+                    synthetic_snapshot.read_bytes()
+                ).hexdigest(),
+                "synthetic_files": {
+                    "mechanism_train": {
+                        "path": str(synthetic),
+                        "sha256": hashlib.sha256(
+                            synthetic.read_bytes()
+                        ).hexdigest(),
+                    }
+                },
+                "materialized_files": {
+                    "mechanism_train": {
+                        "candidate_manifest": str(candidates),
+                        "candidate_sha256": hashlib.sha256(
+                            candidates.read_bytes()
+                        ).hexdigest(),
+                        "question_manifest": str(questions),
+                        "question_sha256": hashlib.sha256(
+                            questions.read_bytes()
+                        ).hexdigest(),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    integrity_hash = fa_cli._verify_confirmatory_source_inputs(
+        config,
+        tmp_path,
+        "mechanism_train",
+        candidates,
+        questions,
+        integrity,
+    )
+
+    assert isinstance(integrity_hash, str)
+    assert len(integrity_hash) == 64
+
+    tampered = json.loads(integrity.read_text(encoding="utf-8"))
+    tampered["source_matching_policy_sha256"] = "0" * 64
+    integrity.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(ValueError, match="matching policy hash"):
+        fa_cli._verify_confirmatory_source_inputs(
+            config,
+            tmp_path,
+            "mechanism_train",
+            candidates,
+            questions,
+            integrity,
         )
 
 
@@ -898,6 +1316,59 @@ def test_screening_parser_hash_binds_the_parser_implementation():
     assert fa_cli._screening_parser_sha256() == expected
 
 
+def test_matching_policy_hash_binds_surface_and_assignment_implementation():
+    expected = fa_cli._sha256_json(
+        {
+            "revision": "fa-entity-matching-v5",
+            "source_matching_policy_sha256": (
+                fa_cli.fa_confirmatory_source.source_matching_policy_sha256()
+            ),
+            "character_tolerance": fa_cli.fa_entities.CHARACTER_TOLERANCE,
+            "sentence_frame": fa_cli.fa_entities.TOKENIZER_SENTENCE_FRAME,
+            "same_string_facts": fa_cli.fa_entities.SAME_STRING_EXPOSURE_FACTS,
+            "confirmatory_reserve_per_domain": (
+                fa_cli._CONFIRMATORY_RESERVE_PER_DOMAIN
+            ),
+            "implementations": {
+                "source_matchability_filter": inspect.getsource(
+                    fa_cli.fa_confirmatory_source.filter_matchable_source_records
+                ),
+                "pseudonym_generator": inspect.getsource(
+                    fa_cli.fa_confirmatory_synthetics.generate_synthetic_candidates
+                ),
+                "pseudonym_proposal": inspect.getsource(
+                    fa_cli.fa_confirmatory_synthetics._pseudonym
+                ),
+                "matchability_filter": inspect.getsource(
+                    fa_cli._matchable_screening_candidates
+                ),
+                "selection": inspect.getsource(
+                    fa_cli._select_domain_balanced_candidates
+                ),
+                "match": inspect.getsource(
+                    fa_cli.fa_entities.match_synthetic_entities
+                ),
+                "assignment": inspect.getsource(
+                    fa_cli.fa_entities._deterministic_assignment
+                ),
+                "make_match": inspect.getsource(fa_cli.fa_entities._make_match),
+                "surface": inspect.getsource(
+                    fa_cli.fa_entities._surface_compatible
+                ),
+                "token_count": inspect.getsource(fa_cli.fa_entities._token_count),
+                "same_string_prefix": inspect.getsource(
+                    fa_cli.fa_entities.render_same_string_exposure_prefix
+                ),
+                "same_string_token_count": inspect.getsource(
+                    fa_cli.fa_entities._same_string_token_count
+                ),
+            },
+        }
+    )
+
+    assert fa_cli._matching_policy_sha256() == expected
+
+
 def test_screening_artifact_write_is_idempotent_and_fail_closed(tmp_path):
     store = FAArtifactStore(tmp_path)
     rows = [{"kind": "screening_audit", "decision": "passed"}]
@@ -1084,41 +1555,89 @@ def write_probe_rows_artifact(root, config, split, rows, *, lineage=None):
 
 def naturalness_ratings_manifest(root, config, *, rating_schema_version=1):
     store = FAArtifactStore(root)
-    ratings = [
-        asdict(
-            NaturalnessRating(
-                pair_id=MATCH["pair_id"],
-                rater_id=rater_id,
-                real_naturalness=4,
-                synthetic_naturalness=4,
-                real_type_fit=4,
-                synthetic_type_fit=4,
-                synthetic_malformed=False,
-            )
-        )
-        for rater_id in ("rater-a", "rater-b")
-    ]
-    ratings[0]["schema_version"] = rating_schema_version
-    assignments = [
-        {
-            "pair_id": MATCH["pair_id"],
-            "rater_id": rater_id,
-            "blind_slot": blind_slot,
-            "submission_sha256": sha256_json(
-                {"pair_id": MATCH["pair_id"], "rater_id": rater_id}
-            ),
-        }
-        for rater_id, blind_slot in (
-            ("rater-a", "slot-a"),
-            ("rater-b", "slot-b"),
-        )
-    ]
     preregistration = (
         Path(__file__).resolve().parents[1]
         / "docs"
         / "familiarity_answerability_preregistration.md"
     )
     protocol_sha256 = hashlib.sha256(preregistration.read_bytes()).hexdigest()
+    rating_protocol = (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "fa_naturalness_rating_protocol.md"
+    )
+    rating_protocol_sha256 = hashlib.sha256(
+        rating_protocol.read_bytes()
+    ).hexdigest()
+    matches = (EntityMatch(**MATCH),)
+    packet_dir = Path(root) / f"fixture-packets-{rating_schema_version}"
+    prepared = prepare_initial_rating_packets(
+        matches,
+        config_sha256=config.config_hash,
+        protocol_sha256=protocol_sha256,
+        rating_protocol_sha256=rating_protocol_sha256,
+        output_dir=packet_dir,
+        rater_ids=("rater-a", "rater-b"),
+    )
+    issuance_row, issuance_lineage = packet_issuance_record(
+        prepared["private_key"]
+    )
+    issuance = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"rating-issuance-{rating_schema_version}",
+        [issuance_row],
+        issuance_lineage,
+        record_kind="naturalness_packet_issuance",
+    )
+    fa_cli._restrict_private_naturalness_shard(issuance)
+    response_paths = tuple(
+        packet_dir / "public" / f"{rater_id}-response.csv"
+        for rater_id in ("rater-a", "rater-b")
+    )
+    for response_path in response_paths:
+        with response_path.open(newline="", encoding="utf-8") as handle:
+            response_rows = list(csv.DictReader(handle))
+            fieldnames = tuple(response_rows[0])
+        for response in response_rows:
+            for candidate in ("a", "b"):
+                response[f"candidate_{candidate}_naturalness"] = "4"
+                response[f"candidate_{candidate}_type_fit"] = "4"
+                response[f"candidate_{candidate}_malformed"] = "false"
+            response["independence_attested"] = "true"
+        with response_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(response_rows)
+    rating_values, assignments, disagreements, responses = (
+        compile_initial_responses_from_issuance(
+            matches,
+            issuance=issuance_row,
+            response_paths=response_paths,
+            config_sha256=config.config_hash,
+            protocol_sha256=protocol_sha256,
+            rating_protocol_sha256=rating_protocol_sha256,
+        )
+    )
+    submission_row, submission_lineage = submission_record(
+        rating_values,
+        assignments,
+        responses,
+        config_sha256=config.config_hash,
+        issuance_manifest=str(issuance.manifest_path.relative_to(store.root)),
+        issuance_sha256=issuance.sha256,
+        disagreement_pair_ids=disagreements,
+    )
+    submission = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"rating-submission-{rating_schema_version}",
+        [submission_row],
+        submission_lineage,
+        record_kind="naturalness_submission",
+    )
+    ratings = [asdict(value) for value in rating_values]
+    ratings[0]["schema_version"] = rating_schema_version
     blinding_sha256 = sha256_json(assignments)
     row = {
         "kind": "naturalness_ratings",
@@ -1137,7 +1656,15 @@ def naturalness_ratings_manifest(root, config, *, rating_schema_version=1):
         {
             "config_sha256": config.config_hash,
             "protocol_sha256": protocol_sha256,
+            "rating_protocol_sha256": rating_protocol_sha256,
             "blinding_manifest_sha256": blinding_sha256,
+            "matches_sha256": naturalness_matches_sha256(
+                (EntityMatch(**MATCH),)
+            ),
+            "initial_submission_manifest": str(
+                submission.manifest_path.relative_to(store.root)
+            ),
+            "initial_submission_sha256": submission.sha256,
         },
         record_kind="naturalness_ratings",
     )
@@ -1174,7 +1701,10 @@ def prompt_capability(
             / config.run_id
             / "shards"
             / ("mechanism_train" if config.profile == "confirmatory" else "pilot")
-            / f"tokenizer-pin-{template_hash[:16]}.jsonl.manifest.json"
+            / (
+                f"tokenizer-pin-{template_hash[:12]}-"
+                f"{full_hash[:12]}.jsonl.manifest.json"
+            )
         )
     shard = fa_cli._write_prompt_capability(
         store,
@@ -1210,6 +1740,21 @@ def test_fa_commands_are_registered_with_explicit_config_and_root(tmp_path):
     assert args.command == "fa-build-pilot"
     assert args.config == str(CONFIG_PATH)
     assert args.root == str(tmp_path)
+
+
+def test_tokenizer_pin_identity_binds_source_manifest(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    prepared = SimpleNamespace(
+        chat_template_bytes=CHAT_TEMPLATE_BYTES,
+        chat_template_sha256=CHAT_TEMPLATE_SHA256,
+    )
+    store = FAArtifactStore(tmp_path)
+
+    first = fa_cli._write_tokenizer_pin(store, config, prepared, "a" * 64)
+    second = fa_cli._write_tokenizer_pin(store, config, prepared, "b" * 64)
+
+    assert first.manifest_path != second.manifest_path
+    assert first.sha256 == second.sha256
 
 
 def test_screening_parser_requires_explicit_inputs_namespace_and_shard(tmp_path):
@@ -1767,6 +2312,12 @@ def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, mon
         SimpleNamespace(matches_manifest=matches),
         confirmatory=False,
     )
+    resumed = fa_cli._build_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(matches_manifest=matches),
+        confirmatory=False,
+    )
     store = FAArtifactStore(tmp_path)
     prompt = store.verify_shard(payload["manifest"])
     pin = store.verify_shard(payload["tokenizer_pin_manifest"])
@@ -1775,7 +2326,13 @@ def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, mon
         "lineage"
     ]
     pin_row = fa_cli._read_json_rows(pin.data_path)[0]
+    block_counts = Counter(
+        example["block"] for example in prompt_row["examples"]
+    )
 
+    assert resumed == payload
+    assert payload["count"] == 320
+    assert block_counts == Counter({"factorial": 288, "same_string": 32})
     assert prompt_row["tokenizer_pin_manifest"] == str(
         pin.manifest_path.relative_to(store.root)
     )
@@ -1786,11 +2343,71 @@ def test_pilot_prompt_capability_references_verified_tokenizer_pin(tmp_path, mon
     )
 
 
+def test_pilot_accepts_audited_selection_independent_of_match_row_order(
+    tmp_path, monkeypatch
+):
+    install_fake_tokenizer(monkeypatch)
+    config = FAConfig.from_json(CONFIG_PATH)
+    rows = smoke_pilot_matches()
+    matches = screened_matches_manifest(
+        tmp_path,
+        config,
+        rows,
+        audited_entity_ids=reversed(
+            [row["real_entity_id"] for row in rows]
+        ),
+    )
+
+    payload = fa_cli._build_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(matches_manifest=matches),
+        confirmatory=False,
+    )
+
+    assert payload["status"] == "built"
+
+
+def test_pilot_rejects_audited_selection_membership_mismatch(tmp_path):
+    config = FAConfig.from_json(CONFIG_PATH)
+    rows = smoke_pilot_matches()
+    audited_ids = [row["real_entity_id"] for row in rows]
+    audited_ids[-1] = "entity-not-in-match-shard"
+    matches = screened_matches_manifest(
+        tmp_path,
+        config,
+        rows,
+        audited_entity_ids=audited_ids,
+    )
+
+    with pytest.raises(ValueError, match="audited selection"):
+        fa_cli._build_manifest(
+            config,
+            tmp_path,
+            SimpleNamespace(matches_manifest=matches),
+            confirmatory=False,
+        )
+
+
 def test_pilot_construction_requires_the_registered_match_count(tmp_path):
     config = FAConfig.from_json(CONFIG_PATH)
     matches = screened_matches_manifest(tmp_path, config, [MATCH])
 
     with pytest.raises(ValueError, match="exactly 8"):
+        fa_cli._build_manifest(
+            config,
+            tmp_path,
+            SimpleNamespace(matches_manifest=matches),
+            confirmatory=False,
+        )
+
+
+def test_pilot_rejects_a_stale_matching_policy(tmp_path, monkeypatch):
+    config = FAConfig.from_json(CONFIG_PATH)
+    matches = screened_matches_manifest(tmp_path, config, smoke_pilot_matches())
+    monkeypatch.setattr(fa_cli, "_matching_policy_sha256", lambda: "0" * 64)
+
+    with pytest.raises(ValueError, match="matching policy"):
         fa_cli._build_manifest(
             config,
             tmp_path,
@@ -2365,6 +2982,7 @@ def test_run_generation_uses_fake_runner_for_generic_namespace(tmp_path, capsys,
             "0001",
             "--namespace",
             "pilot",
+            "--resume",
         ]
     )
 
@@ -2372,6 +2990,12 @@ def test_run_generation_uses_fake_runner_for_generic_namespace(tmp_path, capsys,
     assert exit_code == 0
     assert payload["status"] == "generated"
     assert Path(payload["shard_manifest"]).exists()
+    assert any(
+        shard.record_kind == "generation_checkpoint"
+        for shard in FAArtifactStore(tmp_path).resume_verified_shards(
+            config.run_id, "pilot"
+        )
+    )
 
 
 def test_behavior_scoring_rejects_mutable_raw_generation_rows(tmp_path, capsys):
@@ -2441,6 +3065,7 @@ def test_generic_generation_rejects_protected_namespaces_before_runner_construct
 @pytest.mark.parametrize(
     ("command", "required_option"),
     [
+        ("fa-analyze-pilot-activations", "--manifest"),
         ("fa-fit-probes", "--train-rows-manifest"),
         ("fa-seal-behavior-test", "--behavior-test-manifest"),
         ("fa-seal-selection", "--selection-manifest"),
@@ -2752,6 +3377,11 @@ def test_confirmatory_build_prepares_capabilities_without_sealing_endpoints(
         fa_cli,
         "_select_confirmatory_matches",
         lambda _config, selected, _audit: tuple(selected),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_screened_match_collection",
+        lambda *args, **kwargs: (EntityMatch(**MATCH),),
     )
 
     def must_not_seal(*args, **kwargs):

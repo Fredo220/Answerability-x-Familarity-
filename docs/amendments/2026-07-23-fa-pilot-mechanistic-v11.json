@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "preregistration_id": "fa-pilot-mechanistic-v11-20260723",
+  "date": "2026-07-23",
+  "scope": "exploratory Qwen activation pilot",
+  "amendment_path": "docs/amendments/2026-07-23-fa-pilot-mechanistic-v11.md",
+  "prompt_manifest_path": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/prompt-capability-30475c149ddb4403.jsonl.manifest.json",
+  "full_manifest_sha256": "caa1adcdcdbcc8a3fa95006f3beaedea4c97c458b1dbca191c9084f2b9cc972e",
+  "passed_gate_manifest": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/pilot-gate-07ad00e2a8fd60be.jsonl.manifest.json",
+  "passed_gate_data_sha256": "94db1d2d8afd1ed7f675e01855fcc701393422cf719925331ace8ea3c47793bd",
+  "passed_gate_evidence_sha256": "0816c46c632b067085557b52f7822c57d68f05dda547c87af21a34662b57f496",
+  "activation_shard_id": "pilot-activations-v11-l0-9-18-27",
+  "layer_ids": [
+    0,
+    9,
+    18,
+    27
+  ],
+  "anchors": [
+    "target_intro_end",
+    "user_prompt_end",
+    "assistant_prefix_end"
+  ],
+  "primary_familiarity_anchor": "target_intro_end",
+  "primary_answerability_anchor": "user_prompt_end",
+  "execution_backend": "mps:0",
+  "model_id": "Qwen/Qwen3-1.7B",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "fa_activations_sha256": "d53e7e4f21dc9fc16bd9fa51a7b852814cf0b9fd7108fa4ec1509d76e6b5ceae",
+  "runtime_sha256": "6cd85e1b750ea33d09f2a589dfd77b4e60fde6767f854f13829c36631c57377c",
+  "cli_sha256": "f2a2b66ce95f840f4e2535e865bfe1d2d845b1649ecf75081db02fb910564434",
+  "extraction_started": false,
+  "activation_outcomes_inspected": false,
+  "confirmatory_claims_allowed": false
+}

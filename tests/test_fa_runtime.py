@@ -91,6 +91,28 @@ def pilot_manifest(active_config: FAConfig | None = None) -> Manifest:
     )
 
 
+def multi_pilot_manifest(active_config: FAConfig | None = None) -> Manifest:
+    active_config = active_config or pinned_config()
+    examples = []
+    for index in range(3):
+        digest = hashlib.sha256(f"example-{index}".encode("utf-8")).hexdigest()
+        examples.append(
+            Example(
+                example_id=digest,
+                canonical_payload_sha256=digest,
+                user_text=f"Prompt {index}",
+                entity_unit_id=f"unit-{index}",
+            )
+        )
+    return Manifest(
+        config_hash=active_config.config_hash,
+        manifest_sha256="c" * 64,
+        examples=tuple(examples),
+        chat_template_sha256=active_config.chat_template_sha256 or None,
+        tokenizer_pin_sha256="e" * 64,
+    )
+
+
 def store(tmp_path) -> FAArtifactStore:
     return FAArtifactStore(tmp_path)
 
@@ -165,6 +187,44 @@ def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypat
     assert completions == ["completion-1", "completion-2", "completion-3"]
 
 
+def test_hf_runner_places_the_complete_model_on_mps_when_available(monkeypatch):
+    active_config = config()
+    load_kwargs = {}
+
+    class FakeTokenizer:
+        pad_token_id = 0
+
+    class FakeModel:
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_pinned_tokenizer",
+        lambda supplied: SimpleNamespace(
+            tokenizer=FakeTokenizer(),
+            chat_template_sha256="f" * 64,
+        ),
+    )
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    import transformers
+
+    def load_model(model_id, **kwargs):
+        load_kwargs.update({"model_id": model_id, **kwargs})
+        return FakeModel()
+
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        load_model,
+    )
+
+    HFModelRunner(active_config)
+
+    assert load_kwargs["device_map"] == {"": "mps"}
+    assert load_kwargs["torch_dtype"] == "auto"
+
+
 def test_qwen_smoke_rendering_disables_thinking_without_affecting_other_models():
     calls = []
 
@@ -203,6 +263,77 @@ def test_resume_skips_only_verified_completed_shards(tmp_path):
     assert first == second
     assert FakeRunner.calls == 1
     assert resume_generation(store(tmp_path), active_config.run_id, "pilot") == (first,)
+
+
+def test_checkpointed_generation_resumes_only_missing_examples_after_interrupt(
+    tmp_path,
+):
+    active_config = pinned_config()
+    manifest = multi_pilot_manifest(active_config)
+    interrupted_prompts = []
+
+    class InterruptingRunner(FakeRunner):
+        def generate(self, prompts, generation):
+            assert len(prompts) == 1
+            interrupted_prompts.extend(prompts)
+            if len(interrupted_prompts) == 2:
+                raise KeyboardInterrupt
+            return ["saved-before-interrupt"]
+
+    with pytest.raises(KeyboardInterrupt):
+        run_generation_shard(
+            InterruptingRunner(),
+            manifest,
+            store(tmp_path),
+            "checkpointed",
+            config=active_config,
+            resume_partial=True,
+        )
+
+    artifact_store = store(tmp_path)
+    checkpoints = tuple(
+        shard
+        for shard in artifact_store.resume_verified_shards(
+            active_config.run_id, "pilot"
+        )
+        if shard.record_kind == "generation_checkpoint"
+    )
+    assert len(checkpoints) == 1
+
+    resumed_prompts = []
+
+    class ResumingRunner(FakeRunner):
+        def generate(self, prompts, generation):
+            assert len(prompts) == 1
+            resumed_prompts.extend(prompts)
+            return [f"resumed-{len(resumed_prompts)}"]
+
+    completed = run_generation_shard(
+        ResumingRunner(),
+        manifest,
+        artifact_store,
+        "checkpointed",
+        config=active_config,
+        resume_partial=True,
+    )
+    rows = [
+        json.loads(line)
+        for line in completed.data_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert interrupted_prompts == ["Prompt 0", "Prompt 1"]
+    assert resumed_prompts == ["Prompt 1", "Prompt 2"]
+    assert [row["example_id"] for row in rows] == [
+        example.example_id for example in manifest.examples
+    ]
+    assert [row["raw_output"] for row in rows] == [
+        "saved-before-interrupt",
+        "resumed-1",
+        "resumed-2",
+    ]
+    assert resume_generation(
+        artifact_store, active_config.run_id, "pilot"
+    ) == (completed,)
 
 
 def test_generation_records_bind_exact_provenance_and_infrastructure_failures_are_retryable(tmp_path):

@@ -72,12 +72,15 @@ class HFModelRunner:
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.chat_template_sha256 = prepared.chat_template_sha256
+        device_map: str | dict[str, str] = "auto"
+        if torch.backends.mps.is_available():
+            device_map = {"": "mps"}
         self.model = AutoModelForCausalLM.from_pretrained(
             config.model_id,
             revision=config.model_revision,
             low_cpu_mem_usage=True,
             torch_dtype="auto",
-            device_map="auto",
+            device_map=device_map,
         )
         self.model.eval()
 
@@ -144,6 +147,7 @@ def run_generation_shard(
     *,
     config: FAConfig | None = None,
     namespace: str | None = None,
+    resume_partial: bool = False,
 ) -> SealedShard:
     """Generate one immutable shard, resuming only a verified completed sidecar.
 
@@ -190,6 +194,20 @@ def run_generation_shard(
     )
     if resumed is not None:
         return resumed
+    if resume_partial:
+        return _run_checkpointed_generation(
+            runner,
+            examples,
+            prompts,
+            store,
+            shard_id,
+            run_id=run_id,
+            namespace=inferred_namespace,
+            lineage=lineage,
+            config_hash=config_hash,
+            tokenizer_pin_sha256=tokenizer_pin_sha256,
+            generation=generation,
+        )
     destination_id = _retry_shard_id(store, run_id, inferred_namespace, shard_id)
     started = time.perf_counter()
     try:
@@ -228,6 +246,188 @@ def run_generation_shard(
         lineage,
         record_kind="generation",
     )
+
+
+def _run_checkpointed_generation(
+    runner: ModelRunner,
+    examples: Sequence[Any],
+    prompts: Sequence[str],
+    store: FAArtifactStore,
+    shard_id: str,
+    *,
+    run_id: str,
+    namespace: str,
+    lineage: Mapping[str, Any],
+    config_hash: str,
+    tokenizer_pin_sha256: str,
+    generation: Mapping[str, Any],
+) -> SealedShard:
+    """Persist one immutable microbatch per prompt before aggregating the shard."""
+    checkpoints = _latest_exact_generation_checkpoints(
+        store,
+        run_id,
+        namespace,
+        shard_id,
+        lineage,
+        examples,
+        prompts,
+        generation,
+    )
+    rows_by_id = dict(checkpoints)
+    abort_exception: str | None = None
+
+    for index, (example, prompt) in enumerate(
+        zip(examples, prompts, strict=True)
+    ):
+        example_id = str(getattr(example, "example_id"))
+        if example_id in rows_by_id:
+            continue
+        checkpoint_id = f"{shard_id}.checkpoint-{index:06d}"
+        destination_id = _retry_shard_id(
+            store, run_id, namespace, checkpoint_id
+        )
+        started = time.perf_counter()
+        try:
+            completions = tuple(runner.generate((prompt,), generation))
+            if (
+                len(completions) != 1
+                or not isinstance(completions[0], str)
+            ):
+                raise RuntimeError(
+                    "model runner returned an invalid microbatch completion"
+                )
+            completion = completions[0]
+            exception_class = None
+            status = "completed"
+        except Exception as error:
+            completion = None
+            exception_class = type(error).__name__
+            status = "infrastructure_failure"
+            abort_exception = exception_class
+        row = _generation_record(
+            example,
+            prompt,
+            completion,
+            runner=runner,
+            config_hash=config_hash,
+            tokenizer_pin_sha256=tokenizer_pin_sha256,
+            generation=generation,
+            status=status,
+            exception_class=exception_class,
+            wall_time_seconds=time.perf_counter() - started,
+            peak_memory_bytes=_peak_memory_bytes(),
+        )
+        row["kind"] = "generation_checkpoint"
+        store.write_completed_shard(
+            run_id,
+            namespace,
+            destination_id,
+            [row],
+            lineage,
+            record_kind="generation_checkpoint",
+        )
+        if status == "completed":
+            rows_by_id[example_id] = row
+        else:
+            break
+
+    aggregate_rows = []
+    for example, prompt in zip(examples, prompts, strict=True):
+        example_id = str(getattr(example, "example_id"))
+        checkpoint = rows_by_id.get(example_id)
+        if checkpoint is not None:
+            row = dict(checkpoint)
+            row["kind"] = "generation"
+        else:
+            row = _generation_record(
+                example,
+                prompt,
+                None,
+                runner=runner,
+                config_hash=config_hash,
+                tokenizer_pin_sha256=tokenizer_pin_sha256,
+                generation=generation,
+                status="infrastructure_failure",
+                exception_class=(
+                    abort_exception or "IncompleteCheckpointSet"
+                ),
+                wall_time_seconds=0.0,
+                peak_memory_bytes=_peak_memory_bytes(),
+            )
+        aggregate_rows.append(row)
+
+    destination_id = _retry_shard_id(
+        store, run_id, namespace, shard_id
+    )
+    return store.write_completed_shard(
+        run_id,
+        namespace,
+        destination_id,
+        aggregate_rows,
+        lineage,
+        record_kind="generation",
+    )
+
+
+def _latest_exact_generation_checkpoints(
+    store: FAArtifactStore,
+    run_id: str,
+    namespace: str,
+    shard_id: str,
+    lineage: Mapping[str, Any],
+    examples: Sequence[Any],
+    prompts: Sequence[str],
+    generation: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    expected = {
+        str(getattr(example, "example_id")): _expected_completed_record(
+            example,
+            prompt,
+            lineage=lineage,
+            generation=generation,
+        )
+        for example, prompt in zip(examples, prompts, strict=True)
+    }
+    if len(expected) != len(examples):
+        raise ValueError("generation request contains duplicate example IDs")
+
+    latest: dict[str, tuple[int, dict[str, Any]]] = {}
+    for shard in store.resume_verified_shards(run_id, namespace):
+        if shard.record_kind != "generation_checkpoint":
+            continue
+        sidecar = json.loads(shard.manifest_path.read_text(encoding="utf-8"))
+        if sidecar.get("lineage") != dict(lineage):
+            continue
+        rows = _read_jsonl(shard.data_path)
+        if len(rows) != 1:
+            continue
+        checkpoint = rows[0]
+        example_id = str(checkpoint.get("example_id"))
+        try:
+            index = next(
+                index
+                for index, example in enumerate(examples)
+                if str(getattr(example, "example_id")) == example_id
+            )
+        except StopIteration:
+            continue
+        retry_index = _retry_index(
+            shard.shard_id,
+            f"{shard_id}.checkpoint-{index:06d}",
+        )
+        if retry_index is None:
+            continue
+        candidate = dict(checkpoint)
+        candidate["kind"] = "generation"
+        if not _completed_record_matches_request(candidate, expected):
+            continue
+        current = latest.get(example_id)
+        if current is None or retry_index > current[0]:
+            latest[example_id] = (retry_index, checkpoint)
+    return {
+        example_id: row
+        for example_id, (_, row) in latest.items()
+    }
 
 
 def _generation_identity(manifest: Any, config: FAConfig | None) -> tuple[str, str, dict[str, Any]]:

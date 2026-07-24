@@ -42,6 +42,152 @@ Do not use Python 3.13 for this worktree. Run the smoke profile before opening
 any confirmatory endpoint. Entity screening and the human audit of naturalness
 are required inputs; the human audit is not replaced by an automatic score.
 
+## Confirmatory Corpus And Human Gate
+
+Run these steps before any confirmatory task prompt is materialized. The source
+pool contains 384 real entities: twice the final registered count in every
+split and domain. Gemma screening reduces this to a 244-pair human-audit pool
+with pre-registered reserves. The human audit then deterministically selects
+the final 192 pairs.
+
+Build and cache the source pool:
+
+```bash
+PYTHONPATH=src ../../.venv/bin/python tools/build_fa_confirmatory_source.py \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --output-dir data/fa/confirmatory_source_v4 \
+  --split-seed 20260722 \
+  --retrieval-date <actual-UTC-retrieval-date> \
+  --exclude-candidates data/fa/pilot_inputs/candidates_v4.json
+```
+
+The fixed-rank QLever responses and every 50-entity Wikidata label/alias batch
+are cached under `data/fa/confirmatory_source_v4/source_cache/`. An interrupted fetch may rerun the
+same command without changing the registered selection.
+Existing source and synthetic snapshots are no-clobber: an identical rerun
+resumes, while any changed payload fails and requires a newly versioned output
+directory plus an explicit pre-outcome amendment.
+
+The source command requires accepted Gemma model terms and a valid `HF_TOKEN`.
+It applies tokenizer matchability before split assignment, then generates
+exactly three final pseudonym reserves per selected source. The synthetic
+snapshot and every split file are hashed into `source_integrity_v1.json` before
+screening can run. The following command is only an idempotence audit; it must
+produce files identical to those already sealed by the source build:
+
+```bash
+PYTHONPATH=src ../../.venv/bin/python tools/build_fa_confirmatory_synthetics.py \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_mechanism_train_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_locked_validation_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_behavior_test_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_probe_test_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_intervention_test_v1.json \
+  --output-dir data/fa/confirmatory_source_v4
+```
+
+For each split, run `fa-run-screening`, then `fa-screen-entities`, using the
+split-specific candidate, question, and synthetic manifests. Screening uses
+only the three registered factual questions per source entity. It is source
+qualification, not a hypothesis endpoint; no F1/F2A prompt exists yet.
+
+```bash
+feature-dynamics fa-run-screening \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --namespace <split> \
+  --candidates-manifest <candidate-manifest> \
+  --questions-manifest <question-manifest> \
+  --source-integrity-manifest data/fa/confirmatory_source_v4/source_integrity_v1.json \
+  --shard-id confirmatory-<split>-screening-v1
+
+feature-dynamics fa-screen-entities \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --candidates-manifest <candidate-manifest> \
+  --questions-manifest <question-manifest> \
+  --screening-manifest <screening-completion.manifest.json> \
+  --synthetic-manifest <synthetic-manifest> \
+  --source-integrity-manifest data/fa/confirmatory_source_v4/source_integrity_v1.json
+```
+
+Combine exactly one verified screened-match shard from each registered split.
+The assembler fails unless the collection contains the frozen 244-pair balance:
+
+```bash
+feature-dynamics fa-assemble-screened-matches \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --screened-matches-manifest <mechanism-train-screened.manifest.json> \
+  --screened-matches-manifest <locked-validation-screened.manifest.json> \
+  --screened-matches-manifest <behavior-test-screened.manifest.json> \
+  --screened-matches-manifest <probe-test-screened.manifest.json> \
+  --screened-matches-manifest <intervention-test-screened.manifest.json> \
+  --shard-id confirmatory-screened-collection-v1
+```
+
+Issue blinded packets to two distinct real human raters. Raters must follow
+`docs/fa_naturalness_rating_protocol.md`; a language model, the researcher, or
+duplicated rater identities cannot substitute for this evidence.
+
+```bash
+feature-dynamics fa-prepare-naturalness-ratings \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --screened-matches-manifest <screened-match-collection.manifest.json> \
+  --output-dir human_ratings/confirmatory_v1 \
+  --rater-id <opaque-rater-a-id> \
+  --rater-id <opaque-rater-b-id> \
+  --shard-id confirmatory-naturalness-issuance-v1
+```
+
+Compile both returned CSV files. Provide a third, distinct human adjudicator at
+compile time. The command uses that person only if the first two verdicts
+disagree:
+
+```bash
+feature-dynamics fa-compile-naturalness-ratings \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --screened-matches-manifest <screened-match-collection.manifest.json> \
+  --issuance-manifest <packet-issuance.manifest.json> \
+  --response <rater-a-response.csv> \
+  --response <rater-b-response.csv> \
+  --shard-id confirmatory-naturalness-initial-v1 \
+  --adjudicator-id <opaque-rater-c-id> \
+  --adjudication-output-dir human_ratings/confirmatory_v1/adjudication
+```
+
+If the status is `needs_adjudication`, send only the newly issued public packet
+to rater C and finalize:
+
+```bash
+feature-dynamics fa-finalize-naturalness-adjudication \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --screened-matches-manifest <screened-match-collection.manifest.json> \
+  --initial-submission-manifest <initial-submission.manifest.json> \
+  --adjudication-issuance-manifest <adjudication-issuance.manifest.json> \
+  --adjudication-response <rater-c-response.csv> \
+  --shard-id confirmatory-naturalness-final-v1
+```
+
+Build the final task capabilities only after the human ratings artifact exists:
+
+```bash
+feature-dynamics fa-build-confirmatory \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --root . \
+  --matches-manifest <screened-match-collection.manifest.json> \
+  --pilot-gate-manifest <passed-pilot-gate.manifest.json> \
+  --naturalness-ratings-manifest <naturalness-ratings.manifest.json> \
+  --run-registered-power-audit
+```
+
+This build is fail-closed if accepted reserves cannot supply every registered
+split-domain quota. It creates sealed capabilities; it does not evaluate a
+protected endpoint.
+
 ## Colab Execution
 
 Open `notebooks/06_familiarity_answerability_colab.ipynb`, set `HF_TOKEN`, mount

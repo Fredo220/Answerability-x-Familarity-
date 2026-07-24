@@ -1,0 +1,74 @@
+{
+  "analysis_id": "fa-pilot-analysis-v13",
+  "analysis_seed": 20260723,
+  "anchors": {
+    "answerability": "user_prompt_end",
+    "familiarity": "target_intro_end",
+    "output_proximal_control": "assistant_prefix_end"
+  },
+  "claim_scope": "development_only_model_specific_decodability",
+  "cross_validation": {
+    "folds": 8,
+    "group": "entity_unit_id",
+    "method": "leave_one_group_out"
+  },
+  "factorial_row_count": 288,
+  "layers": [
+    0,
+    9,
+    18,
+    27
+  ],
+  "logistic_regression": {
+    "C": 1.0,
+    "class_weight": null,
+    "max_iter": 2000,
+    "random_state": 20260723,
+    "solver": "lbfgs"
+  },
+  "models": [
+    "majority",
+    "surface_morphology",
+    "surface_design_oracle",
+    "residual_static",
+    "morphology_plus_residual"
+  ],
+  "pca": {
+    "n_components": 16,
+    "random_state": 20260723,
+    "svd_solver": "randomized",
+    "whiten": true
+  },
+  "permutation_null": {
+    "count": 100,
+    "max_layer_adjustment": true,
+    "mean_layer_omnibus": true,
+    "seed_end": 2026072399,
+    "seed_start": 2026072300,
+    "strata": {
+      "answerability": [
+        "entity_unit_id",
+        "target_familiarity"
+      ],
+      "familiarity": [
+        "entity_unit_id",
+        "answerability"
+      ]
+    }
+  },
+  "prompt_subset_sha256": "30475c149ddb440310554164c5a361d4e8de0eca971eec80a54d7e0ce46db646",
+  "same_string_included": false,
+  "schema_version": 1,
+  "targets": {
+    "answerability": [
+      "target_bound",
+      "distractor_bound",
+      "code_absent"
+    ],
+    "familiarity": [
+      "matched_synthetic",
+      "screened_real"
+    ]
+  },
+  "timing": "frozen_before_v12_activation_completion"
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "preregistration_id": "fa-pilot-generation-resume-v8-20260723",
+  "date": "2026-07-23",
+  "scope": "development-only behavioral pilot generation",
+  "amendment_path": "docs/amendments/2026-07-23-fa-pilot-generation-resume-v8.md",
+  "config_path": "configs/familiarity_answerability_qwen17b_smoke.json",
+  "config_sha256": "c8df1f013c2cc7281c6d29584e6f1bbcaabc5798d6ed88b6fe1007dbd4c2ce3c",
+  "prompt_manifest_path": "runs/familiarity_answerability/smoke-qwen17b-v1/shards/pilot/prompt-capability-a9466bce5b3ef466.jsonl.manifest.json",
+  "prompt_manifest_data_sha256": "0d0abc5da450f5ed4843c53d56ff8a76c54028a68856199410e76781e4569b3f",
+  "full_manifest_sha256": "4c044139b5ce661f0e95b3215cf21560c8bee7ab60fcdf90e0daf7ccd4fd5430",
+  "subset_manifest_sha256": "a9466bce5b3ef466d2a128d01378f1e85b5b67d36cb2b43a74d18266e584d2ed",
+  "prompt_count": 320,
+  "generation_shard_id": "pilot-generation-20260723-v8-0001",
+  "model_id": "Qwen/Qwen3-1.7B",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+  "tokenizer_pin_sha256": "06f0c2bc68fd95467ddf94625ae4be420eca391e74c80640c0285b4556738457",
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 16,
+    "temperature": 0.0
+  },
+  "resume_partial": true,
+  "runtime_sha256": "77f5414bcd5596ab3949d98fac91301dea9a195ecdab7a5a984fb4622d839e21",
+  "cli_sha256": "f2a2b66ce95f840f4e2535e865bfe1d2d845b1649ecf75081db02fb910564434",
+  "generation_started": false,
+  "outcomes_inspected": false
+}

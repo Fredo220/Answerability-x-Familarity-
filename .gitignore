@@ -22,3 +22,13 @@ graphify-out/cache/
 graphify-out/cost.json
 graphify-out/20*/
 .playwright-cli/
+
+# Human naturalness ratings remain blinded until the registered audit is complete.
+human_ratings/**/private/
+human_ratings/**/*-response.csv
+
+# Superseded pre-screening v1 snapshot; v2 is the frozen confirmatory source.
+data/fa/confirmatory_source/
+
+# Raw Wikidata/QLever responses are locally hash-sealed but too large for Git.
+data/fa/confirmatory_source_v*/source_cache/

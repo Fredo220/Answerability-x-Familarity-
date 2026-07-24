@@ -263,6 +263,34 @@ def test_v4_pilot_pool_is_append_only_and_alias_consistent():
     }
 
 
+def test_v5_synthetic_pool_is_append_only_and_well_formed():
+    input_dir = REPO_ROOT / "data" / "fa" / "pilot_inputs"
+    synthetic_v4 = json.loads(
+        (input_dir / "synthetic_candidates_v4.json").read_text(encoding="utf-8")
+    )
+    synthetic_v5 = json.loads(
+        (input_dir / "synthetic_candidates_v5.json").read_text(encoding="utf-8")
+    )
+    added = synthetic_v5[len(synthetic_v4) :]
+
+    assert synthetic_v5[: len(synthetic_v4)] == synthetic_v4
+    assert [row["candidate_id"] for row in added] == [
+        "pilot-synthetic-mer",
+        "pilot-synthetic-sen",
+        "pilot-synthetic-ter",
+        "pilot-synthetic-selora",
+        "pilot-synthetic-thalen",
+        "pilot-synthetic-eloria",
+    ]
+    assert len(synthetic_v5) == 27
+    assert all(
+        SyntheticCandidate(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
+        for row in synthetic_v5
+    )
+
+
 def test_matching_enforces_token_and_surface_constraints(fake_tokenizer):
     match = match_synthetic_entities([candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer)[0]
     assert match.real_token_count == match.synthetic_token_count
@@ -270,6 +298,22 @@ def test_matching_enforces_token_and_surface_constraints(fake_tokenizer):
     assert match.capitalization_pattern_equal
     assert match.character_length_delta == 0
     assert match.synthetic_name == "New Vale"
+
+
+def test_matching_rejects_same_string_exposure_token_mismatch():
+    class SameStringSensitiveTokenizer:
+        def encode(self, text, add_special_tokens=False):
+            tokens = text.replace(" ", "|").split("|")
+            if text.startswith("Old Vale visits"):
+                tokens.append("context-only-split")
+            return tokens
+
+    with pytest.raises(ValueError, match="no eligible"):
+        match_synthetic_entities(
+            [candidate(name="Old Vale")],
+            synthetic_pool(),
+            SameStringSensitiveTokenizer(),
+        )
 
 
 @pytest.mark.parametrize(
