@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import os
 import platform
+import shutil
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -68,6 +70,10 @@ def run_colab_preflight(
         raise ValueError("lock path must resolve inside the repository")
     if sys.prefix == sys.base_prefix:
         raise RuntimeError("fa-colab-preflight must run inside an isolated venv")
+    if tuple(sys.version_info[:2]) != (3, 12):
+        raise RuntimeError(
+            f"fa-core.lock requires Python 3.12, observed {platform.python_version()}"
+        )
 
     pins = read_exact_lock_pins(lock)
     for package, required in REQUIRED_RUNTIME_PINS.items():
@@ -127,6 +133,10 @@ def run_colab_preflight(
         raise RuntimeError("CUDA device reports non-positive total memory")
 
     lock_sha256 = hashlib.sha256(lock.read_bytes()).hexdigest()
+    disk = shutil.disk_usage(repo_root)
+    ram_total_bytes = int(
+        os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    )
     return {
         "status": "ready",
         "lock_path": str(lock),
@@ -138,6 +148,10 @@ def run_colab_preflight(
         "python_executable": str(Path(sys.executable).resolve()),
         "python_prefix": str(Path(sys.prefix).resolve()),
         "python_version": platform.python_version(),
+        "ram_total_bytes": ram_total_bytes,
+        "ram_total_gib": round(ram_total_bytes / 1024**3, 3),
+        "disk_free_bytes": int(disk.free),
+        "disk_free_gib": round(disk.free / 1024**3, 3),
         "torch_version": installed["torch"],
         "torch_runtime_version": str(torch.__version__),
         "transformers_version": installed["transformers"],

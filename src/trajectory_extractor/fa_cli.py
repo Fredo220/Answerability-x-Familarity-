@@ -108,7 +108,7 @@ from trajectory_extractor.fa_naturalness import (
 
 
 FA_COMMANDS = (
-    "fa-colab-preflight", "fa-run-colab-screening", "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
@@ -116,8 +116,6 @@ FA_COMMANDS = (
 )
 _IMPLEMENTED = frozenset(
     (
-        "fa-colab-preflight",
-        "fa-run-colab-screening",
         "fa-run-screening",
         "fa-screen-entities",
         "fa-assemble-screened-matches",
@@ -247,18 +245,9 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     for command in FA_COMMANDS:
         parser = subparsers.add_parser(command)
         parser.error = lambda message, command=command: _argument_error(command, message)
+        parser.add_argument("--config", required=True)
         parser.add_argument("--root", default=".")
-        if command != "fa-colab-preflight":
-            parser.add_argument("--config", required=True)
         parsers[command] = parser
-    parsers["fa-colab-preflight"].add_argument("--lock", required=True)
-    colab_screening = parsers["fa-run-colab-screening"]
-    colab_screening.add_argument("--checkpoint-root", required=True)
-    colab_screening.add_argument("--scratch-root", required=True)
-    colab_screening.add_argument("--git-commit", required=True)
-    colab_screening.add_argument("--bundle-path", required=True)
-    colab_screening.add_argument("--bundle-sha256", required=True)
-    colab_screening.add_argument("--launch-manifest")
     screening = parsers["fa-run-screening"]
     screening.add_argument("--candidates-manifest", required=True)
     screening.add_argument("--questions-manifest", required=True)
@@ -385,16 +374,9 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
         )
         return 2
     try:
+        config = FAConfig.from_json(args.config)
         root = Path(args.root)
-        if command == "fa-colab-preflight":
-            payload = _run_colab_preflight(root, Path(args.lock))
-        else:
-            config = FAConfig.from_json(args.config)
-        if command == "fa-colab-preflight":
-            pass
-        elif command == "fa-run-colab-screening":
-            payload = _run_colab_screening(config, root, args)
-        elif command == "fa-run-screening":
+        if command == "fa-run-screening":
             payload = _run_screening(config, root, args)
         elif command == "fa-screen-entities":
             payload = _screen_entities(config, root, args)
@@ -448,27 +430,6 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
         return 3 if isinstance(error, (ImportError, OSError, RuntimeError)) else 2
     print(json.dumps(_json_safe({"command": command, **payload}), sort_keys=True, allow_nan=False))
     return 3 if payload.get("status") == "infrastructure_failure" else 0
-
-
-def _run_colab_preflight(root: Path, lock: Path) -> dict[str, Any]:
-    from trajectory_extractor.fa_colab_preflight import run_colab_preflight
-
-    return run_colab_preflight(root, lock)
-
-
-def _run_colab_screening(
-    config: FAConfig, root: Path, args: argparse.Namespace
-) -> dict[str, Any]:
-    from trajectory_extractor.fa_colab_screening import run_colab_screening
-
-    return run_colab_screening(
-        config,
-        root,
-        args,
-        run_screening=_run_screening,
-        screen_entities=_screen_entities,
-        assemble_screened_matches=_assemble_screened_matches,
-    )
 
 
 def _reject_standalone_unlock() -> dict[str, Any]:

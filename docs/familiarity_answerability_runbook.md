@@ -201,16 +201,20 @@ The notebook therefore verifies the bundle SHA-256, clones the bundle, checks
 out the exact detached commit, and records the bundle, commit, lock, config,
 source-integrity, model, tokenizer, template, and GPU identity before model
 execution.
-The notebook creates `/content/fa-venv` and installs the exact `fa-core.lock`
-there. The mutable Colab host kernel imports no project, NumPy, Pandas,
+The notebook removes and recreates `/content/fa-venv` for each launch, then
+installs the exact Python-3.12 `fa-core.lock` there. The mutable Colab host
+kernel imports no project, NumPy, Pandas,
 scikit-learn, PyTorch, Transformers, or Accelerate modules. A dedicated
 `fa-colab-preflight` transaction verifies every exact lock pin, the project
 import, the registered Torch, Transformers, and Accelerate versions, and CUDA
 availability inside the virtual environment. `pip check` must report no broken
-requirements in that environment. This separation prevents a package downgrade
-from leaving already imported binary extensions in an ABI-incompatible state.
-All model and artifact work then runs as CLI subprocesses under the same virtual
-environment interpreter.
+requirements in that environment. A minimal
+`trajectory_extractor.fa_colab_entrypoint` avoids importing unrelated RLMF study
+dependencies. This separation prevents a package downgrade from leaving already
+imported binary extensions in an ABI-incompatible state. All model and artifact
+work then runs as CLI subprocesses under the same virtual-environment
+interpreter. The persisted runtime observation includes Python and package
+versions, GPU identity, total RAM, and free disk.
 Tracked changes and unexpected untracked files fail closed. Existing
 `runs/familiarity_answerability/` artifacts are the sole untracked exception
 so an interrupted transaction can resume on the same Colab VM.

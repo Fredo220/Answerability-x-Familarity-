@@ -48,12 +48,17 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert 'userdata.get("HF_TOKEN")' in source
     assert 'VENV = Path("/content/fa-venv")' in source
     assert 'VENV_PYTHON = VENV / "bin/python"' in source
+    assert "shutil.rmtree(VENV)" in source
     assert '[sys.executable, "-m", "venv", str(VENV)]' in source
     assert '[str(VENV_PYTHON), "-m", "pip", "install"' in source
     assert '[str(VENV_PYTHON), "-m", "pip", "check"]' in source
     assert "No broken requirements found." in source
     assert "fa-colab-preflight" in source
-    assert 'command = [str(VENV_PYTHON), "-m", "trajectory_extractor.cli"' in source
+    assert (
+        'command = [str(VENV_PYTHON), "-m", '
+        '"trajectory_extractor.fa_colab_entrypoint"'
+    ) in source
+    assert '"trajectory_extractor.cli"' not in source
     assert "import torch" not in source
     assert "import transformers" not in source
     assert "import accelerate" not in source

@@ -94,6 +94,20 @@ def test_preflight_verifies_all_pins_project_import_and_cuda(
     assert payload["cuda_version"] == "12.6"
     assert payload["gpu_name"] == "NVIDIA Test GPU"
     assert payload["gpu_total_memory_gib"] == 24.0
+    assert payload["ram_total_bytes"] > 0
+    assert payload["disk_free_bytes"] > 0
+
+
+def test_preflight_rejects_python_other_than_lock_target(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    lock = root / "requirements/fa-core.lock"
+    _write_lock(lock)
+    monkeypatch.setattr(preflight.sys, "prefix", "/content/fa-venv")
+    monkeypatch.setattr(preflight.sys, "base_prefix", "/usr")
+    monkeypatch.setattr(preflight.sys, "version_info", (3, 11, 9))
+
+    with pytest.raises(RuntimeError, match="requires Python 3.12"):
+        preflight.run_colab_preflight(root, lock)
 
 
 def test_preflight_fails_closed_on_pin_mismatch(tmp_path, monkeypatch):

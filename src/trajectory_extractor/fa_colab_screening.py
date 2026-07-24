@@ -397,6 +397,16 @@ def _verify_frozen_checkout(
     if unexpected:
         raise RuntimeError(f"unexpected untracked checkout files: {unexpected}")
     _git_check(repo_root, "bundle", "verify", str(bundle_path))
+    bundle_heads = _git_output(
+        repo_root, "bundle", "list-heads", str(bundle_path)
+    ).splitlines()
+    head_commits = {
+        line.split(maxsplit=1)[0]
+        for line in bundle_heads
+        if line.strip()
+    }
+    if git_commit not in head_commits:
+        raise RuntimeError("frozen commit is not advertised by the Git bundle")
 
 
 def _verify_source_v5(repo_root: Path, config: FAConfig) -> str:

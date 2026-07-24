@@ -357,3 +357,27 @@ def test_colab_screening_rejects_source_count_drift_before_generation(
                 "assembly accessed after source drift"
             ),
         )
+
+
+def test_frozen_checkout_requires_declared_commit_in_bundle_heads(
+    tmp_path, monkeypatch
+):
+    requested_commit = "a" * 40
+
+    def fake_git_output(repo_root, *arguments):
+        if arguments == ("rev-parse", "HEAD"):
+            return requested_commit
+        if arguments == ("ls-files", "--others", "--exclude-standard"):
+            return ""
+        if arguments[:2] == ("bundle", "list-heads"):
+            return f"{'b' * 40} refs/heads/other"
+        return ""
+
+    monkeypatch.setattr(colab_screening, "_git_output", fake_git_output)
+
+    with pytest.raises(RuntimeError, match="not advertised by the Git bundle"):
+        colab_screening._verify_frozen_checkout(
+            tmp_path,
+            requested_commit,
+            tmp_path / "fa-study.bundle",
+        )
