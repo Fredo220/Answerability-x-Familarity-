@@ -202,8 +202,12 @@ out the exact detached commit, and records the bundle, commit, lock, config,
 source-integrity, model, tokenizer, template, and GPU identity before model
 execution.
 Start from a fresh Colab runtime: the notebook refuses to install the lock if
-PyTorch is already imported, then verifies the pinned Torch, Transformers, and
-Accelerate versions plus `pip check`.
+PyTorch is already imported, verifies every installed distribution against its
+exact `fa-core.lock` pin, then verifies the pinned Torch, Transformers, and
+Accelerate versions. `pip check` conflicts fail closed when the requiring
+distribution belongs to `fa-core.lock`; conflicts caused only by unrelated
+packages in Colab's mutable base image are logged but do not invalidate the
+isolated research dependency closure.
 Tracked changes and unexpected untracked files fail closed. Existing
 `runs/familiarity_answerability/` artifacts are the sole untracked exception
 so an interrupted transaction can resume on the same Colab VM.

@@ -46,6 +46,11 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert 'userdata.get("HF_TOKEN")' in source
     assert source.index('"pip", "install"') < source.index("import torch")
     assert '"torch" not in sys.modules' in source
+    assert "lock_requirements" in source
+    assert "metadata.version(requirement.name)" in source
+    assert "lock_mismatches" in source
+    assert "locked_conflicts" in source
+    assert "Colab-preinstalled packages outside fa-core.lock" in source
     assert 'torch.__version__.split("+")[0] == "2.7.1"' in source
     assert 'transformers.__version__ == "4.57.1"' in source
     assert 'accelerate.__version__ == "1.12.0"' in source
