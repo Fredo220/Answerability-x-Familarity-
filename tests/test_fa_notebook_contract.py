@@ -10,6 +10,7 @@ COLAB = ROOT / "notebooks" / "06_familiarity_answerability_colab.ipynb"
 ANALYSIS = ROOT / "notebooks" / "07_familiarity_answerability_analysis.ipynb"
 CIRCUITS = ROOT / "notebooks" / "08_familiarity_answerability_circuits.ipynb"
 CORE_LOCK = ROOT / "requirements" / "fa-core.lock"
+BOOTSTRAP_LOCK = ROOT / "requirements" / "fa-bootstrap.lock"
 CIRCUIT_LOCK = ROOT / "requirements" / "fa-circuits.lock"
 RUNBOOK = ROOT / "docs" / "familiarity_answerability_runbook.md"
 CLAIMS = ROOT / "docs" / "familiarity_answerability_claims.md"
@@ -48,8 +49,24 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert 'userdata.get("HF_TOKEN")' in source
     assert 'VENV = Path("/content/fa-venv")' in source
     assert 'VENV_PYTHON = VENV / "bin/python"' in source
-    assert "shutil.rmtree(VENV)" in source
-    assert '[sys.executable, "-m", "venv", str(VENV)]' in source
+    assert 'BOOTSTRAP = Path("/content/fa-bootstrap")' in source
+    assert 'BOOTSTRAP_LOCK = Path("requirements/fa-bootstrap.lock")' in source
+    assert 'VIRTUALENV_APP_DATA = Path("/content/fa-virtualenv-app-data")' in source
+    assert "for disposable in (VENV, BOOTSTRAP, VIRTUALENV_APP_DATA)" in source
+    assert (
+        '"--require-hashes", "--no-deps", "--target", str(BOOTSTRAP), '
+        '"-r", str(BOOTSTRAP_LOCK)'
+    ) in source
+    assert (
+        '[sys.executable, "-m", "virtualenv", "--no-download", '
+        '"--no-periodic-update", str(VENV)]'
+    ) in source
+    assert 'bootstrap_env["PYTHONPATH"] = str(BOOTSTRAP)' in source
+    assert (
+        'bootstrap_env["VIRTUALENV_OVERRIDE_APP_DATA"] = '
+        'str(VIRTUALENV_APP_DATA)'
+    ) in source
+    assert '[sys.executable, "-m", "venv", str(VENV)]' not in source
     assert '[str(VENV_PYTHON), "-m", "pip", "install"' in source
     assert '[str(VENV_PYTHON), "-m", "pip", "check"]' in source
     assert "No broken requirements found." in source
@@ -66,6 +83,16 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert "LogisticRegression(" not in source
     assert "np.linalg" not in source
     assert "output_hidden_states=True" not in source
+
+
+def test_colab_bootstrap_lock_is_complete_hash_pinned_and_non_vulnerable():
+    lock = BOOTSTRAP_LOCK.read_text(encoding="utf-8")
+    assert lock.count("--hash=sha256:") == 4
+    assert "distlib==0.4.0" in lock
+    assert "filelock==3.24.2" in lock
+    assert "platformdirs==4.5.0" in lock
+    assert "virtualenv==20.39.1" in lock
+    assert "virtualenv==20.35.4" not in lock
 
 
 def test_colab_notebook_runs_the_frozen_source_v5_screening_before_protected_studies():

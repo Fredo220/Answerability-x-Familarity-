@@ -201,9 +201,13 @@ The notebook therefore verifies the bundle SHA-256, clones the bundle, checks
 out the exact detached commit, and records the bundle, commit, lock, config,
 source-integrity, model, tokenizer, template, and GPU identity before model
 execution.
-The notebook removes and recreates `/content/fa-venv` for each launch, then
-installs the exact Python-3.12 `fa-core.lock` there. The mutable Colab host
-kernel imports no project, NumPy, Pandas,
+The notebook installs the complete hash-pinned `fa-bootstrap.lock` into a
+disposable `/content/fa-bootstrap` target, then removes and recreates
+`/content/fa-venv` with a fresh private virtualenv app-data directory,
+`--no-download`, and `--no-periodic-update` for each launch. It then installs
+the exact Python-3.12 `fa-core.lock` there. This avoids relying on Colab's
+optional `ensurepip` component or a mutable virtualenv seed cache. The mutable
+Colab host kernel imports no project, NumPy, Pandas,
 scikit-learn, PyTorch, Transformers, or Accelerate modules. A dedicated
 `fa-colab-preflight` transaction verifies every exact lock pin, the project
 import, the registered Torch, Transformers, and Accelerate versions, and CUDA
