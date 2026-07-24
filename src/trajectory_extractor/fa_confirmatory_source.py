@@ -40,7 +40,7 @@ REGISTERED_SPLIT_COUNTS = {
 }
 SCREENING_POOL_MULTIPLIER = 2
 SOURCE_QUERY_LIMIT = 1200
-SOURCE_REVISION = "fa-confirmatory-wikidata-v4"
+SOURCE_REVISION = "fa-confirmatory-wikidata-v5"
 ENTITY_FETCH_REVISION = "fa-wikidata-entity-fetch-v3-labels-aliases"
 QLEVER_ENDPOINT = "https://qlever.dev/api/wikidata"
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"

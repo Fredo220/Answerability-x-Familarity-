@@ -864,7 +864,7 @@ def test_screening_excludes_candidates_without_complete_surface_match():
             name=name,
             coarse_type="place",
             split="mechanism_train",
-            generator_revision="fa-confirmatory-pseudonyms-v2",
+            generator_revision="fa-confirmatory-pseudonyms-v3",
         )
         for index, name in enumerate(
             ("New Vale", "Red Vale", "Sun Vale"),
@@ -877,14 +877,14 @@ def test_screening_excludes_candidates_without_complete_surface_match():
         synthetic,
         FakeTokenizer(),
         required_variants=3,
-        generator_revision="fa-confirmatory-pseudonyms-v2",
+        generator_revision="fa-confirmatory-pseudonyms-v3",
     ) == (candidates[0],)
     assert fa_cli._matchable_screening_candidates(
         candidates,
         synthetic[:1],
         FakeTokenizer(),
         required_variants=3,
-        generator_revision="fa-confirmatory-pseudonyms-v2",
+        generator_revision="fa-confirmatory-pseudonyms-v3",
     ) == ()
 
 
@@ -893,7 +893,7 @@ def test_confirmatory_screening_binds_the_v4_source_revision(tmp_path):
     config = FAConfig.from_json(
         root / "configs" / "familiarity_answerability_gemma2_2b.json"
     )
-    source = tmp_path / "confirmatory_source_v4"
+    source = tmp_path / "confirmatory_source_v5"
     source.mkdir()
     candidates = source / "candidate_entities_mechanism_train_v1.json"
     questions = source / "screening_questions_mechanism_train_v1.json"

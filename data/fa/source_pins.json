@@ -11,9 +11,9 @@
     "sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6"
   },
   "confirmatory_source_frame": {
-    "revision": "fa-confirmatory-wikidata-v4",
+    "revision": "fa-confirmatory-wikidata-v5",
     "qlever_max_rank_per_domain": 1200,
-    "pseudonym_generator_revision": "fa-confirmatory-pseudonyms-v2",
+    "pseudonym_generator_revision": "fa-confirmatory-pseudonyms-v3",
     "pseudonym_attempt_limit": 5000,
     "matchability_before_split_assignment": true
   },

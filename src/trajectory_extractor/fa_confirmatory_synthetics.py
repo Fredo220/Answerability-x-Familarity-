@@ -17,7 +17,7 @@ from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_entities import CandidateEntity, SyntheticCandidate
 from trajectory_extractor.fa_runtime import load_pinned_tokenizer
 
-GENERATOR_REVISION = "fa-confirmatory-pseudonyms-v2"
+GENERATOR_REVISION = "fa-confirmatory-pseudonyms-v3"
 DEFAULT_VARIANTS_PER_ENTITY = 3
 MAX_ATTEMPTS_PER_ENTITY = 5000
 
@@ -65,7 +65,16 @@ def generate_synthetic_candidates(
     allow_incomplete: bool = False,
 ) -> tuple[SyntheticCandidate, ...]:
     """Generate multiple unique compatible pseudonyms for every source entity."""
-    rows = tuple(candidates)
+    rows = tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate.coarse_type,
+                candidate.qid,
+                candidate.name.casefold(),
+            ),
+        )
+    )
     if not rows:
         raise ValueError("synthetic construction requires candidate entities")
     if type(variants_per_entity) is not int or variants_per_entity < 1:

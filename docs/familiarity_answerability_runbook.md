@@ -55,14 +55,14 @@ Build and cache the source pool:
 ```bash
 PYTHONPATH=src ../../.venv/bin/python tools/build_fa_confirmatory_source.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --output-dir data/fa/confirmatory_source_v4 \
+  --output-dir data/fa/confirmatory_source_v5 \
   --split-seed 20260722 \
   --retrieval-date <actual-UTC-retrieval-date> \
   --exclude-candidates data/fa/pilot_inputs/candidates_v4.json
 ```
 
 The fixed-rank QLever responses and every 50-entity Wikidata label/alias batch
-are cached under `data/fa/confirmatory_source_v4/source_cache/`. An interrupted fetch may rerun the
+are cached under `data/fa/confirmatory_source_v5/source_cache/`. An interrupted fetch may rerun the
 same command without changing the registered selection.
 Existing source and synthetic snapshots are no-clobber: an identical rerun
 resumes, while any changed payload fails and requires a newly versioned output
@@ -78,12 +78,12 @@ produce files identical to those already sealed by the source build:
 ```bash
 PYTHONPATH=src ../../.venv/bin/python tools/build_fa_confirmatory_synthetics.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_mechanism_train_v1.json \
-  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_locked_validation_v1.json \
-  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_behavior_test_v1.json \
-  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_probe_test_v1.json \
-  --candidate-manifest data/fa/confirmatory_source_v4/candidate_entities_intervention_test_v1.json \
-  --output-dir data/fa/confirmatory_source_v4
+  --candidate-manifest data/fa/confirmatory_source_v5/candidate_entities_mechanism_train_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v5/candidate_entities_locked_validation_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v5/candidate_entities_behavior_test_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v5/candidate_entities_probe_test_v1.json \
+  --candidate-manifest data/fa/confirmatory_source_v5/candidate_entities_intervention_test_v1.json \
+  --output-dir data/fa/confirmatory_source_v5
 ```
 
 For each split, run `fa-run-screening`, then `fa-screen-entities`, using the
@@ -98,7 +98,7 @@ feature-dynamics fa-run-screening \
   --namespace <split> \
   --candidates-manifest <candidate-manifest> \
   --questions-manifest <question-manifest> \
-  --source-integrity-manifest data/fa/confirmatory_source_v4/source_integrity_v1.json \
+  --source-integrity-manifest data/fa/confirmatory_source_v5/source_integrity_v1.json \
   --shard-id confirmatory-<split>-screening-v1
 
 feature-dynamics fa-screen-entities \
@@ -108,7 +108,7 @@ feature-dynamics fa-screen-entities \
   --questions-manifest <question-manifest> \
   --screening-manifest <screening-completion.manifest.json> \
   --synthetic-manifest <synthetic-manifest> \
-  --source-integrity-manifest data/fa/confirmatory_source_v4/source_integrity_v1.json
+  --source-integrity-manifest data/fa/confirmatory_source_v5/source_integrity_v1.json
 ```
 
 Combine exactly one verified screened-match shard from each registered split.

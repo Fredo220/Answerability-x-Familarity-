@@ -97,6 +97,38 @@ def test_synthetic_surface_generation_is_invariant_to_split_assignment():
     assert first_names == second_names
 
 
+def test_synthetic_generation_is_invariant_to_candidate_order(monkeypatch):
+    first = _candidate("entity-1", "Alpha", "creative_work")
+    second = _candidate("entity-2", "Bravo", "creative_work")
+
+    def colliding_pseudonym(candidate, attempt):
+        if attempt == 0:
+            return "Shared"
+        return "Alone" if candidate.qid == first.qid else "Bonly"
+
+    monkeypatch.setattr(
+        "trajectory_extractor.fa_confirmatory_synthetics._pseudonym",
+        colliding_pseudonym,
+    )
+
+    forward = generate_synthetic_candidates(
+        (first, second),
+        WordTokenizer(),
+        variants_per_entity=1,
+    )
+    reverse = generate_synthetic_candidates(
+        (second, first),
+        WordTokenizer(),
+        variants_per_entity=1,
+    )
+
+    assert {
+        row.candidate_id: row.name for row in forward
+    } == {
+        row.candidate_id: row.name for row in reverse
+    }
+
+
 def test_synthetic_builder_rejects_unregistered_domain():
     candidate = _candidate("entity-1", "Example Name", "unknown")
     with pytest.raises(KeyError):

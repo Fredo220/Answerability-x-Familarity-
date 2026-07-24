@@ -30,8 +30,13 @@
   opened. It raises the fixed maximum source rank to 1,200, applies exact
   matchability before split assignment, and narrows the estimand to
   Gemma-tokenizer-matchable entity names.
+- Built and audited source v4, then rejected it before screening when the
+  separate idempotence replay found 96 order-dependent pseudonym rows.
+- Froze source v5 and pseudonym-generator v3 to canonicalize candidate order
+  before global collision handling. All scientific endpoints, quotas, source
+  ranks, model pins, and claim boundaries remain unchanged.
 - Added fail-closed CLI checks requiring the exact 2x source pool and the
-  frozen v2 integrity artifact before confirmatory screening.
+  active frozen integrity artifact before confirmatory screening.
 - Verified the confirmatory corpus, rating, and collection paths with
   `103 passed`.
 - Rebuilt the pinned Graphify architecture graph and report.
@@ -44,11 +49,12 @@ the protected Gemma tokenizer were verified successfully.
 ## Current Construction Gate
 
 The v3 corpus cannot satisfy the registered domain quotas under the frozen
-exact-token controls and is superseded for execution. Source v4 construction
-must produce the first 96 complete matches per domain within fixed source rank
-1,200; otherwise the study is `not_evaluable`. Screening and human packet
-issuance remain closed until the v4 source and synthetic snapshots pass their
-integrity audits. The model and tokenizer revision remain:
+exact-token controls. Source v4 met the quotas but is superseded because its
+pseudonym output was order-dependent. Source v5 must produce the first 96
+complete matches per domain within fixed source rank 1,200 and pass
+order-invariance replay; otherwise the study is `not_evaluable`. Screening and
+human packet issuance remain closed until the v5 source and synthetic snapshots
+pass their integrity audits. The model and tokenizer revision remain:
 
 ```text
 google/gemma-2-2b-it
