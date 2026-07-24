@@ -27,6 +27,9 @@ def _source(path: Path) -> str:
 def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     source = _source(COLAB)
     for command in (
+        "fa-run-screening",
+        "fa-screen-entities",
+        "fa-assemble-screened-matches",
         "fa-audit-manifest",
         "fa-materialize-probe-rows",
         "fa-fit-probes",
@@ -40,9 +43,66 @@ def test_colab_notebook_is_orchestration_only_with_preflight_drive_and_resume():
     assert "torch.cuda.get_device_properties" in source
     assert "shutil.disk_usage" in source
     assert "HF_TOKEN" in source
+    assert 'userdata.get("HF_TOKEN")' in source
+    assert source.index('"pip", "install"') < source.index("import torch")
+    assert '"torch" not in sys.modules' in source
+    assert 'torch.__version__.split("+")[0] == "2.7.1"' in source
+    assert 'transformers.__version__ == "4.57.1"' in source
+    assert 'accelerate.__version__ == "1.12.0"' in source
     assert "LogisticRegression(" not in source
     assert "np.linalg" not in source
     assert "output_hidden_states=True" not in source
+
+
+def test_colab_notebook_runs_the_frozen_source_v5_screening_before_protected_studies():
+    source = _source(COLAB)
+    for split in (
+        "mechanism_train",
+        "locked_validation",
+        "behavior_test",
+        "probe_test",
+        "intervention_test",
+    ):
+        assert f"candidate_entities_{split}_v1.json" in source
+        assert f"screening_questions_{split}_v1.json" in source
+        assert f"synthetic_candidates_{split}_v1.json" in source
+        actual = (
+            ROOT
+            / "data"
+            / "fa"
+            / "confirmatory_source_v5"
+            / f"synthetic_candidates_{split}_v1.json"
+        )
+        assert actual.is_file()
+        missing = (
+            ROOT
+            / "data"
+            / "fa"
+            / "confirmatory_source_v5"
+            / f"synthetic_entities_{split}_v1.json"
+        )
+        assert not missing.exists()
+    assert "data/fa/confirmatory_source_v5/source_integrity_v1.json" in source
+    assert 'ROOT = str(REPO)' in source
+    assert "execution_identity.json" in source
+    assert "FA_LAUNCH_MANIFEST" in source
+    assert "fa-study-launch.json" in source
+    assert "runtime_observation" in source
+    assert '"diff", "--quiet"' in source
+    assert '"ls-files", "--others", "--exclude-standard"' in source
+    assert 'path.startswith("runs/familiarity_answerability/")' in source
+    assert "checkpoint_split" in source
+    assert "restore_split_checkpoint" in source
+    assert "ColabSplitCheckpointStore" in source
+    assert "verify_shard" in source
+    assert "1152" in source
+    assert "244" in source
+    assert source.index("fa-run-screening") < source.index("fa-materialize-probe-rows")
+    stop = source.index("STOP_AFTER_SCREENING_ASSEMBLY")
+    assert stop < source.index("fa-audit-manifest")
+    assert source.index('checkpoint_split(split, "completion")') < source.index(
+        '"fa-screen-entities"'
+    )
 
 
 def test_analysis_notebook_consumes_sealed_artifacts_and_never_trains():

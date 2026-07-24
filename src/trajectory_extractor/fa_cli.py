@@ -768,7 +768,8 @@ def _assemble_screened_matches(
         "children": sorted(children, key=lambda row: row["namespace"]),
         "matches_sha256": naturalness_matches_sha256(ordered),
     }
-    shard = store.write_completed_shard(
+    shard = _write_or_verify_screening_shard(
+        store,
         config.run_id,
         "mechanism_train",
         _safe_cli_id(args.shard_id, "screened-match collection shard-id"),

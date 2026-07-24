@@ -190,9 +190,50 @@ protected endpoint.
 
 ## Colab Execution
 
-Open `notebooks/06_familiarity_answerability_colab.ipynb`, set `HF_TOKEN`, mount
-Google Drive, and run the preflight. The notebook is orchestration-only: all
-scientific logic lives in tested Python modules and CLI transactions.
+Open `notebooks/06_familiarity_answerability_colab.ipynb`, set `HF_TOKEN`,
+`FA_GIT_COMMIT`, `FA_GIT_BUNDLE`, and `FA_GIT_BUNDLE_SHA256`, mount Google
+Drive, and run the preflight. There is no repository remote for this worktree.
+Store `HF_TOKEN` in Colab Secrets; do not paste it into a saved code cell.
+For the normal run, place the generated `fa-study-launch.json` and its named
+Git bundle in `MyDrive/fa-study-checkpoints`; the launch manifest supplies the
+three `FA_GIT_*` values. Environment variables remain an explicit override.
+The notebook therefore verifies the bundle SHA-256, clones the bundle, checks
+out the exact detached commit, and records the bundle, commit, lock, config,
+source-integrity, model, tokenizer, template, and GPU identity before model
+execution.
+Start from a fresh Colab runtime: the notebook refuses to install the lock if
+PyTorch is already imported, then verifies the pinned Torch, Transformers, and
+Accelerate versions plus `pip check`.
+Tracked changes and unexpected untracked files fail closed. Existing
+`runs/familiarity_answerability/` artifacts are the sole untracked exception
+so an interrupted transaction can resume on the same Colab VM.
+
+The first Colab phase runs the five frozen Source-v5 factual-screening splits
+in registered order. It verifies and checkpoints each completed split
+separately, then assembles exactly 1,152 screening completions into the
+registered 244-pair human-audit pool. A checkpoint is restored only when its
+archive SHA-256 and every contained `FAArtifactStore` shard verify. The
+successful completion shard is checkpointed before entity selection starts.
+Checkpoints are content-addressed and a small `LATEST` pointer is replaced only
+after the new archive and metadata both exist, so a failed update does not
+overwrite the last valid checkpoint. Transient free-disk and RAM observations
+are logged per runtime session rather than included in the immutable execution
+identity. Stage-specific record-kind allowlists prevent later protected shards
+from entering screening checkpoints. Restore verifies the exact member list,
+data hashes, complete manifest hashes, run ID, split, and archive location in a
+staging directory before atomically installing the split.
+
+The notebook deliberately stops after assembly. Do not bypass that stop until two
+independent human raters have returned the blinded naturalness packets and an
+independent adjudicator is available for disagreements.
+
+The notebook is orchestration-only: all scientific logic lives in tested
+Python modules and CLI transactions. Screening has split-level checkpointing,
+not prompt-level checkpointing. A failed backend call remains an immutable
+infrastructure-failure shard and must retry with a new shard ID. If the
+largest split repeatedly fails because the free Colab runtime is interrupted,
+freeze and test a microshard amendment before inspecting any downstream
+result; do not silently change the transaction protocol.
 
 The normal development sequence is:
 

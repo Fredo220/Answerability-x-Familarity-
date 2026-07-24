@@ -347,6 +347,32 @@ def test_confirmatory_screened_collection_binds_every_split_and_reserve(tmp_path
     assert {row.split for row in observed} == set(config.split_counts)
 
 
+def test_confirmatory_screened_collection_reassembly_verifies_existing_artifact(tmp_path):
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_gemma2_2b.json"
+    )
+    manifest, _ = confirmatory_screened_collection(tmp_path, config)
+    stored = json.loads(manifest.read_text(encoding="utf-8"))
+    child_manifests = [
+        tmp_path / child["manifest_path"]
+        for child in stored["lineage"]["children"]
+    ]
+
+    payload = fa_cli._assemble_screened_matches(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            screened_matches_manifest=child_manifests,
+            shard_id="confirmatory-screened-collection",
+        ),
+    )
+
+    assert Path(payload["manifest"]) == manifest
+    assert payload["count"] == 244
+
+
 def test_confirmatory_naturalness_rejects_raw_match_files(tmp_path):
     config = FAConfig.from_json(
         Path(__file__).resolve().parents[1]
