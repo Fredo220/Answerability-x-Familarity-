@@ -1,0 +1,40 @@
+{
+  "candidate_count": 384,
+  "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+  "complete_matching_count": 384,
+  "files": {
+    "behavior_test": {
+      "count": 288,
+      "path": "data/fa/confirmatory_source_v5/synthetic_candidates_behavior_test_v1.json",
+      "sha256": "1df43c49cb24a4a04dfbfb70d10b4d755939a6c075a30ef7ccf6a087490e55e8"
+    },
+    "intervention_test": {
+      "count": 144,
+      "path": "data/fa/confirmatory_source_v5/synthetic_candidates_intervention_test_v1.json",
+      "sha256": "a7fa8d8424c95992f48ccab9f343dba59596ad16710d568fe8f7cbf0a327bf95"
+    },
+    "locked_validation": {
+      "count": 192,
+      "path": "data/fa/confirmatory_source_v5/synthetic_candidates_locked_validation_v1.json",
+      "sha256": "0cdc8ea22f35de4604e1f82e66a90d0885ad2f0c336951e2a2017657cea8fffc"
+    },
+    "mechanism_train": {
+      "count": 384,
+      "path": "data/fa/confirmatory_source_v5/synthetic_candidates_mechanism_train_v1.json",
+      "sha256": "c6ea5c63772e017052cc6335a51c359ab0bb76eb0a540a152ca6c58ccffb8bdc"
+    },
+    "probe_test": {
+      "count": 144,
+      "path": "data/fa/confirmatory_source_v5/synthetic_candidates_probe_test_v1.json",
+      "sha256": "fd128f6c4067dca1514da6cf3453ce84550388f5e556e08b32d80268fc303886"
+    }
+  },
+  "generator_revision": "fa-confirmatory-pseudonyms-v3",
+  "matchable_candidate_count": 384,
+  "model_id": "google/gemma-2-2b-it",
+  "schema_version": 1,
+  "synthetic_count": 1152,
+  "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "unmatchable_candidate_ids": [],
+  "variants_per_entity": 3
+}

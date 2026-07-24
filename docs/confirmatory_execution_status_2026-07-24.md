@@ -35,6 +35,19 @@
 - Froze source v5 and pseudonym-generator v3 to canonicalize candidate order
   before global collision handling. All scientific endpoints, quotas, source
   ranks, model pins, and claim boundaries remain unchanged.
+- Materialized and independently audited source v5:
+  384 globally unique entities, 1,152 source-bound screening questions, and
+  1,152 globally unique pseudonym reserves.
+- Verified exact split and domain quotas, three questions and three reserves
+  per entity, every registered source-integrity hash, and absence of real-name
+  versus pseudonym collisions.
+- Replayed pseudonym construction with two different manifest orders. All five
+  split files were byte-identical and the normalized snapshot semantics were
+  identical.
+- Source-v5 integrity artifact SHA-256:
+  `ac5c7c812482d38af397c1ba5a21355c82ca665d652159eb71c856fa87595bf5`.
+- Complete matchability counts before selecting the first 96 per domain were:
+  creative works 448, organizations 537, people 484, and places 108.
 - Added fail-closed CLI checks requiring the exact 2x source pool and the
   active frozen integrity artifact before confirmatory screening.
 - Verified the confirmatory corpus, rating, and collection paths with
@@ -50,11 +63,11 @@ the protected Gemma tokenizer were verified successfully.
 
 The v3 corpus cannot satisfy the registered domain quotas under the frozen
 exact-token controls. Source v4 met the quotas but is superseded because its
-pseudonym output was order-dependent. Source v5 must produce the first 96
-complete matches per domain within fixed source rank 1,200 and pass
-order-invariance replay; otherwise the study is `not_evaluable`. Screening and
-human packet issuance remain closed until the v5 source and synthetic snapshots
-pass their integrity audits. The model and tokenizer revision remain:
+pseudonym output was order-dependent. Source v5 has now passed the fixed-rank,
+domain-balance, source-integrity, and order-invariance gates. Pinned Gemma
+factual screening is the next unopened gate. Human packet issuance remains
+closed until screening and deterministic reserve assembly pass. The model and
+tokenizer revision remain:
 
 ```text
 google/gemma-2-2b-it
