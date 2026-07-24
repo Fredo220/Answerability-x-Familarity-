@@ -50,8 +50,21 @@
   creative works 448, organizations 537, people 484, and places 108.
 - Added fail-closed CLI checks requiring the exact 2x source pool and the
   active frozen integrity artifact before confirmatory screening.
-- Verified the confirmatory corpus, rating, and collection paths with
-  `103 passed`.
+- Ran the first pinned-Gemma `mechanism_train` source-qualification
+  transaction at commit `39832250653b431ee93e0b12c97089de91e9e554`.
+  It stopped before human packets or protected endpoints because the exact
+  domain quota was not filled.
+- Preserved the checksum-verified failed checkpoint in Google Drive. The
+  stopped audit reported qualified counts of 31 creative works, 24
+  organizations, 19 people, and 4 places.
+- Invalidated that execution as model evidence after reproducing a runtime
+  defect: already-rendered Gemma prompts received a second BOS token during
+  tokenization.
+- Froze the double-BOS implementation-correction amendment before rerunning.
+  Sources, prompts, parser, aliases, thresholds, quotas, and model pins remain
+  unchanged.
+- Verified the corrected runtime and confirmatory execution paths with
+  `135 passed`.
 - Rebuilt the pinned Graphify architecture graph and report.
 
 ## Tokenizer Access
@@ -63,11 +76,13 @@ the protected Gemma tokenizer were verified successfully.
 
 The v3 corpus cannot satisfy the registered domain quotas under the frozen
 exact-token controls. Source v4 met the quotas but is superseded because its
-pseudonym output was order-dependent. Source v5 has now passed the fixed-rank,
-domain-balance, source-integrity, and order-invariance gates. Pinned Gemma
-factual screening is the next unopened gate. Human packet issuance remains
-closed until screening and deterministic reserve assembly pass. The model and
-tokenizer revision remain:
+pseudonym output was order-dependent. Source v5 has passed the fixed-rank,
+domain-balance, source-integrity, and order-invariance gates. The first Gemma
+screening transaction is preserved but invalid because the runtime
+double-inserted the BOS token. A corrected, new-commit screening transaction is
+the active gate. Human packet issuance remains closed until corrected screening
+and deterministic reserve assembly pass. The model and tokenizer revision
+remain:
 
 ```text
 google/gemma-2-2b-it
@@ -95,7 +110,7 @@ selection rules, model pins, or split assignments.
 
 ## Verification Boundary
 
-The focused confirmatory suite completed with `103 passed`. A repository-wide
+The corrected focused confirmatory suite completed with `135 passed`. A repository-wide
 run covering 1,040 tests from several independent research tracks was stopped
 after 19 minutes at `423 passed`; it was not a completed full-suite run and is
 not reported as one.

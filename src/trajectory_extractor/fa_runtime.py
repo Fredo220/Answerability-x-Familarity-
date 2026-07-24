@@ -103,7 +103,12 @@ class HFModelRunner:
         except StopIteration:
             input_device = self._torch.device("cpu")
         for prompt in prompts:
-            encoded = self.tokenizer([prompt], return_tensors="pt", padding=False)
+            encoded = self.tokenizer(
+                [prompt],
+                return_tensors="pt",
+                padding=False,
+                add_special_tokens=False,
+            )
             encoded = {
                 name: tensor.to(input_device) for name, tensor in encoded.items()
             }

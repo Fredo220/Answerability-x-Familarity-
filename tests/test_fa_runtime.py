@@ -130,8 +130,22 @@ def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypat
             self.calls = []
             self.decode_calls = 0
 
-        def __call__(self, prompts, *, return_tensors, padding):
-            self.calls.append((tuple(prompts), return_tensors, padding))
+        def __call__(
+            self,
+            prompts,
+            *,
+            return_tensors,
+            padding,
+            add_special_tokens,
+        ):
+            self.calls.append(
+                (
+                    tuple(prompts),
+                    return_tensors,
+                    padding,
+                    add_special_tokens,
+                )
+            )
             return {"input_ids": torch.tensor([[1, 2]], dtype=torch.long)}
 
         def batch_decode(self, values, *, skip_special_tokens):
@@ -183,6 +197,7 @@ def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypat
     assert load_kwargs["device_map"] == "auto"
     assert all(call[0] in {("one",), ("two",), ("three",)} for call in tokenizer.calls)
     assert all(call[2] is False for call in tokenizer.calls)
+    assert all(call[3] is False for call in tokenizer.calls)
     assert model.generate_calls == 3
     assert completions == ["completion-1", "completion-2", "completion-3"]
 
