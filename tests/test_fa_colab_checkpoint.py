@@ -105,6 +105,44 @@ def test_completion_checkpoint_restores_after_runtime_loss(tmp_path):
     assert checkpoint.successful_completion_manifest(SPLIT) == manifest
 
 
+def test_local_shards_cannot_be_reused_by_a_different_git_commit(tmp_path):
+    checkpoint = checkpoint_store(tmp_path)
+    write_completion(
+        checkpoint,
+        shard_id="confirmatory-mechanism_train-screening-v1",
+        status="completed",
+    )
+
+    with pytest.raises(ValueError, match="local run execution identity mismatch"):
+        ColabSplitCheckpointStore(
+            repo_root=checkpoint.repo_root,
+            checkpoint_root=checkpoint.checkpoint_root / ("c" * 40),
+            scratch_root=checkpoint.scratch_root,
+            run_id=RUN_ID,
+            git_commit="c" * 40,
+            config_sha256="b" * 64,
+        )
+
+
+def test_legacy_local_shards_without_execution_identity_are_rejected(tmp_path):
+    checkpoint = checkpoint_store(tmp_path)
+    write_completion(
+        checkpoint,
+        shard_id="confirmatory-mechanism_train-screening-v1",
+        status="completed",
+    )
+    (
+        checkpoint.repo_root
+        / "runs"
+        / "familiarity_answerability"
+        / RUN_ID
+        / ".colab-screening-execution.json"
+    ).unlink(missing_ok=True)
+
+    with pytest.raises(ValueError, match="local run execution identity is missing"):
+        checkpoint_store(tmp_path)
+
+
 def test_restore_uses_highest_content_addressed_stage_when_pointer_is_corrupt(
     tmp_path,
 ):

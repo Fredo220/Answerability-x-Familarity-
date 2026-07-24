@@ -49,7 +49,10 @@ No other execution rule changes:
 
 The malformed run and its checksum-verified checkpoint remain preserved as a
 failed implementation artifact. They are not reused as model evidence. The
-corrected run uses a new Git commit identity and new screening shard IDs.
+corrected run uses a new Git commit identity in a fully reset Colab runtime.
+Local screening artifacts are additionally bound to their Git commit and
+configuration before any resume decision, so a reused runtime cannot silently
+accept a completion from another execution.
 
 ## Stop Rule
 

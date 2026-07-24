@@ -5,8 +5,13 @@ changes answer attempts when relation-specific evidence is present or absent.
 The confirmatory target is the pinned `google/gemma-2-2b-it` revision; the
 Qwen3-0.6B profile is engineering rehearsal only.
 
-This repository currently contains the study implementation, not a confirmatory
-empirical result. The minimum Fellowship artifact has two stages:
+The frozen Source-v5 confirmatory corpus is `not_evaluable`: corrected pinned
+Gemma screening qualified 31 creative works, 25 organizations, 19 people, and
+4 places, while the registered construction gate required 20 per domain. No
+human packet or protected F1/F2A endpoint was opened. This is a failed
+prerequisite, not evidence for or against the research hypothesis.
+
+The planned Fellowship artifact had two stages:
 
 1. **F1, behavioral interaction:** test familiarity by answerability with
    matched screened-real and synthetic entities.
@@ -24,6 +29,7 @@ beyond the registered task.
 - [Preregistration](docs/familiarity_answerability_preregistration.md)
 - [Protocol amendment](docs/familiarity_answerability_protocol_amendment_2026-07-22.md)
 - [Confirmatory corpus reserve amendment](docs/amendments/2026-07-24-fa-confirmatory-corpus-reserves.md)
+- [Gemma double-BOS implementation correction](docs/amendments/2026-07-24-fa-gemma-double-bos-implementation-correction.md)
 - [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
 - [Current confirmatory execution status](docs/confirmatory_execution_status_2026-07-24.md)
 - [Execution plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)

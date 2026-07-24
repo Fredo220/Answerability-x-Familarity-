@@ -60,6 +60,14 @@ class ColabSplitCheckpointStore:
         self.store = FAArtifactStore(self.repo_root)
         self.checkpoint_root.mkdir(parents=True, exist_ok=True)
         self.scratch_root.mkdir(parents=True, exist_ok=True)
+        self.local_execution_identity_path = (
+            self.repo_root
+            / "runs"
+            / "familiarity_answerability"
+            / self.run_id
+            / ".colab-screening-execution.json"
+        )
+        self._bind_local_execution()
 
     def verified_split_shards(self, split: str) -> tuple[SealedShard, ...]:
         directory = self.split_artifact_dir(split)
@@ -79,6 +87,24 @@ class ColabSplitCheckpointStore:
             / "shards"
             / split
         )
+
+    def _bind_local_execution(self) -> None:
+        identity = {
+            "schema_version": 1,
+            "git_commit": self.git_commit,
+            "config_sha256": self.config_sha256,
+            "run_id": self.run_id,
+        }
+        path = self.local_execution_identity_path
+        if path.is_file():
+            if json.loads(path.read_text(encoding="utf-8")) != identity:
+                raise ValueError("local run execution identity mismatch")
+            return
+        run_root = path.parent
+        if any(run_root.glob("shards/*/*.manifest.json")):
+            raise ValueError("local run execution identity is missing")
+        run_root.mkdir(parents=True, exist_ok=True)
+        _write_content_addressed(path, _canonical_bytes(identity))
 
     def successful_completion_manifest(self, split: str) -> Path | None:
         return self._successful_completion_manifest(

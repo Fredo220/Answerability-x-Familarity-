@@ -2,7 +2,7 @@
 
 **Study:** Familiarity versus Answerability
 **Date:** 2026-07-24
-**Claim status:** No confirmatory empirical result exists
+**Claim status:** Confirmatory corpus `not_evaluable` under the frozen gate
 
 ## Completed
 
@@ -65,6 +65,28 @@
   unchanged.
 - Verified the corrected runtime and confirmatory execution paths with
   `135 passed`.
+- Executed the corrected pinned-Gemma screening transaction in a fully reset
+  Tesla T4 runtime at commit
+  `945f6b58bb3b7ded7f4ab77ece11374bc683fe37`.
+- Verified the launch bundle SHA-256:
+  `f1c2f262d423c647a1d0884163db58a279e6579258e40e9b6da80c7f3a8437d4`.
+- The corrected `mechanism_train` audit qualified 31 creative works, 25
+  organizations, 19 people, and 4 places. The frozen selection required 20 per
+  domain, so the transaction stopped with deficits of 1 person and 16 places.
+- The corrected screening-completion data SHA-256 is
+  `867f656a3d57bd18a6d0a8cac42bf2c03e0e482ddbc6862a34979b0b0f476f2d`.
+- The corrected stopped-audit data SHA-256 is
+  `03eafa841803e52afe6b6a3fd875aba2c396c3e61120b9b76a085cfe6b37f192`.
+- The corrected Drive checkpoint metadata is
+  `screening-mechanism_train-completion-ac8e17628e01c6d3-31f5a8c17cdc664e.checkpoint.json`,
+  metadata SHA-256
+  `31f5a8c17cdc664e14118b46e9207646bf600a110e8591ff32cf530399faf8dd`,
+  and archive SHA-256
+  `ac8e17628e01c6d3745ce3dde8154f2417576713e0fc215d8e0251f18ecd427a`.
+- Applied the preregistered stop rule. No human packets were issued and no
+  protected endpoint was opened.
+- Added a regression guard that rejects commit-mismatched or unbound local
+  screening shards before resume.
 - Rebuilt the pinned Graphify architecture graph and report.
 
 ## Tokenizer Access
@@ -77,12 +99,14 @@ the protected Gemma tokenizer were verified successfully.
 The v3 corpus cannot satisfy the registered domain quotas under the frozen
 exact-token controls. Source v4 met the quotas but is superseded because its
 pseudonym output was order-dependent. Source v5 has passed the fixed-rank,
-domain-balance, source-integrity, and order-invariance gates. The first Gemma
-screening transaction is preserved but invalid because the runtime
-double-inserted the BOS token. A corrected, new-commit screening transaction is
-the active gate. Human packet issuance remains closed until corrected screening
-and deterministic reserve assembly pass. The model and tokenizer revision
-remain:
+domain-balance, source-integrity, and order-invariance construction gates. The
+first Gemma screening transaction is preserved but invalid because the runtime
+double-inserted the BOS token. The corrected new-commit transaction reproduced
+the frozen source-qualification shortfall after that implementation defect was
+removed. Per the amendment stop rule, Source v5 is `not_evaluable`; it may not
+be rescued by changing prompts, parsers, aliases, thresholds, quotas, or
+candidate order. Human packet issuance is permanently closed for this frozen
+corpus. The model and tokenizer revision remain:
 
 ```text
 google/gemma-2-2b-it
@@ -93,8 +117,9 @@ No alternate model or mutable revision may replace this pin.
 
 ## Human Gate
 
-Human packets cannot be issued before pinned Gemma screening and deterministic
-matching produce the verified 244-pair collection.
+Human packets were not issued because pinned Gemma screening did not produce
+the verified 244-pair collection. The following preregistered requirements
+therefore remain unexecuted:
 
 - Two distinct real people must independently rate every issued pair.
 - A third distinct person rates only disagreements emitted by the compiler.
@@ -104,13 +129,30 @@ matching produce the verified 244-pair collection.
 ## Protected Endpoints
 
 No `behavior_test`, `probe_test`, or `intervention_test` endpoint was opened.
-After valid Gemma authentication and human ratings, follow
-`docs/familiarity_answerability_runbook.md` without changing thresholds,
-selection rules, model pins, or split assignments.
+They remain closed for Source v5 because the construction gate failed.
+
+## Invalidated Run Provenance
+
+The double-BOS run remains an implementation artifact, not model evidence:
+
+- Commit:
+  `39832250653b431ee93e0b12c97089de91e9e554`
+- Checkpoint metadata:
+  `screening-mechanism_train-completion-906601635adca3e7-a1113eac36e218bc.checkpoint.json`
+- Metadata SHA-256:
+  `a1113eac36e218bcd366bde2bea04b0db22f04840771441367970865a15c40e6`
+- Archive SHA-256:
+  `906601635adca3e7fcc5da375a487df4ee7546be11f99f2f2eb68e39f62fdd6b`
+- Screening-completion data SHA-256:
+  `63654d41e240e5a5827d68f8aacf38bd925974c1f13f14dac9a3fea96a60e26b`
+- Stopped-audit data SHA-256:
+  `66e4bd4858741ef3da6652b6f4db392a39585d8beedc6dab64f0ec0d4721419d`
 
 ## Verification Boundary
 
-The corrected focused confirmatory suite completed with `135 passed`. A repository-wide
-run covering 1,040 tests from several independent research tracks was stopped
-after 19 minutes at `423 passed`; it was not a completed full-suite run and is
-not reported as one.
+The post-review focused confirmatory suite completed with `135 passed`. A
+broader `test_fa_*` run was intentionally stopped after 26 minutes at
+`437 passed`; it was not a completed full-suite run and is not reported as one.
+A prior repository-wide run covering 1,040 tests from several independent
+research tracks was stopped after 19 minutes at `423 passed`; it also was not a
+completed full-suite run and is not reported as one.
