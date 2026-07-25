@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import trajectory_extractor.fa_development_screening as development_screening
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_confirmatory_source import REGISTERED_DOMAINS, SourceRecord
 from trajectory_extractor.fa_development_screening import (
@@ -100,6 +101,39 @@ def _freeze(tmp_path: Path, source: Path) -> Path:
         git_commit="a" * 40,
     )
     return path
+
+
+def test_cli_forwards_explicit_git_commit_for_archive_runtime(
+    tmp_path, monkeypatch, capsys
+):
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return {"status": "completed"}
+
+    monkeypatch.setattr(development_screening, "run_development_screening", fake_run)
+    commit = "c" * 40
+
+    exit_code = development_screening.main(
+        [
+            "--config",
+            "configs/familiarity_answerability_gemma2_2b.json",
+            "--source-root",
+            str(tmp_path / "source"),
+            "--split",
+            "instrument_development",
+            "--output-root",
+            str(tmp_path / "output"),
+            "--git-commit",
+            commit,
+        ]
+    )
+
+    assert exit_code == 0
+    assert seen["kwargs"]["git_commit"] == commit
+    assert json.loads(capsys.readouterr().out)["status"] == "completed"
 
 
 def test_runner_generates_exactly_three_rendered_prompts_and_writes_yield(tmp_path):

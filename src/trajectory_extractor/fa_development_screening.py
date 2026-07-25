@@ -513,6 +513,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--freeze-manifest", type=Path)
+    parser.add_argument(
+        "--git-commit",
+        help="Exact source commit for archive-based runtimes without a .git directory.",
+    )
     args = parser.parse_args(argv)
     result = run_development_screening(
         FAConfig.from_json(args.config),
@@ -521,6 +525,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output_root,
         batch_size=args.batch_size,
         freeze_manifest=args.freeze_manifest,
+        git_commit=args.git_commit,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
