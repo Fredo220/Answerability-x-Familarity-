@@ -32,3 +32,4 @@ data/fa/confirmatory_source/
 
 # Raw Wikidata/QLever responses are locally hash-sealed but too large for Git.
 data/fa/confirmatory_source_v*/source_cache/
+data/fa/development_source_v*/frame/source_cache/

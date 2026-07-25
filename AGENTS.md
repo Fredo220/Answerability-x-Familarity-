@@ -14,3 +14,16 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - Treat `EXTRACTED` edges as code facts and `INFERRED` edges only as hypotheses to verify against source.
 - After modifying FA code, run `tools/build_fa_graph.sh --force` to keep the graph current. This is local AST extraction only and uses no external model.
+
+## Agent skills
+
+### Issue tracker
+
+Work is tracked in this repository's GitHub Issues.
+See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This is a single-context repository.
+Read `CONTEXT.md` and relevant decisions under `docs/adr/`.
+See `docs/agents/domain.md`.

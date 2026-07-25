@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, validators
 
+import trajectory_extractor.fa_entities as fa_entities
 from trajectory_extractor.fa_entities import (
     CandidateEntity,
     EntityMatch,
@@ -16,7 +17,6 @@ from trajectory_extractor.fa_entities import (
     order_screening_questions,
     score_screening,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "data" / "fa" / "schemas"
@@ -33,9 +33,36 @@ class FakeTokenizer:
         return text.replace(" ", "|").split("|")
 
 
+class CountingTokenizer(FakeTokenizer):
+    def __init__(self):
+        self.calls = 0
+
+    def encode(self, text, add_special_tokens=False):
+        self.calls += 1
+        return super().encode(text, add_special_tokens=add_special_tokens)
+
+
 @pytest.fixture
 def fake_tokenizer():
     return FakeTokenizer()
+
+
+def test_surface_compatibility_rejects_cheap_mismatch_before_tokenization():
+    tokenizer = CountingTokenizer()
+    synthetic = SyntheticCandidate(
+        "syn-1",
+        "Very Long Vale",
+        "place",
+        "mechanism_train",
+        "names-v1",
+    )
+
+    assert not fa_entities._surface_compatible(
+        candidate(name="Old Vale"),
+        synthetic,
+        tokenizer,
+    )
+    assert tokenizer.calls == 0
 
 
 def candidate(**changes):
@@ -177,15 +204,21 @@ def test_v3_pilot_pool_is_complete_balanced_and_alias_consistent():
         (input_dir / "synthetic_candidates_v3.json").read_text(encoding="utf-8")
     )
     candidates = tuple(
-        CandidateEntity(**{key: value for key, value in row.items() if key != "schema_version"})
+        CandidateEntity(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
         for row in candidate_rows
     )
     questions = tuple(
-        ScreeningQuestion(**{key: value for key, value in row.items() if key != "schema_version"})
+        ScreeningQuestion(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
         for row in question_rows
     )
     synthetics = tuple(
-        SyntheticCandidate(**{key: value for key, value in row.items() if key != "schema_version"})
+        SyntheticCandidate(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
         for row in synthetic_rows
     )
 
@@ -237,11 +270,15 @@ def test_v4_pilot_pool_is_append_only_and_alias_consistent():
         (input_dir / "synthetic_candidates_v4.json").read_text(encoding="utf-8")
     )
     candidates = tuple(
-        CandidateEntity(**{key: value for key, value in row.items() if key != "schema_version"})
+        CandidateEntity(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
         for row in candidate_rows
     )
     questions = tuple(
-        ScreeningQuestion(**{key: value for key, value in row.items() if key != "schema_version"})
+        ScreeningQuestion(
+            **{key: value for key, value in row.items() if key != "schema_version"}
+        )
         for row in question_rows
     )
 
@@ -292,7 +329,9 @@ def test_v5_synthetic_pool_is_append_only_and_well_formed():
 
 
 def test_matching_enforces_token_and_surface_constraints(fake_tokenizer):
-    match = match_synthetic_entities([candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer)[0]
+    match = match_synthetic_entities(
+        [candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer
+    )[0]
     assert match.real_token_count == match.synthetic_token_count
     assert match.real_word_count == match.synthetic_word_count
     assert match.capitalization_pattern_equal
@@ -352,17 +391,25 @@ def test_entity_match_rejects_malformed_or_inconsistent_audit_inputs(changes, me
         entity_match(**changes)
 
 
-def test_matching_rejects_duplicate_names_reuse_and_split_crossing_reserves(fake_tokenizer):
+def test_matching_rejects_duplicate_names_reuse_and_split_crossing_reserves(
+    fake_tokenizer,
+):
     real = candidate(name="Old Vale")
     with pytest.raises(ValueError, match="duplicate"):
-        match_synthetic_entities([real, candidate(entity_id="Q91", qid="Q91", name="Old Vale")], synthetic_pool(), fake_tokenizer)
+        match_synthetic_entities(
+            [real, candidate(entity_id="Q91", qid="Q91", name="Old Vale")],
+            synthetic_pool(),
+            fake_tokenizer,
+        )
     with pytest.raises(ValueError, match="duplicate"):
         match_synthetic_entities(
             [real, candidate(entity_id="entity-91", qid="Q90", name="Old Dale")],
             synthetic_pool(),
             fake_tokenizer,
         )
-    only_candidate = SyntheticCandidate("syn-1", "New Vale", "place", "mechanism_train", "names-v1")
+    only_candidate = SyntheticCandidate(
+        "syn-1", "New Vale", "place", "mechanism_train", "names-v1"
+    )
     with pytest.raises(ValueError, match="reuse"):
         match_synthetic_entities(
             [real, candidate(entity_id="Q91", qid="Q91", name="Old Dale")],
@@ -380,17 +427,32 @@ def test_matching_rejects_duplicate_names_reuse_and_split_crossing_reserves(fake
         match_synthetic_entities([real], [crossing_reserve], fake_tokenizer)
 
 
-def test_matching_rejects_registered_character_tolerance_and_surface_mismatches(fake_tokenizer):
+def test_matching_rejects_registered_character_tolerance_and_surface_mismatches(
+    fake_tokenizer,
+):
     real = candidate(name="Old Vale")
-    too_long = SyntheticCandidate("syn-1", "Very Long Vale", "place", "mechanism_train", "names-v1")
-    wrong_case = SyntheticCandidate("syn-2", "new Vale", "place", "mechanism_train", "names-v1")
+    too_long = SyntheticCandidate(
+        "syn-1", "Very Long Vale", "place", "mechanism_train", "names-v1"
+    )
+    wrong_case = SyntheticCandidate(
+        "syn-2", "new Vale", "place", "mechanism_train", "names-v1"
+    )
     with pytest.raises(ValueError, match="no eligible"):
         match_synthetic_entities([real], [too_long], fake_tokenizer)
     with pytest.raises(ValueError, match="no eligible"):
         match_synthetic_entities([real], [wrong_case], fake_tokenizer)
 
 
-def rating(pair_id, rater_id, real=4, synthetic=4, malformed=False, round=1, disagreement_registered=False, schema_version=1):
+def rating(
+    pair_id,
+    rater_id,
+    real=4,
+    synthetic=4,
+    malformed=False,
+    round=1,
+    disagreement_registered=False,
+    schema_version=1,
+):
     return NaturalnessRating(
         pair_id=pair_id,
         rater_id=rater_id,
@@ -405,32 +467,58 @@ def rating(pair_id, rater_id, real=4, synthetic=4, malformed=False, round=1, dis
     )
 
 
-def test_naturalness_audit_requires_two_independent_raters_and_excludes_bad_pairs(fake_tokenizer):
-    match = match_synthetic_entities([candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer)[0]
+def test_naturalness_audit_requires_two_independent_raters_and_excludes_bad_pairs(
+    fake_tokenizer,
+):
+    match = match_synthetic_entities(
+        [candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer
+    )[0]
     audit = audit_naturalness_manifest(
-        [match], [rating(match.pair_id, "rater-a", real=5, synthetic=3), rating(match.pair_id, "rater-b", real=5, synthetic=3)]
+        [match],
+        [
+            rating(match.pair_id, "rater-a", real=5, synthetic=3),
+            rating(match.pair_id, "rater-b", real=5, synthetic=3),
+        ],
     )
     assert audit.accepted_pair_ids == ()
     assert audit.excluded_pair_ids == (match.pair_id,)
     with pytest.raises(ValueError, match="independent"):
-        audit_naturalness_manifest([match], [rating(match.pair_id, "rater-a"), rating(match.pair_id, "rater-a")])
+        audit_naturalness_manifest(
+            [match],
+            [rating(match.pair_id, "rater-a"), rating(match.pair_id, "rater-a")],
+        )
 
 
-def test_naturalness_audit_allows_registered_third_rater_only_for_disagreement(fake_tokenizer):
-    match = match_synthetic_entities([candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer)[0]
+def test_naturalness_audit_allows_registered_third_rater_only_for_disagreement(
+    fake_tokenizer,
+):
+    match = match_synthetic_entities(
+        [candidate(name="Old Vale")], synthetic_pool(), fake_tokenizer
+    )[0]
     audit = audit_naturalness_manifest(
         [match],
         [
             rating(match.pair_id, "rater-a", real=5, synthetic=3),
             rating(match.pair_id, "rater-b", real=4, synthetic=4),
-            rating(match.pair_id, "rater-c", real=4, synthetic=4, round=2, disagreement_registered=True),
+            rating(
+                match.pair_id,
+                "rater-c",
+                real=4,
+                synthetic=4,
+                round=2,
+                disagreement_registered=True,
+            ),
         ],
     )
     assert audit.accepted_pair_ids == (match.pair_id,)
     with pytest.raises(ValueError, match="third rater"):
         audit_naturalness_manifest(
             [match],
-            [rating(match.pair_id, "rater-a"), rating(match.pair_id, "rater-b"), rating(match.pair_id, "rater-c", round=2, disagreement_registered=True)],
+            [
+                rating(match.pair_id, "rater-a"),
+                rating(match.pair_id, "rater-b"),
+                rating(match.pair_id, "rater-c", round=2, disagreement_registered=True),
+            ],
         )
 
 
@@ -485,8 +573,14 @@ def test_naturalness_audit_allows_registered_third_rater_only_for_disagreement(f
         ),
         (entity_match, {"schema_version": True}),
         (entity_match, {"schema_version": 1.0}),
-        (lambda **changes: rating("Q90--syn-2", "rater-a", **changes), {"schema_version": True}),
-        (lambda **changes: rating("Q90--syn-2", "rater-a", **changes), {"schema_version": 1.0}),
+        (
+            lambda **changes: rating("Q90--syn-2", "rater-a", **changes),
+            {"schema_version": True},
+        ),
+        (
+            lambda **changes: rating("Q90--syn-2", "rater-a", **changes),
+            {"schema_version": 1.0},
+        ),
     ],
 )
 def test_runtime_audit_records_reject_schema_version_aliases(factory, changes):
@@ -545,7 +639,9 @@ def test_runtime_records_serialize_to_their_complete_schemas(factory, schema_nam
     ],
 )
 @pytest.mark.parametrize("schema_version", [True, 1.0, 2])
-def test_contract_schemas_require_exact_integer_schema_version(schema_name, schema_version):
+def test_contract_schemas_require_exact_integer_schema_version(
+    schema_name, schema_version
+):
     schema = json.loads((SCHEMA_DIR / schema_name).read_text(encoding="utf-8"))
     valid_payloads = {
         "candidate_entity.schema.json": asdict(candidate()),
@@ -579,8 +675,14 @@ def test_contract_schemas_require_exact_integer_schema_version(schema_name, sche
 @pytest.mark.parametrize(
     "schema_name, required",
     [
-        ("candidate_entity.schema.json", {"schema_version", "qid", "source_provenance", "split"}),
-        ("screening_question.schema.json", {"schema_version", "question_id", "accepted_aliases"}),
+        (
+            "candidate_entity.schema.json",
+            {"schema_version", "qid", "source_provenance", "split"},
+        ),
+        (
+            "screening_question.schema.json",
+            {"schema_version", "question_id", "accepted_aliases"},
+        ),
         (
             "screening_completion.schema.json",
             {
@@ -595,8 +697,14 @@ def test_contract_schemas_require_exact_integer_schema_version(schema_name, sche
             "synthetic_candidate.schema.json",
             {"schema_version", "candidate_id", "generator_revision", "split"},
         ),
-        ("synthetic_match.schema.json", {"schema_version", "pair_id", "tokenizer_revision", "character_tolerance"}),
-        ("naturalness_rating.schema.json", {"schema_version", "pair_id", "rater_id", "synthetic_malformed"}),
+        (
+            "synthetic_match.schema.json",
+            {"schema_version", "pair_id", "tokenizer_revision", "character_tolerance"},
+        ),
+        (
+            "naturalness_rating.schema.json",
+            {"schema_version", "pair_id", "rater_id", "synthetic_malformed"},
+        ),
     ],
 )
 def test_contract_schemas_are_strict_and_cover_provenance(schema_name, required):

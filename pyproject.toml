@@ -22,6 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest", "jsonschema>=4.23,<5"]
+quality = ["pyright>=1.1.400,<2", "ruff>=0.12,<1"]
 rlmf-local = ["peft==0.18.0", "safetensors>=0.5,<1"]
 
 [project.scripts]
@@ -33,3 +34,18 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+include = [
+    "src/trajectory_extractor/fa_development_source.py",
+    "src/trajectory_extractor/fa_development_frame.py",
+    "src/trajectory_extractor/fa_development_screening.py",
+]

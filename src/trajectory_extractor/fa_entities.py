@@ -11,12 +11,21 @@ from statistics import median
 from types import MappingProxyType
 from typing import Any
 
-from trajectory_extractor.fa_config import CONFIRMATORY_SPLIT_COUNTS, NON_CONFIRMATORY_NAMESPACES
-
+from trajectory_extractor.fa_config import (
+    CONFIRMATORY_SPLIT_COUNTS,
+    NON_CONFIRMATORY_NAMESPACES,
+)
 
 CHARACTER_TOLERANCE = 2
 SCHEMA_VERSION = 1
-REGISTERED_SPLITS = frozenset(CONFIRMATORY_SPLIT_COUNTS) | NON_CONFIRMATORY_NAMESPACES
+DEVELOPMENT_NAMESPACES = frozenset(
+    {"instrument_development", "construction_validation"}
+)
+REGISTERED_SPLITS = (
+    frozenset(CONFIRMATORY_SPLIT_COUNTS)
+    | NON_CONFIRMATORY_NAMESPACES
+    | DEVELOPMENT_NAMESPACES
+)
 TOKENIZER_SENTENCE_FRAME = "In the Alder Registry, {name} has archive color amber."
 SAME_STRING_EXPOSURE_FACTS = (
     ("visits", "Cedar Park on Tuesdays"),
@@ -57,7 +66,10 @@ class CandidateEntity:
         if len(alias_sets) != 3:
             raise ValueError("screening_aliases must contain exactly three alias sets")
         for aliases in alias_sets:
-            if not aliases or any(not isinstance(alias, str) or not _normal_form(alias) for alias in aliases):
+            if not aliases or any(
+                not isinstance(alias, str) or not _normal_form(alias)
+                for alias in aliases
+            ):
                 raise ValueError("screening aliases must be nonempty strings")
             if len({_normal_form(alias) for alias in aliases}) != len(aliases):
                 raise ValueError("screening aliases must not contain duplicates")
@@ -92,8 +104,7 @@ class ScreeningQuestion:
         _nonempty_text(self.prompt, "prompt")
         aliases = tuple(self.accepted_aliases)
         if not aliases or any(
-            not isinstance(alias, str) or not _normal_form(alias)
-            for alias in aliases
+            not isinstance(alias, str) or not _normal_form(alias) for alias in aliases
         ):
             raise ValueError("accepted_aliases must contain nonempty strings")
         if len({_normal_form(alias) for alias in aliases}) != len(aliases):
@@ -182,16 +193,23 @@ class EntityMatch:
         if self.synthetic_character_count != len(self.synthetic_name):
             raise ValueError("synthetic_character_count must match synthetic_name")
         _integer(self.character_length_delta, "character_length_delta")
-        if self.character_length_delta != self.synthetic_character_count - self.real_character_count:
+        if (
+            self.character_length_delta
+            != self.synthetic_character_count - self.real_character_count
+        ):
             raise ValueError("character_length_delta must match character counts")
-        if type(self.character_tolerance) is not int or self.character_tolerance != CHARACTER_TOLERANCE:
+        if (
+            type(self.character_tolerance) is not int
+            or self.character_tolerance != CHARACTER_TOLERANCE
+        ):
             raise ValueError(f"character_tolerance must be {CHARACTER_TOLERANCE}")
         if abs(self.character_length_delta) > self.character_tolerance:
             raise ValueError("character_length_delta exceeds character_tolerance")
         if type(self.capitalization_pattern_equal) is not bool:
             raise ValueError("capitalization_pattern_equal must be boolean")
         if self.capitalization_pattern_equal != (
-            _capitalization_pattern(self.real_name) == _capitalization_pattern(self.synthetic_name)
+            _capitalization_pattern(self.real_name)
+            == _capitalization_pattern(self.synthetic_name)
         ):
             raise ValueError("capitalization_pattern_equal must match the names")
         if not self.capitalization_pattern_equal:
@@ -215,7 +233,12 @@ class NaturalnessRating:
         _schema_version(self.schema_version)
         _pair_id(self.pair_id, "pair_id")
         _safe_id(self.rater_id, "rater_id")
-        for name in ("real_naturalness", "synthetic_naturalness", "real_type_fit", "synthetic_type_fit"):
+        for name in (
+            "real_naturalness",
+            "synthetic_naturalness",
+            "real_type_fit",
+            "synthetic_type_fit",
+        ):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= 5:
                 raise ValueError(f"{name} must be an integer from 1 to 5")
@@ -237,11 +260,15 @@ class NaturalnessAudit:
     def __post_init__(self) -> None:
         object.__setattr__(self, "accepted_pair_ids", tuple(self.accepted_pair_ids))
         object.__setattr__(self, "excluded_pair_ids", tuple(self.excluded_pair_ids))
-        object.__setattr__(self, "third_rater_pair_ids", tuple(self.third_rater_pair_ids))
+        object.__setattr__(
+            self, "third_rater_pair_ids", tuple(self.third_rater_pair_ids)
+        )
         object.__setattr__(self, "decisions", MappingProxyType(dict(self.decisions)))
 
 
-def score_screening(candidate: CandidateEntity, completions: Sequence[str]) -> ScreeningResult:
+def score_screening(
+    candidate: CandidateEntity, completions: Sequence[str]
+) -> ScreeningResult:
     """Score three forced-answer completions by exact normalized alias membership."""
     if not isinstance(candidate, CandidateEntity):
         raise TypeError("candidate must be a CandidateEntity")
@@ -266,7 +293,12 @@ def score_screening(candidate: CandidateEntity, completions: Sequence[str]) -> S
 def order_screening_questions(
     candidates: Sequence[CandidateEntity],
     questions: Sequence[ScreeningQuestion],
-) -> tuple[tuple[CandidateEntity, tuple[ScreeningQuestion, ScreeningQuestion, ScreeningQuestion]], ...]:
+) -> tuple[
+    tuple[
+        CandidateEntity, tuple[ScreeningQuestion, ScreeningQuestion, ScreeningQuestion]
+    ],
+    ...,
+]:
     """Join exactly three ordered, alias-consistent questions to every candidate."""
 
     candidate_rows = tuple(candidates)
@@ -275,9 +307,15 @@ def order_screening_questions(
         raise TypeError("candidates must contain CandidateEntity records")
     if any(not isinstance(question, ScreeningQuestion) for question in question_rows):
         raise TypeError("questions must contain ScreeningQuestion records")
-    _reject_duplicates(candidate_rows, lambda candidate: candidate.entity_id, "candidate entity IDs")
-    _reject_duplicates(candidate_rows, lambda candidate: candidate.qid, "candidate QIDs")
-    _reject_duplicates(question_rows, lambda question: question.question_id, "screening question IDs")
+    _reject_duplicates(
+        candidate_rows, lambda candidate: candidate.entity_id, "candidate entity IDs"
+    )
+    _reject_duplicates(
+        candidate_rows, lambda candidate: candidate.qid, "candidate QIDs"
+    )
+    _reject_duplicates(
+        question_rows, lambda question: question.question_id, "screening question IDs"
+    )
 
     candidates_by_qid = {candidate.qid: candidate for candidate in candidate_rows}
     if {question.qid for question in question_rows} != set(candidates_by_qid):
@@ -323,24 +361,45 @@ def match_synthetic_entities(
         raise TypeError("synthetic_candidates must contain SyntheticCandidate records")
     _reject_duplicates(reals, lambda entity: entity.entity_id, "real entity IDs")
     _reject_duplicates(reals, lambda entity: entity.qid, "real entity QIDs")
-    _reject_duplicates(reals, lambda entity: _normal_form(entity.name), "real entity names")
-    _reject_duplicates(synthetics, lambda candidate: candidate.candidate_id, "synthetic candidate IDs")
-    _reject_duplicates(synthetics, lambda candidate: _normal_form(candidate.name), "synthetic candidate names")
+    _reject_duplicates(
+        reals, lambda entity: _normal_form(entity.name), "real entity names"
+    )
+    _reject_duplicates(
+        synthetics, lambda candidate: candidate.candidate_id, "synthetic candidate IDs"
+    )
+    _reject_duplicates(
+        synthetics,
+        lambda candidate: _normal_form(candidate.name),
+        "synthetic candidate names",
+    )
 
     real_names = {_normal_form(entity.name) for entity in reals}
     if any(_normal_form(candidate.name) in real_names for candidate in synthetics):
         raise ValueError("synthetic candidate name collides with a real entity name")
 
-    ordered_reals = tuple(sorted(reals, key=lambda entity: (entity.entity_id, entity.qid)))
-    ordered_synthetics = tuple(sorted(synthetics, key=lambda candidate: candidate.candidate_id))
+    ordered_reals = tuple(
+        sorted(reals, key=lambda entity: (entity.entity_id, entity.qid))
+    )
+    ordered_synthetics = tuple(
+        sorted(synthetics, key=lambda candidate: candidate.candidate_id)
+    )
     eligible: dict[str, tuple[SyntheticCandidate, ...]] = {}
     for entity in ordered_reals:
-        same_split = tuple(candidate for candidate in ordered_synthetics if candidate.split == entity.split)
+        same_split = tuple(
+            candidate
+            for candidate in ordered_synthetics
+            if candidate.split == entity.split
+        )
         compatible_elsewhere = any(
-            candidate.split != entity.split and _surface_compatible(entity, candidate, tokenizer)
+            candidate.split != entity.split
+            and _surface_compatible(entity, candidate, tokenizer)
             for candidate in ordered_synthetics
         )
-        choices = tuple(candidate for candidate in same_split if _surface_compatible(entity, candidate, tokenizer))
+        choices = tuple(
+            candidate
+            for candidate in same_split
+            if _surface_compatible(entity, candidate, tokenizer)
+        )
         if not choices:
             if compatible_elsewhere:
                 raise ValueError("reserve candidate crosses split boundary")
@@ -382,10 +441,15 @@ def audit_naturalness_manifest(
     decisions: dict[str, str] = {}
     for match in sorted(match_rows, key=lambda value: value.pair_id):
         pair_ratings = grouped.get(match.pair_id, [])
-        initial = sorted((rating for rating in pair_ratings if rating.round == 1), key=lambda rating: rating.rater_id)
+        initial = sorted(
+            (rating for rating in pair_ratings if rating.round == 1),
+            key=lambda rating: rating.rater_id,
+        )
         third = [rating for rating in pair_ratings if rating.round == 2]
         if len(initial) != 2 or len({rating.rater_id for rating in initial}) != 2:
-            raise ValueError("naturalness audit requires two independent initial raters")
+            raise ValueError(
+                "naturalness audit requires two independent initial raters"
+            )
         if len(third) > 1 or len(pair_ratings) != len(initial) + len(third):
             raise ValueError("naturalness audit has an invalid rater count")
         initial_verdicts = [naturalness_rating_passes(rating) for rating in initial]
@@ -393,7 +457,9 @@ def audit_naturalness_manifest(
         if third:
             adjudicator = third[0]
             if not disagreement:
-                raise ValueError("third rater is allowed only for a registered disagreement")
+                raise ValueError(
+                    "third rater is allowed only for a registered disagreement"
+                )
             if not adjudicator.disagreement_registered:
                 raise ValueError("third rater disagreement must be registered")
             if adjudicator.rater_id in {rating.rater_id for rating in initial}:
@@ -406,7 +472,10 @@ def audit_naturalness_manifest(
             used_ratings = tuple(initial)
 
         malformed = any(rating.synthetic_malformed for rating in used_ratings)
-        gap = abs(median(rating.real_naturalness for rating in used_ratings) - median(rating.synthetic_naturalness for rating in used_ratings))
+        gap = abs(
+            median(rating.real_naturalness for rating in used_ratings)
+            - median(rating.synthetic_naturalness for rating in used_ratings)
+        )
         if malformed:
             excluded.append(match.pair_id)
             decisions[match.pair_id] = "excluded_malformed"
@@ -416,15 +485,20 @@ def audit_naturalness_manifest(
         else:
             accepted.append(match.pair_id)
             decisions[match.pair_id] = "accepted"
-    return NaturalnessAudit(tuple(accepted), tuple(excluded), tuple(adjudicated), decisions)
+    return NaturalnessAudit(
+        tuple(accepted), tuple(excluded), tuple(adjudicated), decisions
+    )
 
 
 def _deterministic_assignment(
-    reals: Sequence[CandidateEntity], eligible: Mapping[str, Sequence[SyntheticCandidate]]
+    reals: Sequence[CandidateEntity],
+    eligible: Mapping[str, Sequence[SyntheticCandidate]],
 ) -> dict[str, SyntheticCandidate]:
     assigned: dict[str, str] = {}
     candidate_lookup = {
-        candidate.candidate_id: candidate for values in eligible.values() for candidate in values
+        candidate.candidate_id: candidate
+        for values in eligible.values()
+        for candidate in values
     }
 
     def assign(entity: CandidateEntity, seen: set[str]) -> bool:
@@ -434,7 +508,9 @@ def _deterministic_assignment(
                 continue
             seen.add(candidate_id)
             incumbent_id = assigned.get(candidate_id)
-            if incumbent_id is None or assign(next(item for item in reals if item.entity_id == incumbent_id), seen):
+            if incumbent_id is None or assign(
+                next(item for item in reals if item.entity_id == incumbent_id), seen
+            ):
                 assigned[candidate_id] = entity.entity_id
                 return True
         return False
@@ -442,10 +518,15 @@ def _deterministic_assignment(
     for entity in reals:
         if not assign(entity, set()):
             break
-    return {entity_id: candidate_lookup[candidate_id] for candidate_id, entity_id in assigned.items()}
+    return {
+        entity_id: candidate_lookup[candidate_id]
+        for candidate_id, entity_id in assigned.items()
+    }
 
 
-def _make_match(entity: CandidateEntity, synthetic: SyntheticCandidate, tokenizer: Any) -> EntityMatch:
+def _make_match(
+    entity: CandidateEntity, synthetic: SyntheticCandidate, tokenizer: Any
+) -> EntityMatch:
     real_characters = len(entity.name)
     synthetic_characters = len(synthetic.name)
     return EntityMatch(
@@ -467,20 +548,25 @@ def _make_match(entity: CandidateEntity, synthetic: SyntheticCandidate, tokenize
         synthetic_character_count=synthetic_characters,
         character_length_delta=synthetic_characters - real_characters,
         character_tolerance=CHARACTER_TOLERANCE,
-        capitalization_pattern_equal=_capitalization_pattern(entity.name) == _capitalization_pattern(synthetic.name),
+        capitalization_pattern_equal=_capitalization_pattern(entity.name)
+        == _capitalization_pattern(synthetic.name),
     )
 
 
-def _surface_compatible(entity: CandidateEntity, synthetic: SyntheticCandidate, tokenizer: Any) -> bool:
+def _surface_compatible(
+    entity: CandidateEntity, synthetic: SyntheticCandidate, tokenizer: Any
+) -> bool:
     return (
         entity.coarse_type == synthetic.coarse_type
-        and _token_count(tokenizer, entity.name) == _token_count(tokenizer, synthetic.name)
-        and _same_string_token_count(tokenizer, entity.name)
-        == _same_string_token_count(tokenizer, synthetic.name)
         and len(entity.name.split()) == len(synthetic.name.split())
-        and _capitalization_pattern(entity.name) == _capitalization_pattern(synthetic.name)
+        and _capitalization_pattern(entity.name)
+        == _capitalization_pattern(synthetic.name)
         and abs(len(entity.name) - len(synthetic.name)) <= CHARACTER_TOLERANCE
         and _allowed_character_inventory(entity.name, synthetic.name)
+        and _token_count(tokenizer, entity.name)
+        == _token_count(tokenizer, synthetic.name)
+        and _same_string_token_count(tokenizer, entity.name)
+        == _same_string_token_count(tokenizer, synthetic.name)
     )
 
 
@@ -533,11 +619,20 @@ def _capitalization_pattern(name: str) -> tuple[str, ...]:
 
 
 def _allowed_character_inventory(real_name: str, synthetic_name: str) -> bool:
-    real_non_alphanumeric = {character for character in real_name if not character.isalnum()}
-    synthetic_non_alphanumeric = {character for character in synthetic_name if not character.isalnum()}
+    real_non_alphanumeric = {
+        character for character in real_name if not character.isalnum()
+    }
+    synthetic_non_alphanumeric = {
+        character for character in synthetic_name if not character.isalnum()
+    }
     real_non_ascii = {character for character in real_name if not character.isascii()}
-    synthetic_non_ascii = {character for character in synthetic_name if not character.isascii()}
-    return synthetic_non_alphanumeric <= real_non_alphanumeric and synthetic_non_ascii <= real_non_ascii
+    synthetic_non_ascii = {
+        character for character in synthetic_name if not character.isascii()
+    }
+    return (
+        synthetic_non_alphanumeric <= real_non_alphanumeric
+        and synthetic_non_ascii <= real_non_ascii
+    )
 
 
 def _tokenizer_revision(tokenizer: Any) -> str:
@@ -553,7 +648,10 @@ def naturalness_rating_passes(rating: NaturalnessRating) -> bool:
 
     if not isinstance(rating, NaturalnessRating):
         raise TypeError("rating must be a NaturalnessRating")
-    return not rating.synthetic_malformed and abs(rating.real_naturalness - rating.synthetic_naturalness) <= 1
+    return (
+        not rating.synthetic_malformed
+        and abs(rating.real_naturalness - rating.synthetic_naturalness) <= 1
+    )
 
 
 def _normal_form(value: str) -> str:
