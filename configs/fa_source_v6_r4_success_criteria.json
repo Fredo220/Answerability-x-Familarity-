@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "source_revision": "fa-development-source-v6-r4",
+  "claim_scope": "instrument_readiness_only",
+  "development_gate": {
+    "candidate_count": 96,
+    "prompt_count": 288,
+    "qualification_threshold": 2,
+    "minimum_qualified_per_domain": 16,
+    "minimum_success_by_domain_relation": {
+      "creative_work": {
+        "P57": 16,
+        "P577": 16,
+        "P495": 16
+      },
+      "organization": {
+        "P17": 16,
+        "P159": 16,
+        "P571": 16
+      },
+      "person": {
+        "P19": 16,
+        "P27": 16,
+        "P106": 16
+      },
+      "place": {
+        "P17": 18,
+        "P30": 18,
+        "P131": 16
+      }
+    }
+  },
+  "human_audit": {
+    "adjudicator_required_on_disagreement": true,
+    "independent_initial_raters": 2,
+    "required_before_construction_validation": true
+  }
+}

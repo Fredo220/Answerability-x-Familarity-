@@ -1,0 +1,22 @@
+{
+  "materialized_files": {
+    "construction_validation": {
+      "candidate_manifest": "candidate_entities_construction_validation_v1.json",
+      "candidate_sha256": "57881fc6110a0299b1da184416a000459871d45282799dcbee79d65c3bb6b693",
+      "question_manifest": "screening_questions_construction_validation_v1.json",
+      "question_sha256": "57b9b93faf3d592f64fe75066559243b83275f2c7b29d86defc6318a038ec607"
+    },
+    "instrument_development": {
+      "candidate_manifest": "candidate_entities_instrument_development_v1.json",
+      "candidate_sha256": "f9ebd3e8b4e23ae7f8cbfad7c199b42a0929ba893e92c6e27c3b4476f7d26051",
+      "question_manifest": "screening_questions_instrument_development_v1.json",
+      "question_sha256": "132d9b21cd38f33be906e027e562b77304c6f8ce6c02f0b55378a83f933e0c92"
+    }
+  },
+  "schema_version": 1,
+  "source_revision": "fa-development-source-v6-r2",
+  "source_snapshot": "source_snapshot_v1.json",
+  "source_snapshot_sha256": "1c0c7b2e0e1bfe204998cf4671d1935be73d835d1a6adf46cbfaa45e2fd7ffa8",
+  "source_v7_exclusions": "source_v7_exclusions_v1.json",
+  "source_v7_exclusions_sha256": "7a44547f1f25a28ff0a5eb137833b5f702ecb0b582c3ed28a1972d8f1e5f79ab"
+}

@@ -16,7 +16,12 @@ from typing import Any
 from trajectory_extractor.fa_confirmatory_source import (
     DOMAIN_FIELDS,
     REGISTERED_DOMAINS,
+    RankedSource,
+    ScreeningField,
     SourceRecord,
+    _eligible_label,
+    _english_label,
+    _ranked_value_aliases,
 )
 from trajectory_extractor.fa_confirmatory_synthetics import (
     GENERATOR_REVISION,
@@ -32,8 +37,39 @@ DEVELOPMENT_SPLITS = (
     "instrument_development",
     "construction_validation",
 )
-DEFAULT_SOURCE_REVISION = "fa-development-source-v6"
+DEFAULT_SOURCE_REVISION = "fa-development-source-v6-r6"
+_FRAME_TO_SOURCE_REVISION = {
+    "fa-development-source-frame-v6-r2": "fa-development-source-v6-r2",
+    "fa-development-source-frame-v6-r3": "fa-development-source-v6-r3",
+    "fa-development-source-frame-v6-r4": "fa-development-source-v6-r4",
+    "fa-development-source-frame-v6-r5": "fa-development-source-v6-r5",
+    "fa-development-source-frame-v6-r6": "fa-development-source-v6-r6",
+}
+DEVELOPMENT_DOMAIN_FIELDS = {
+    **DOMAIN_FIELDS,
+    "place": (
+        ScreeningField(
+            "P17",
+            "Which country is {name} in? Answer with only the country name.",
+        ),
+        ScreeningField(
+            "P131",
+            (
+                "According to Wikidata, what direct administrative territorial "
+                "entity (P131) contains {name}? Answer with only that entity name."
+            ),
+        ),
+        ScreeningField(
+            "P30",
+            (
+                "On which continent is {name} located? "
+                "Answer with only the continent name."
+            ),
+        ),
+    ),
+}
 ERROR_TAXONOMY = (
+    "no_error",
     "entity_unknown",
     "relation_unknown",
     "ambiguous_ground_truth",
@@ -80,6 +116,88 @@ DevelopmentManifests = Mapping[
     str,
     tuple[Sequence[CandidateEntity], Sequence[ScreeningQuestion]],
 ]
+
+
+def build_development_source_records_from_ranked_values(
+    domain: str,
+    ranked_qids: Sequence[RankedSource],
+    entities: Mapping[str, Mapping[str, Any]],
+    *,
+    excluded_qids: frozenset[str] = frozenset(),
+) -> tuple[SourceRecord, ...]:
+    """Build open-development records with the revisioned field registry."""
+    if domain not in DEVELOPMENT_DOMAIN_FIELDS:
+        raise ValueError(f"unregistered domain: {domain}")
+    records = []
+    labels_seen = set()
+    for source_rank, ranked in enumerate(ranked_qids, start=1):
+        if ranked.qid in excluded_qids:
+            continue
+        entity = entities.get(ranked.qid)
+        if not isinstance(entity, Mapping):
+            continue
+        label = _english_label(entity)
+        if not _eligible_label(label) or label.casefold() in labels_seen:
+            continue
+        property_values = []
+        for field, raw_value in zip(
+            DEVELOPMENT_DOMAIN_FIELDS[domain],
+            ranked.raw_values,
+            strict=True,
+        ):
+            ranked_aliases = _ranked_value_aliases(field, raw_value, entities)
+            canonical_keys = _canonical_value_label_keys(raw_value, entities)
+            aliases = tuple(
+                alias
+                for alias in ranked_aliases
+                if _is_safe_development_alias(alias)
+                or _normal_form(alias.removesuffix(".")) in canonical_keys
+            )
+            if not aliases:
+                break
+            property_values.append((field.property_id, aliases))
+        if len(property_values) != 3:
+            continue
+        if domain == "place" and any(
+            _normal_form(alias) == _normal_form(label)
+            for _, aliases in property_values
+            for alias in aliases
+        ):
+            continue
+        records.append(
+            SourceRecord(
+                qid=ranked.qid,
+                label=label,
+                domain=domain,
+                sitelinks=ranked.sitelinks,
+                source_rank=source_rank,
+                property_values=tuple(property_values),
+            )
+        )
+        labels_seen.add(label.casefold())
+    return tuple(records)
+
+
+def _is_safe_development_alias(value: str) -> bool:
+    base = value.removesuffix(".").strip()
+    compact = "".join(character for character in base if character.isalnum())
+    return not (compact.isalpha() and len(compact) < 4)
+
+
+def _canonical_value_label_keys(
+    raw_value: str,
+    entities: Mapping[str, Mapping[str, Any]],
+) -> frozenset[str]:
+    keys = set()
+    for value in raw_value.split("|"):
+        qid = value.rsplit("/", 1)[-1]
+        entity = entities.get(qid)
+        if not isinstance(entity, Mapping):
+            continue
+        label = _english_label(entity)
+        if label:
+            keys.add(_normal_form(label))
+    return frozenset(keys)
 
 
 def filter_development_matchable_records(
@@ -283,7 +401,7 @@ def materialize_development_manifests(
                 )
             )
             for index, (field, aliases) in enumerate(
-                zip(DOMAIN_FIELDS[record.domain], alias_sets, strict=True),
+                zip(DEVELOPMENT_DOMAIN_FIELDS[record.domain], alias_sets, strict=True),
                 start=1,
             ):
                 questions.append(
@@ -434,7 +552,7 @@ def summarize_screening_yield(
     relation_observations: dict[str, list[bool]] = {}
     for candidate, result in scored:
         for field, correct in zip(
-            DOMAIN_FIELDS[candidate.coarse_type],
+            DEVELOPMENT_DOMAIN_FIELDS[candidate.coarse_type],
             result.correct_answers,
             strict=True,
         ):
@@ -467,14 +585,21 @@ def build_manual_error_audit_packet(
     items: Sequence[Mapping[str, Any]],
     *,
     sample_per_domain: int,
+    success_sample_per_domain: int = 0,
     seed: int,
 ) -> tuple[dict[str, Any], ...]:
-    """Create a deterministic, domain-balanced packet without outcome labels."""
+    """Create a deterministic, stratified packet without model outcome labels."""
     if type(sample_per_domain) is not int or sample_per_domain <= 0:
         raise ValueError("manual audit sample per domain must be positive")
+    if (
+        type(success_sample_per_domain) is not int
+        or success_sample_per_domain < 0
+    ):
+        raise ValueError("manual audit success sample per domain must be nonnegative")
     if type(seed) is not int:
         raise TypeError("manual audit seed must be an integer")
-    rows = []
+    errors = []
+    successes = []
     seen_questions: set[str] = set()
     for item in items:
         required = {
@@ -497,43 +622,42 @@ def build_manual_error_audit_packet(
             raise ValueError("manual audit item has an unregistered domain")
         if type(item["is_correct"]) is not bool:
             raise ValueError("manual audit is_correct must be boolean")
-        if not item["is_correct"]:
-            rows.append(item)
+        (successes if item["is_correct"] else errors).append(item)
 
     selected = []
     for domain in REGISTERED_DOMAINS:
-        domain_rows = [row for row in rows if row["domain"] == domain]
-        if len(domain_rows) < sample_per_domain:
-            raise ValueError(
-                f"{domain} has {len(domain_rows)} errors but requires "
-                f"{sample_per_domain}"
-            )
-        ordered = sorted(
-            domain_rows,
-            key=lambda row: (
-                hashlib.sha256(
-                    f"{seed}:{domain}:{row['question_id']}".encode()
-                ).hexdigest(),
-                str(row["question_id"]),
-            ),
+        strata = (
+            ("error", errors, sample_per_domain),
+            ("success", successes, success_sample_per_domain),
         )
-        for row in ordered[:sample_per_domain]:
-            audit_id = hashlib.sha256(
-                f"{seed}:{row['question_id']}".encode()
-            ).hexdigest()[:20]
-            selected.append(
-                {
-                    "audit_id": f"fa-v6-error-{audit_id}",
-                    "question_id": row["question_id"],
-                    "entity_id": row["entity_id"],
-                    "qid": row["qid"],
-                    "domain": row["domain"],
-                    "prompt": row["prompt"],
-                    "completion": row["completion"],
-                    "accepted_aliases": list(row["accepted_aliases"]),
-                    "allowed_error_labels": list(ERROR_TAXONOMY),
-                }
+        for stratum, rows, limit in strata:
+            domain_rows = [row for row in rows if row["domain"] == domain]
+            ordered = sorted(
+                domain_rows,
+                key=lambda row: (
+                    hashlib.sha256(
+                        f"{seed}:{domain}:{stratum}:{row['question_id']}".encode()
+                    ).hexdigest(),
+                    str(row["question_id"]),
+                ),
             )
+            for row in ordered[:limit]:
+                audit_id = hashlib.sha256(
+                    f"{seed}:{row['question_id']}".encode()
+                ).hexdigest()[:20]
+                selected.append(
+                    {
+                        "audit_id": f"fa-v6-audit-{audit_id}",
+                        "question_id": row["question_id"],
+                        "entity_id": row["entity_id"],
+                        "qid": row["qid"],
+                        "domain": row["domain"],
+                        "prompt": row["prompt"],
+                        "completion": row["completion"],
+                        "accepted_aliases": list(row["accepted_aliases"]),
+                        "allowed_error_labels": list(ERROR_TAXONOMY),
+                    }
+                )
     return tuple(sorted(selected, key=lambda row: row["audit_id"]))
 
 
@@ -699,6 +823,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "materialize":
         frame, records = _load_source_frame(args.source_frame)
         design = DevelopmentSourceDesign(
+            revision=_FRAME_TO_SOURCE_REVISION[frame["source_revision"]],
             split_seed=args.split_seed,
             candidates_per_domain_per_split=(args.candidates_per_domain_per_split),
         )
@@ -744,6 +869,8 @@ def _load_source_frame(
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or payload.get("schema_version") != 1:
         raise ValueError("development source frame has an invalid schema")
+    if payload.get("source_revision") not in _FRAME_TO_SOURCE_REVISION:
+        raise ValueError("development source frame revision is unsupported")
     payload_without_hash = dict(payload)
     stored_payload_sha256 = payload_without_hash.pop("frame_payload_sha256", None)
     matchability = payload.get("matchability_audit")

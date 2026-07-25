@@ -13,23 +13,153 @@ from typing import Any
 
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_confirmatory_source import (
-    DOMAIN_FIELDS,
+    _PREFIXES,
     REGISTERED_DOMAINS,
     SourceRecord,
     _fetch_entities,
     _post_sparql,
     build_domain_query,
-    build_source_records_from_ranked_values,
     exclude_cross_domain_source_collisions,
     parse_qlever_candidates,
 )
 from trajectory_extractor.fa_development_source import (
+    DEVELOPMENT_DOMAIN_FIELDS,
+    build_development_source_records_from_ranked_values,
     filter_development_matchable_records,
 )
 from trajectory_extractor.fa_runtime import load_pinned_tokenizer
 
-SOURCE_FRAME_REVISION = "fa-development-source-frame-v6"
+SOURCE_FRAME_REVISION = "fa-development-source-frame-v6-r6"
 _ENTITY_URI = re.compile(r"^http://www\.wikidata\.org/entity/(Q[1-9][0-9]*)$")
+
+
+def build_development_domain_query(domain: str, *, limit: int) -> str:
+    """Build the revisioned open-development query without changing Source-v5."""
+    if domain not in {"place", "organization", "creative_work"}:
+        return build_domain_query(domain, limit=limit)
+    if type(limit) is not int or limit <= 0:
+        raise ValueError("query limit must be a positive integer")
+    if domain == "organization":
+        return (
+            f"{_PREFIXES}\n"
+            "PREFIX p: <http://www.wikidata.org/prop/>\n"
+            "PREFIX ps: <http://www.wikidata.org/prop/statement/>\n"
+            "SELECT ?item ?sitelinks\n"
+            "       (STR(?raw_1) AS ?value_1)\n"
+            "       (STR(?raw_2) AS ?value_2)\n"
+            "       (STR(?raw_3) AS ?value_3)\n"
+            "WHERE {\n"
+            "  ?item wdt:P31/wdt:P279* wd:Q43229;\n"
+            "        wikibase:sitelinks ?sitelinks.\n"
+            "  FILTER NOT EXISTS {\n"
+            "    ?item wdt:P31/wdt:P279* wd:Q56061.\n"
+            "  }\n"
+            "  {\n"
+            "    SELECT ?item (SAMPLE(?country) AS ?raw_1)\n"
+            "    WHERE {\n"
+            "      ?item p:P17 ?countryStatement.\n"
+            "      ?countryStatement ps:P17 ?country.\n"
+            "    }\n"
+            "    GROUP BY ?item\n"
+            "    HAVING(COUNT(DISTINCT ?country) = 1)\n"
+            "  }\n"
+            "  {\n"
+            "    SELECT ?item (SAMPLE(?headquarters) AS ?raw_2)\n"
+            "    WHERE {\n"
+            "      ?item p:P159 ?headquartersStatement.\n"
+            "      ?headquartersStatement ps:P159 ?headquarters.\n"
+            "    }\n"
+            "    GROUP BY ?item\n"
+            "    HAVING(COUNT(DISTINCT ?headquarters) = 1)\n"
+            "  }\n"
+            "  ?raw_2 wdt:P31/wdt:P279* wd:Q486972.\n"
+            "  {\n"
+            "    SELECT ?item (SAMPLE(?inception) AS ?raw_3)\n"
+            "    WHERE {\n"
+            "      ?item p:P571 ?inceptionStatement.\n"
+            "      ?inceptionStatement ps:P571 ?inception.\n"
+            "    }\n"
+            "    GROUP BY ?item\n"
+            "    HAVING(COUNT(DISTINCT ?inception) = 1)\n"
+            "  }\n"
+            "  FILTER(?sitelinks >= 10)\n"
+            "}\n"
+            "ORDER BY DESC(?sitelinks) ?item\n"
+            f"LIMIT {limit}"
+        )
+    if domain == "creative_work":
+        base_query = build_domain_query(domain, limit=limit)
+        return (
+            base_query.replace(
+                _PREFIXES,
+                f"{_PREFIXES}\nPREFIX rdfs: "
+                "<http://www.w3.org/2000/01/rdf-schema#>",
+            ).replace(
+                "        wikibase:sitelinks ?sitelinks.\n",
+                (
+                    "        wikibase:sitelinks ?sitelinks;\n"
+                    "        rdfs:label ?itemLabel.\n"
+                    '  FILTER(LANG(?itemLabel) = "en")\n'
+                    "  FILTER NOT EXISTS {\n"
+                    "    ?other wdt:P31/wdt:P279* wd:Q11424;\n"
+                    "           rdfs:label ?itemLabel.\n"
+                    "    FILTER(?other != ?item)\n"
+                    "  }\n"
+                ),
+            )
+        )
+    return (
+        f"{_PREFIXES}\n"
+        "PREFIX p: <http://www.wikidata.org/prop/>\n"
+        "PREFIX ps: <http://www.wikidata.org/prop/statement/>\n"
+        "PREFIX pq: <http://www.wikidata.org/prop/qualifier/>\n"
+        "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+        "SELECT ?item ?sitelinks\n"
+        "       (STR(?raw_1) AS ?value_1)\n"
+        "       (STR(?raw_2) AS ?value_2)\n"
+        "       (STR(?raw_3) AS ?value_3)\n"
+        "WHERE {\n"
+        "  ?item wdt:P31/wdt:P279* wd:Q515;\n"
+        "        wikibase:sitelinks ?sitelinks;\n"
+        "        rdfs:label ?itemLabel.\n"
+        '  FILTER(LANG(?itemLabel) = "en")\n'
+        "  FILTER NOT EXISTS {\n"
+        "    ?other rdfs:label ?itemLabel.\n"
+        "    FILTER(?other != ?item)\n"
+        "  }\n"
+        "  {\n"
+        "    SELECT ?item (SAMPLE(?country) AS ?raw_1)\n"
+        "    WHERE {\n"
+        "      ?item p:P17 ?countryStatement.\n"
+        "      ?countryStatement ps:P17 ?country.\n"
+        "      FILTER NOT EXISTS { ?countryStatement pq:P582 ?countryEnd. }\n"
+        "    }\n"
+        "    GROUP BY ?item\n"
+        "    HAVING(COUNT(DISTINCT ?country) = 1)\n"
+        "  }\n"
+        "  {\n"
+        "    SELECT ?item (SAMPLE(?admin) AS ?raw_2)\n"
+        "    WHERE {\n"
+        "      ?item p:P131 ?adminStatement.\n"
+        "      ?adminStatement ps:P131 ?admin.\n"
+        "      FILTER NOT EXISTS { ?adminStatement pq:P582 ?adminEnd. }\n"
+        "      ?admin wdt:P31/wdt:P279* wd:Q56061.\n"
+        "    }\n"
+        "    GROUP BY ?item\n"
+        "    HAVING(COUNT(DISTINCT ?admin) = 1)\n"
+        "  }\n"
+        "  {\n"
+        "    SELECT ?raw_1 (SAMPLE(?continent) AS ?raw_3)\n"
+        "    WHERE { ?raw_1 wdt:P30 ?continent. }\n"
+        "    GROUP BY ?raw_1\n"
+        "    HAVING(COUNT(DISTINCT ?continent) = 1)\n"
+        "  }\n"
+        "  FILTER(?raw_2 != ?raw_1)\n"
+        "  FILTER(?sitelinks >= 10)\n"
+        "}\n"
+        "ORDER BY DESC(?sitelinks) ?item\n"
+        f"LIMIT {limit}"
+    )
 
 
 def build_development_frame(
@@ -38,16 +168,19 @@ def build_development_frame(
     tokenizer: Any,
     tokenizer_revision: str,
     query_limit: int,
+    place_query_limit: int | None = None,
     required_per_domain: int,
     excluded_qids: frozenset[str],
     retrieval_date: str,
     model_id: str = "google/gemma-2-2b-it",
     chat_template_sha256: str | None = None,
+    seed_entity_cache: Path | None = None,
 ) -> dict[str, Any]:
     """Build or replay one immutable, bounded, development-only source frame."""
     _validate_design(
         tokenizer_revision=tokenizer_revision,
         query_limit=query_limit,
+        place_query_limit=place_query_limit,
         required_per_domain=required_per_domain,
         excluded_qids=excluded_qids,
         retrieval_date=retrieval_date,
@@ -57,14 +190,20 @@ def build_development_frame(
     requested_design = _design_payload(
         tokenizer_revision=tokenizer_revision,
         query_limit=query_limit,
+        place_query_limit=place_query_limit,
         required_per_domain=required_per_domain,
         excluded_qids=excluded_qids,
         retrieval_date=retrieval_date,
         model_id=model_id,
         chat_template_sha256=chat_template_sha256,
+        seed_entity_cache=seed_entity_cache,
     )
     if frame_path.exists():
         frame = _read_json_object(frame_path)
+        if frame.get("source_revision") != SOURCE_FRAME_REVISION:
+            raise ValueError(
+                "existing development frame uses a stale source revision"
+            )
         if frame.get("design") != requested_design:
             raise ValueError(
                 "existing development frame does not match the requested design"
@@ -74,6 +213,10 @@ def build_development_frame(
             "provenance_sha256"
         ) != _canonical_sha256(provenance):
             raise ValueError("existing development frame provenance hash is invalid")
+        if provenance.get("code_sha256s") != _behavior_code_hashes():
+            raise ValueError(
+                "existing development frame uses stale behavior code"
+            )
         stored_payload_sha256 = frame.pop("frame_payload_sha256", None)
         if stored_payload_sha256 != _canonical_sha256(frame):
             raise ValueError("existing development frame payload hash is invalid")
@@ -87,7 +230,12 @@ def build_development_frame(
     cache_hashes = {}
     entity_qids = set()
     for domain in REGISTERED_DOMAINS:
-        query = build_domain_query(domain, limit=query_limit)
+        domain_limit = (
+            place_query_limit
+            if domain == "place" and place_query_limit is not None
+            else query_limit
+        )
+        query = build_development_domain_query(domain, limit=domain_limit)
         query_sha256 = _sha256_bytes(query.encode("utf-8"))
         query_hashes[domain] = query_sha256
         cache_path = cache_dir / f"qlever_{domain}_{query_sha256[:16]}.json"
@@ -102,7 +250,7 @@ def build_development_frame(
         entity_qids.update(row.qid for row in ranked)
         for row in ranked:
             for field, raw_value in zip(
-                DOMAIN_FIELDS[domain],
+                DEVELOPMENT_DOMAIN_FIELDS[domain],
                 row.raw_values,
                 strict=True,
             ):
@@ -113,11 +261,24 @@ def build_development_frame(
                     if match is not None:
                         entity_qids.add(match.group(1))
 
-    entities = _fetch_entities(
-        tuple(sorted(entity_qids)),
+    seeded_entities = (
+        _read_json_object(seed_entity_cache)
+        if seed_entity_cache is not None
+        else {}
+    )
+    if any(not isinstance(row, dict) for row in seeded_entities.values()):
+        raise ValueError("seed entity cache must map QIDs to entity objects")
+    missing_qids = tuple(sorted(entity_qids.difference(seeded_entities)))
+    fetched_entities = _fetch_entities(
+        missing_qids,
         cache_dir=cache_dir / "entity_batches",
         props="labels|aliases",
     )
+    entities = {
+        qid: seeded_entities[qid]
+        for qid in sorted(entity_qids.intersection(seeded_entities))
+    }
+    entities.update(fetched_entities)
     entity_cache = cache_dir / "entity_records_v1.json"
     _write_json_immutable(entity_cache, entities)
     cache_hashes[str(entity_cache.relative_to(output_dir))] = _sha256_file(entity_cache)
@@ -125,7 +286,7 @@ def build_development_frame(
         cache_hashes[str(path.relative_to(output_dir))] = _sha256_file(path)
 
     raw_records = {
-        domain: build_source_records_from_ranked_values(
+        domain: build_development_source_records_from_ranked_values(
             domain,
             ranked_by_domain[domain],
             entities,
@@ -161,6 +322,11 @@ def build_development_frame(
         "retrieval_date": retrieval_date,
         "query_sha256s": query_hashes,
         "raw_cache_sha256s": dict(sorted(cache_hashes.items())),
+        **(
+            {"seed_entity_cache_sha256": _sha256_file(seed_entity_cache)}
+            if seed_entity_cache is not None
+            else {}
+        ),
         "tokenizer_revision": tokenizer_revision,
         "model_id": model_id,
         "chat_template_sha256": chat_template_sha256,
@@ -174,8 +340,16 @@ def build_development_frame(
         "design": requested_design,
         "retrieval_date": retrieval_date,
         "query_limit": query_limit,
+        "query_limits_by_domain": {
+            domain: (
+                place_query_limit
+                if domain == "place" and place_query_limit is not None
+                else query_limit
+            )
+            for domain in REGISTERED_DOMAINS
+        },
         "required_per_domain": required_per_domain,
-        "excluded_source_v5_qids": sorted(excluded_qids),
+        "excluded_prior_qids": sorted(excluded_qids),
         "ambiguous_cross_domain_qids": sorted(ambiguous_qids),
         "ambiguous_cross_domain_names": sorted(ambiguous_names),
         "query_sha256s": query_hashes,
@@ -205,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--query-limit", type=int, default=1200)
+    parser.add_argument("--place-query-limit", type=int)
     parser.add_argument("--required-per-domain", type=int, required=True)
     parser.add_argument("--retrieval-date", default=date.today().isoformat())
     parser.add_argument(
@@ -213,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=[],
     )
+    parser.add_argument("--seed-entity-cache", type=Path)
     args = parser.parse_args(argv)
 
     config = FAConfig.from_json(args.config)
@@ -222,11 +398,13 @@ def main(argv: list[str] | None = None) -> int:
         tokenizer=prepared.tokenizer,
         tokenizer_revision=config.tokenizer_revision,
         query_limit=args.query_limit,
+        place_query_limit=args.place_query_limit,
         required_per_domain=args.required_per_domain,
         excluded_qids=_load_excluded_qids(args.exclude_candidates),
         retrieval_date=args.retrieval_date,
         model_id=config.model_id,
         chat_template_sha256=prepared.chat_template_sha256,
+        seed_entity_cache=args.seed_entity_cache,
     )
     print(
         json.dumps(
@@ -247,12 +425,17 @@ def _validate_design(
     *,
     tokenizer_revision: str,
     query_limit: int,
+    place_query_limit: int | None,
     required_per_domain: int,
     excluded_qids: frozenset[str],
     retrieval_date: str,
 ) -> None:
     if type(query_limit) is not int or query_limit <= 0:
         raise ValueError("query_limit must be a positive integer")
+    if place_query_limit is not None and (
+        type(place_query_limit) is not int or place_query_limit <= 0
+    ):
+        raise ValueError("place_query_limit must be a positive integer")
     if type(required_per_domain) is not int or required_per_domain <= 0:
         raise ValueError("required_per_domain must be a positive integer")
     if not tokenizer_revision:
@@ -279,20 +462,28 @@ def _design_payload(
     *,
     tokenizer_revision: str,
     query_limit: int,
+    place_query_limit: int | None,
     required_per_domain: int,
     excluded_qids: frozenset[str],
     retrieval_date: str,
     model_id: str,
     chat_template_sha256: str | None,
+    seed_entity_cache: Path | None,
 ) -> dict[str, Any]:
     return {
         "query_limit": query_limit,
+        "place_query_limit": place_query_limit,
         "required_per_domain": required_per_domain,
-        "excluded_source_v5_qids": sorted(excluded_qids),
+        "excluded_prior_qids": sorted(excluded_qids),
         "retrieval_date": retrieval_date,
         "model_id": model_id,
         "tokenizer_revision": tokenizer_revision,
         "chat_template_sha256": chat_template_sha256,
+        **(
+            {"seed_entity_cache_sha256": _sha256_file(seed_entity_cache)}
+            if seed_entity_cache is not None
+            else {}
+        ),
     }
 
 

@@ -8,14 +8,17 @@ import pytest
 
 from trajectory_extractor.fa_confirmatory_source import (
     REGISTERED_DOMAINS,
+    RankedSource,
     SourceRecord,
 )
 from trajectory_extractor.fa_development_source import (
+    DEVELOPMENT_DOMAIN_FIELDS,
     DEVELOPMENT_SPLITS,
     ERROR_TAXONOMY,
     DevelopmentSourceDesign,
     assign_development_pools,
     audit_development_source,
+    build_development_source_records_from_ranked_values,
     build_manual_error_audit_packet,
     compile_manual_error_audit,
     filter_development_matchable_records,
@@ -63,6 +66,132 @@ class _WordTokenizer:
     def encode(self, text, add_special_tokens=False):
         del add_special_tokens
         return text.split()
+
+
+def test_place_source_rejects_property_alias_equal_to_entity_label():
+    ranked = (
+        RankedSource(
+            qid="Q100",
+            sitelinks=100,
+            raw_values=(
+                "http://www.wikidata.org/entity/Q101",
+                "http://www.wikidata.org/entity/Q102",
+                "http://www.wikidata.org/entity/Q103",
+            ),
+        ),
+    )
+    entities = {
+        "Q100": {"labels": {"en": {"value": "Kyoto"}}, "aliases": {"en": []}},
+        "Q101": {"labels": {"en": {"value": "Japan"}}, "aliases": {"en": []}},
+        "Q102": {"labels": {"en": {"value": "Kyoto"}}, "aliases": {"en": []}},
+        "Q103": {"labels": {"en": {"value": "Asia"}}, "aliases": {"en": []}},
+    }
+
+    assert (
+        build_development_source_records_from_ranked_values(
+            "place",
+            ranked,
+            entities,
+        )
+        == ()
+    )
+
+
+def test_development_source_drops_ambiguous_short_entity_aliases():
+    ranked = (
+        RankedSource(
+            qid="Q100",
+            sitelinks=100,
+            raw_values=(
+                "http://www.wikidata.org/entity/Q101",
+                "http://www.wikidata.org/entity/Q102",
+                "http://www.wikidata.org/entity/Q103",
+            ),
+        ),
+    )
+    entities = {
+        "Q100": {
+            "labels": {"en": {"value": "Example Person"}},
+            "aliases": {"en": []},
+        },
+        "Q101": {
+            "labels": {"en": {"value": "Belarus"}},
+            "aliases": {
+                "en": [{"value": "BY"}, {"value": "Belarusian state"}]
+            },
+        },
+        "Q102": {
+            "labels": {"en": {"value": "Physicist"}},
+            "aliases": {"en": [{"value": "Dr"}]},
+        },
+        "Q103": {
+            "labels": {"en": {"value": "Minsk"}},
+            "aliases": {"en": [{"value": "MSQ"}]},
+        },
+    }
+
+    records = build_development_source_records_from_ranked_values(
+        "person",
+        ranked,
+        entities,
+    )
+
+    aliases = {
+        alias.removesuffix(".")
+        for _, values in records[0].property_values
+        for alias in values
+    }
+    assert "Belarus" in aliases
+    assert "Belarusian state" in aliases
+    assert "BY" not in aliases
+    assert "Dr" not in aliases
+    assert "MSQ" not in aliases
+
+
+def test_development_source_preserves_short_canonical_value_labels():
+    ranked = (
+        RankedSource(
+            qid="Q200",
+            sitelinks=100,
+            raw_values=(
+                "http://www.wikidata.org/entity/Q201",
+                "http://www.wikidata.org/entity/Q202",
+                "http://www.wikidata.org/entity/Q203",
+            ),
+        ),
+    )
+    entities = {
+        "Q200": {
+            "labels": {"en": {"value": "Example Person"}},
+            "aliases": {"en": []},
+        },
+        "Q201": {
+            "labels": {"en": {"value": "LA"}},
+            "aliases": {"en": [{"value": "LAX"}]},
+        },
+        "Q202": {
+            "labels": {"en": {"value": "US"}},
+            "aliases": {"en": [{"value": "USA"}]},
+        },
+        "Q203": {
+            "labels": {"en": {"value": "AI"}},
+            "aliases": {"en": [{"value": "ML"}]},
+        },
+    }
+
+    records = build_development_source_records_from_ranked_values(
+        "person",
+        ranked,
+        entities,
+    )
+
+    aliases = {
+        alias
+        for _, values in records[0].property_values
+        for alias in values
+    }
+    assert {"LA", "US", "AI"}.issubset(aliases)
+    assert not {"LAX", "USA", "ML"}.intersection(aliases)
 
 
 def test_assignment_is_balanced_deterministic_and_excludes_prior_qids():
@@ -147,6 +276,26 @@ def test_manifests_use_development_identity_and_three_questions():
             candidate.qid for candidate in candidates
         }
 
+    place_questions = [
+        question
+        for candidate in manifests["instrument_development"][0]
+        if candidate.coarse_type == "place"
+        for question in manifests["instrument_development"][1]
+        if question.qid == candidate.qid
+    ]
+    assert [field.property_id for field in DEVELOPMENT_DOMAIN_FIELDS["place"]] == [
+        "P17",
+        "P131",
+        "P30",
+    ]
+    assert any(
+        "continent" in question.prompt.casefold() for question in place_questions
+    )
+    assert all(
+        "time zone" not in question.prompt.casefold()
+        for question in place_questions
+    )
+
 
 def test_audit_rejects_cross_split_qid_leakage_and_returns_semantic_hash():
     design = _design()
@@ -215,12 +364,12 @@ def test_yield_summary_reports_score_distribution_domain_rates_and_wilson_bounds
     assert set(summary["by_relation"]) == {
         "P17",
         "P19",
+        "P30",
         "P27",
         "P57",
         "P106",
         "P131",
         "P159",
-        "P421",
         "P495",
         "P571",
         "P577",
@@ -283,6 +432,88 @@ def test_manual_error_packet_is_deterministic_stratified_and_blinded():
     assert all(
         set(row["allowed_error_labels"]) == set(ERROR_TAXONOMY) for row in packet
     )
+
+
+def test_manual_error_packet_audits_all_errors_below_domain_cap():
+    items = []
+    expected_counts = {}
+    for domain_index, domain in enumerate(REGISTERED_DOMAINS):
+        error_count = domain_index + 1
+        expected_counts[domain] = min(error_count, 4)
+        for index in range(error_count):
+            items.append(
+                {
+                    "question_id": f"{domain}-{index}",
+                    "entity_id": f"{domain}-entity-{index}",
+                    "qid": f"Q{750_000 + domain_index * 10 + index}",
+                    "domain": domain,
+                    "prompt": f"Question {index}?",
+                    "completion": "An answer",
+                    "accepted_aliases": ["Expected"],
+                    "is_correct": False,
+                }
+            )
+
+    packet = build_manual_error_audit_packet(
+        items,
+        sample_per_domain=4,
+        seed=20260725,
+    )
+
+    assert {
+        domain: sum(row["domain"] == domain for row in packet)
+        for domain in REGISTERED_DOMAINS
+    } == expected_counts
+
+
+def test_manual_audit_packet_includes_blinded_success_spot_checks():
+    items = []
+    for domain_index, domain in enumerate(REGISTERED_DOMAINS):
+        for index in range(5):
+            items.append(
+                {
+                    "question_id": f"{domain}-{index}",
+                    "entity_id": f"{domain}-entity-{index}",
+                    "qid": f"Q{760_000 + domain_index * 10 + index}",
+                    "domain": domain,
+                    "prompt": f"Question {index}?",
+                    "completion": "An answer",
+                    "accepted_aliases": ["Expected"],
+                    "is_correct": index >= 2,
+                }
+            )
+
+    packet = build_manual_error_audit_packet(
+        items,
+        sample_per_domain=1,
+        success_sample_per_domain=2,
+        seed=20260725,
+    )
+
+    assert len(packet) == 12
+    assert all("is_correct" not in row and "audit_stratum" not in row for row in packet)
+
+
+def test_manual_audit_accepts_no_error_label():
+    packet = (
+        {
+            "audit_id": "audit-1",
+            "allowed_error_labels": [*ERROR_TAXONOMY],
+        },
+    )
+    ratings = [
+        {
+            "audit_id": "audit-1",
+            "rater_id": rater,
+            "round": 1,
+            "error_label": "no_error",
+        }
+        for rater in ("rater-a", "rater-b")
+    ]
+
+    compiled = compile_manual_error_audit(packet, ratings)
+
+    assert compiled["decision_counts"] == {"no_error": 1}
 
 
 def test_manual_error_audit_requires_two_raters_and_independent_adjudication():
@@ -418,7 +649,7 @@ def test_standalone_cli_materializes_development_source_from_open_frame(
             )(
                 {
                     "schema_version": 1,
-                    "source_revision": "open-development-frame-test",
+                    "source_revision": "fa-development-source-frame-v6-r4",
                     "retrieval_date": "2026-07-25",
                     "required_per_domain": 3,
                     "query_sha256s": {
@@ -466,5 +697,43 @@ def test_standalone_cli_materializes_development_source_from_open_frame(
     assert printed["status"] == "materialized"
     assert printed["candidate_count"] == 8
     assert (output_dir / "source_integrity_v1.json").exists()
-    snapshot = json.loads((output_dir / "source_snapshot_v1.json").read_text())
+    snapshot = json.loads(
+        (output_dir / "source_snapshot_v1.json").read_text(encoding="utf-8")
+    )
+    assert snapshot["source_revision"] == "fa-development-source-v6-r4"
     assert len(snapshot["source_frame_sha256"]) == 64
+
+
+def test_standalone_cli_rejects_unsupported_frame_revision(tmp_path):
+    frame_path = tmp_path / "source_frame.json"
+    payload = {
+        "schema_version": 1,
+        "source_revision": "open-development-frame-test",
+        "retrieval_date": "2026-07-25",
+        "required_per_domain": 0,
+        "query_sha256s": {},
+        "matchability_audit": {"policy_sha256": "a" * 64},
+        "records_by_domain": {},
+    }
+    payload["frame_payload_sha256"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    frame_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="revision is unsupported"):
+        main(
+            [
+                "materialize",
+                "--source-frame",
+                str(frame_path),
+                "--output-dir",
+                str(tmp_path / "output"),
+                "--candidates-per-domain-per-split",
+                "1",
+            ]
+        )

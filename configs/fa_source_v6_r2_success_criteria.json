@@ -1,0 +1,18 @@
+{
+  "claim_scope": "instrument_readiness_only",
+  "development_gate": {
+    "candidate_count": 96,
+    "minimum_qualified_per_domain": 16,
+    "minimum_relation_success_count": 16,
+    "minimum_place_country_success_count": 18,
+    "minimum_place_continent_success_count": 18,
+    "prompt_count": 288,
+    "qualification_threshold": 2
+  },
+  "human_audit": {
+    "adjudicator_required_on_disagreement": true,
+    "independent_initial_raters": 2,
+    "required_before_source_v7_freeze": true
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,77 @@
+{
+  "archive": {
+    "name": "fa-source-v6-instrument-development-2dc9dd5f.zip",
+    "sha256": "1b06dc9180c060624666b3ddd60c6f4537bf318c216ec76b9f7395a39e073cc4"
+  },
+  "execution_identity": {
+    "batch_size": 8,
+    "candidate_count": 96,
+    "candidate_sha256": "4c9c418c658d1f0116b0b32d75d657ed93a38a66340cb732325109975adef567",
+    "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+    "config_sha256": "76f557db589863ab217f963ce5020b4a57e88774582e1e3d3bd58600143103fa",
+    "execution_identity_sha256": "6e6eceaa10fdf5401f6578ee8ec5d15340619e73ce0b1c3d250ce23686d037ce",
+    "git_commit": "2dc9dd5f0c660295e992daedfb958a9d2c22132c",
+    "model_id": "google/gemma-2-2b-it",
+    "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+    "prompt_count": 288,
+    "question_sha256": "146427d80c8d3da7f27e5271a7cd7afcda72bc8423da89f90100a7788761fa6d",
+    "source_integrity_sha256": "daeb8d6bcf478bb0788ecb6ded8c7b31821694055abaa7d2f7ef259b67c2113f",
+    "split": "instrument_development",
+    "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+  },
+  "result": {
+    "by_domain": {
+      "creative_work": {
+        "entity_count": 24,
+        "qualified_count": 21,
+        "qualification_rate": 0.875
+      },
+      "organization": {
+        "entity_count": 24,
+        "qualified_count": 19,
+        "qualification_rate": 0.7916666666666666
+      },
+      "person": {
+        "entity_count": 24,
+        "qualified_count": 17,
+        "qualification_rate": 0.7083333333333334
+      },
+      "place": {
+        "entity_count": 24,
+        "qualified_count": 4,
+        "qualification_rate": 0.16666666666666666
+      }
+    },
+    "by_relation": {
+      "P106": {"item_count": 24, "success_count": 19},
+      "P131": {"item_count": 24, "success_count": 4},
+      "P159": {"item_count": 24, "success_count": 14},
+      "P17": {"item_count": 48, "success_count": 38},
+      "P19": {"item_count": 24, "success_count": 11},
+      "P27": {"item_count": 24, "success_count": 17},
+      "P421": {"item_count": 24, "success_count": 2},
+      "P495": {"item_count": 24, "success_count": 20},
+      "P57": {"item_count": 24, "success_count": 18},
+      "P571": {"item_count": 24, "success_count": 17},
+      "P577": {"item_count": 24, "success_count": 22}
+    },
+    "entity_count": 96,
+    "qualified_count": 61,
+    "qualification_rate": 0.6354166666666666,
+    "score_distribution": {
+      "0_of_3": 5,
+      "1_of_3": 30,
+      "2_of_3": 31,
+      "3_of_3": 30
+    }
+  },
+  "runtime": {
+    "accelerate": "1.12.0",
+    "cuda": true,
+    "gpu": "Tesla T4",
+    "torch": "2.11.0+cu128",
+    "transformers": "4.57.1"
+  },
+  "scientific_status": "instrument_revision_failed_place_construct_validity_gate",
+  "scope": "open instrument development only; no H1-H8 endpoint was opened"
+}

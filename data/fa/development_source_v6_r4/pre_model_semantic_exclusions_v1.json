@@ -1,0 +1,52 @@
+[
+  {
+    "domain": "organization",
+    "qid": "Q1490",
+    "reason": "administrative territorial entity, not an organization"
+  },
+  {
+    "domain": "organization",
+    "qid": "Q797",
+    "reason": "administrative territorial entity, not an organization"
+  },
+  {
+    "domain": "organization",
+    "qid": "Q186941",
+    "reason": "headquarters answers mix incompatible geographic granularities"
+  },
+  {
+    "domain": "creative_work",
+    "qid": "Q2579784",
+    "reason": "common correct director surface form absent from accepted aliases"
+  },
+  {
+    "domain": "place",
+    "qid": "Q490",
+    "reason": "ambiguous English place name"
+  },
+  {
+    "domain": "place",
+    "qid": "Q486472",
+    "reason": "ambiguous English place name"
+  },
+  {
+    "domain": "place",
+    "qid": "Q79535",
+    "reason": "ambiguous English place name"
+  },
+  {
+    "domain": "place",
+    "qid": "Q115276",
+    "reason": "ambiguous English place name"
+  },
+  {
+    "domain": "place",
+    "qid": "Q44241",
+    "reason": "ambiguous English place name"
+  },
+  {
+    "domain": "place",
+    "qid": "Q212546",
+    "reason": "continent ground truth is substantively ambiguous"
+  }
+]
