@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "fa_source_v6_pre_model_semantic_audit",
+  "source_revision": "fa-development-source-v6-r8",
+  "source_integrity_sha256": "71510bce1a103351226eaf6450f2226336bf1e99534a9a1f025b2c076a22ff5b",
+  "auditor_id": "codex-subagent-semantic-auditor",
+  "status": "blocked",
+  "blocker_count": 251,
+  "model_output_inspected": false,
+  "items_file": "pre_model_semantic_audit_items_v1.jsonl",
+  "items_sha256": "fd1cf8f6099c3f224d2a8f2e124f00594703f9c56040cb95389f44a36f9325c8",
+  "coverage": {
+    "candidate_count": 192,
+    "question_count": 576,
+    "candidate_qids_sha256": "7492ecc20afaa907b1eb11dfc4702022d7bacc8d2196c80dd67feea8937a84b6",
+    "question_ids_sha256": "fafe286193df66c2882fb24784d58f26586e352c8d78bcf0b2028eb05e47a966"
+  },
+  "audit_scope": {
+    "candidate_review": "all registered candidates",
+    "question_review": "all registered question-ground-truth-accepted-surface triples",
+    "source_evidence": "immutable R8 QLever and Wikidata entity caches",
+    "fail_closed": true
+  },
+  "summary": {
+    "passed_question_count": 325,
+    "blocked_question_count": 251,
+    "source_value_mismatch_count": 0,
+    "by_domain": {
+      "creative_work": {
+        "total": 144,
+        "passed": 62,
+        "blocked": 82
+      },
+      "organization": {
+        "total": 144,
+        "passed": 97,
+        "blocked": 47
+      },
+      "person": {
+        "total": 144,
+        "passed": 88,
+        "blocked": 56
+      },
+      "place": {
+        "total": 144,
+        "passed": 78,
+        "blocked": 66
+      }
+    }
+  },
+  "blocker_taxonomy": {
+    "entity_label_ambiguous": {
+      "description": "The prompt label does not uniquely identify the intended entity under fail-closed review.",
+      "blocked_question_count": 162
+    },
+    "granularity_or_source_error": {
+      "description": "The frozen answer is too coarse or conflicts with an ordinarily expected specific fact.",
+      "blocked_question_count": 3
+    },
+    "historical_source_uncertain": {
+      "description": "The frozen Wikidata statement is not sufficiently certain for a fail-closed factual instrument.",
+      "blocked_question_count": 4
+    },
+    "ordinary_surface_missing": {
+      "description": "At least one ordinary correct answer surface would be scored incorrect by exact normalized alias membership.",
+      "blocked_question_count": 118
+    },
+    "temporal_geopolitical_uncertainty": {
+      "description": "The current-status question lacks a convention sufficient to resolve a contested temporal or legal status.",
+      "blocked_question_count": 2
+    }
+  }
+}

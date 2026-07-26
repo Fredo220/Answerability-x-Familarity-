@@ -1,0 +1,3170 @@
+[
+  {
+    "accepted_aliases": [
+      "John Stockwell",
+      "John Stockwell."
+    ],
+    "prompt": "Who directed Into the Blue? Answer with only one director name.",
+    "qid": "Q1130297",
+    "question_id": "development-v6-construction_validation-creative_work-q1130297-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1130297 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2005",
+      "2005."
+    ],
+    "prompt": "In which year was Into the Blue first released? Answer with only the year.",
+    "qid": "Q1130297",
+    "question_id": "development-v6-construction_validation-creative_work-q1130297-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1130297 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Into the Blue? Answer with only the country name.",
+    "qid": "Q1130297",
+    "question_id": "development-v6-construction_validation-creative_work-q1130297-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1130297 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "David Lynch",
+      "David Lynch."
+    ],
+    "prompt": "Who directed Dune? Answer with only one director name.",
+    "qid": "Q114819",
+    "question_id": "development-v6-construction_validation-creative_work-q114819-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q114819 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1984",
+      "1984."
+    ],
+    "prompt": "In which year was Dune first released? Answer with only the year.",
+    "qid": "Q114819",
+    "question_id": "development-v6-construction_validation-creative_work-q114819-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q114819 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Dune? Answer with only the country name.",
+    "qid": "Q114819",
+    "question_id": "development-v6-construction_validation-creative_work-q114819-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q114819 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Anthony Harvey",
+      "Anthony Harvey."
+    ],
+    "prompt": "Who directed The Lion in Winter? Answer with only one director name.",
+    "qid": "Q1195311",
+    "question_id": "development-v6-construction_validation-creative_work-q1195311-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1195311 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1968",
+      "1968."
+    ],
+    "prompt": "In which year was The Lion in Winter first released? Answer with only the year.",
+    "qid": "Q1195311",
+    "question_id": "development-v6-construction_validation-creative_work-q1195311-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1195311 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United Kingdom",
+      "United Kingdom."
+    ],
+    "prompt": "What is the country of origin of The Lion in Winter? Answer with only the country name.",
+    "qid": "Q1195311",
+    "question_id": "development-v6-construction_validation-creative_work-q1195311-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1195311 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Marcus Nispel",
+      "Marcus Nispel."
+    ],
+    "prompt": "Who directed Friday the 13th? Answer with only one director name.",
+    "qid": "Q1454815",
+    "question_id": "development-v6-construction_validation-creative_work-q1454815-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1454815 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2009",
+      "2009."
+    ],
+    "prompt": "In which year was Friday the 13th first released? Answer with only the year.",
+    "qid": "Q1454815",
+    "question_id": "development-v6-construction_validation-creative_work-q1454815-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1454815 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Friday the 13th? Answer with only the country name.",
+    "qid": "Q1454815",
+    "question_id": "development-v6-construction_validation-creative_work-q1454815-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1454815 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Josef von Sternberg",
+      "Josef von Sternberg."
+    ],
+    "prompt": "Who directed The Blue Angel? Answer with only one director name.",
+    "qid": "Q158047",
+    "question_id": "development-v6-construction_validation-creative_work-q158047-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q158047 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1930",
+      "1930."
+    ],
+    "prompt": "In which year was The Blue Angel first released? Answer with only the year.",
+    "qid": "Q158047",
+    "question_id": "development-v6-construction_validation-creative_work-q158047-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q158047 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "What is the country of origin of The Blue Angel? Answer with only the country name.",
+    "qid": "Q158047",
+    "question_id": "development-v6-construction_validation-creative_work-q158047-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q158047 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Alex Kurtzman",
+      "Alex Kurtzman."
+    ],
+    "prompt": "Who directed The Mummy? Answer with only one director name.",
+    "qid": "Q23759268",
+    "question_id": "development-v6-construction_validation-creative_work-q23759268-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q23759268 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2017",
+      "2017."
+    ],
+    "prompt": "In which year was The Mummy first released? Answer with only the year.",
+    "qid": "Q23759268",
+    "question_id": "development-v6-construction_validation-creative_work-q23759268-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q23759268 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of The Mummy? Answer with only the country name.",
+    "qid": "Q23759268",
+    "question_id": "development-v6-construction_validation-creative_work-q23759268-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q23759268 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Pier Paolo Pasolini",
+      "Pier Paolo Pasolini."
+    ],
+    "prompt": "Who directed Accattone? Answer with only one director name.",
+    "qid": "Q338599",
+    "question_id": "development-v6-construction_validation-creative_work-q338599-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q338599 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1961",
+      "1961."
+    ],
+    "prompt": "In which year was Accattone first released? Answer with only the year.",
+    "qid": "Q338599",
+    "question_id": "development-v6-construction_validation-creative_work-q338599-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q338599 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Italy",
+      "Italy."
+    ],
+    "prompt": "What is the country of origin of Accattone? Answer with only the country name.",
+    "qid": "Q338599",
+    "question_id": "development-v6-construction_validation-creative_work-q338599-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q338599 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Frank Borzage",
+      "Frank Borzage."
+    ],
+    "prompt": "Who directed Seventh Heaven? Answer with only one director name.",
+    "qid": "Q368451",
+    "question_id": "development-v6-construction_validation-creative_work-q368451-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q368451 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1927",
+      "1927."
+    ],
+    "prompt": "In which year was Seventh Heaven first released? Answer with only the year.",
+    "qid": "Q368451",
+    "question_id": "development-v6-construction_validation-creative_work-q368451-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q368451 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Seventh Heaven? Answer with only the country name.",
+    "qid": "Q368451",
+    "question_id": "development-v6-construction_validation-creative_work-q368451-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q368451 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Fran Rubel Kuzui",
+      "Fran Rubel Kuzui."
+    ],
+    "prompt": "Who directed Buffy the Vampire Slayer? Answer with only one director name.",
+    "qid": "Q39970",
+    "question_id": "development-v6-construction_validation-creative_work-q39970-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39970 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1992",
+      "1992."
+    ],
+    "prompt": "In which year was Buffy the Vampire Slayer first released? Answer with only the year.",
+    "qid": "Q39970",
+    "question_id": "development-v6-construction_validation-creative_work-q39970-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39970 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Buffy the Vampire Slayer? Answer with only the country name.",
+    "qid": "Q39970",
+    "question_id": "development-v6-construction_validation-creative_work-q39970-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39970 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Susanne Bier",
+      "Susanne Bier."
+    ],
+    "prompt": "Who directed Bird Box? Answer with only one director name.",
+    "qid": "Q43370937",
+    "question_id": "development-v6-construction_validation-creative_work-q43370937-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43370937 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2018",
+      "2018."
+    ],
+    "prompt": "In which year was Bird Box first released? Answer with only the year.",
+    "qid": "Q43370937",
+    "question_id": "development-v6-construction_validation-creative_work-q43370937-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43370937 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Bird Box? Answer with only the country name.",
+    "qid": "Q43370937",
+    "question_id": "development-v6-construction_validation-creative_work-q43370937-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43370937 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Edwin Stanton Porter",
+      "Edwin Stanton Porter."
+    ],
+    "prompt": "Who directed The Great Train Robbery? Answer with only one director name.",
+    "qid": "Q470329",
+    "question_id": "development-v6-construction_validation-creative_work-q470329-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q470329 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1903",
+      "1903."
+    ],
+    "prompt": "In which year was The Great Train Robbery first released? Answer with only the year.",
+    "qid": "Q470329",
+    "question_id": "development-v6-construction_validation-creative_work-q470329-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q470329 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of The Great Train Robbery? Answer with only the country name.",
+    "qid": "Q470329",
+    "question_id": "development-v6-construction_validation-creative_work-q470329-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q470329 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Tommy Wiseau",
+      "Tommy Wiseau."
+    ],
+    "prompt": "Who directed The Room? Answer with only one director name.",
+    "qid": "Q533383",
+    "question_id": "development-v6-construction_validation-creative_work-q533383-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q533383 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2003",
+      "2003."
+    ],
+    "prompt": "In which year was The Room first released? Answer with only the year.",
+    "qid": "Q533383",
+    "question_id": "development-v6-construction_validation-creative_work-q533383-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q533383 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of The Room? Answer with only the country name.",
+    "qid": "Q533383",
+    "question_id": "development-v6-construction_validation-creative_work-q533383-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q533383 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Oleksandr Dovzhenko",
+      "Oleksandr Dovzhenko."
+    ],
+    "prompt": "Who directed Earth? Answer with only one director name.",
+    "qid": "Q55188",
+    "question_id": "development-v6-construction_validation-creative_work-q55188-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q55188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1930",
+      "1930."
+    ],
+    "prompt": "In which year was Earth first released? Answer with only the year.",
+    "qid": "Q55188",
+    "question_id": "development-v6-construction_validation-creative_work-q55188-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q55188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Soviet Union",
+      "Soviet Union."
+    ],
+    "prompt": "What is the country of origin of Earth? Answer with only the country name.",
+    "qid": "Q55188",
+    "question_id": "development-v6-construction_validation-creative_work-q55188-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q55188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Ernst Lubitsch",
+      "Ernst Lubitsch."
+    ],
+    "prompt": "Who directed Ninotchka? Answer with only one director name.",
+    "qid": "Q589894",
+    "question_id": "development-v6-construction_validation-creative_work-q589894-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q589894 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1939",
+      "1939."
+    ],
+    "prompt": "In which year was Ninotchka first released? Answer with only the year.",
+    "qid": "Q589894",
+    "question_id": "development-v6-construction_validation-creative_work-q589894-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q589894 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Ninotchka? Answer with only the country name.",
+    "qid": "Q589894",
+    "question_id": "development-v6-construction_validation-creative_work-q589894-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q589894 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Hayao Miyazaki",
+      "Hayao Miyazaki."
+    ],
+    "prompt": "Who directed The Castle of Cagliostro? Answer with only one director name.",
+    "qid": "Q608079",
+    "question_id": "development-v6-construction_validation-creative_work-q608079-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q608079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1979",
+      "1979."
+    ],
+    "prompt": "In which year was The Castle of Cagliostro first released? Answer with only the year.",
+    "qid": "Q608079",
+    "question_id": "development-v6-construction_validation-creative_work-q608079-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q608079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Japan",
+      "Japan."
+    ],
+    "prompt": "What is the country of origin of The Castle of Cagliostro? Answer with only the country name.",
+    "qid": "Q608079",
+    "question_id": "development-v6-construction_validation-creative_work-q608079-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q608079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "François Truffaut",
+      "François Truffaut."
+    ],
+    "prompt": "Who directed Bed and Board? Answer with only one director name.",
+    "qid": "Q627975",
+    "question_id": "development-v6-construction_validation-creative_work-q627975-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q627975 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1970",
+      "1970."
+    ],
+    "prompt": "In which year was Bed and Board first released? Answer with only the year.",
+    "qid": "Q627975",
+    "question_id": "development-v6-construction_validation-creative_work-q627975-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q627975 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "France",
+      "France."
+    ],
+    "prompt": "What is the country of origin of Bed and Board? Answer with only the country name.",
+    "qid": "Q627975",
+    "question_id": "development-v6-construction_validation-creative_work-q627975-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q627975 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Gérard Krawczyk",
+      "Gérard Krawczyk."
+    ],
+    "prompt": "Who directed Taxi 4? Answer with only one director name.",
+    "qid": "Q756574",
+    "question_id": "development-v6-construction_validation-creative_work-q756574-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q756574 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2007",
+      "2007."
+    ],
+    "prompt": "In which year was Taxi 4 first released? Answer with only the year.",
+    "qid": "Q756574",
+    "question_id": "development-v6-construction_validation-creative_work-q756574-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q756574 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "France",
+      "France."
+    ],
+    "prompt": "What is the country of origin of Taxi 4? Answer with only the country name.",
+    "qid": "Q756574",
+    "question_id": "development-v6-construction_validation-creative_work-q756574-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q756574 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Orson Welles",
+      "Orson Welles."
+    ],
+    "prompt": "Who directed Touch of Evil? Answer with only one director name.",
+    "qid": "Q778161",
+    "question_id": "development-v6-construction_validation-creative_work-q778161-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q778161 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1958",
+      "1958."
+    ],
+    "prompt": "In which year was Touch of Evil first released? Answer with only the year.",
+    "qid": "Q778161",
+    "question_id": "development-v6-construction_validation-creative_work-q778161-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q778161 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Touch of Evil? Answer with only the country name.",
+    "qid": "Q778161",
+    "question_id": "development-v6-construction_validation-creative_work-q778161-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q778161 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "P. J. Hogan",
+      "P. J. Hogan."
+    ],
+    "prompt": "Who directed My Best Friend's Wedding? Answer with only one director name.",
+    "qid": "Q918380",
+    "question_id": "development-v6-construction_validation-creative_work-q918380-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q918380 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1997",
+      "1997."
+    ],
+    "prompt": "In which year was My Best Friend's Wedding first released? Answer with only the year.",
+    "qid": "Q918380",
+    "question_id": "development-v6-construction_validation-creative_work-q918380-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q918380 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of My Best Friend's Wedding? Answer with only the country name.",
+    "qid": "Q918380",
+    "question_id": "development-v6-construction_validation-creative_work-q918380-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q918380 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Mark Dindal",
+      "Mark Dindal."
+    ],
+    "prompt": "Who directed Cats Don't Dance? Answer with only one director name.",
+    "qid": "Q930134",
+    "question_id": "development-v6-construction_validation-creative_work-q930134-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q930134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1997",
+      "1997."
+    ],
+    "prompt": "In which year was Cats Don't Dance first released? Answer with only the year.",
+    "qid": "Q930134",
+    "question_id": "development-v6-construction_validation-creative_work-q930134-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q930134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Cats Don't Dance? Answer with only the country name.",
+    "qid": "Q930134",
+    "question_id": "development-v6-construction_validation-creative_work-q930134-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q930134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Richard Schenkman",
+      "Richard Schenkman."
+    ],
+    "prompt": "Who directed The Man from Earth? Answer with only one director name.",
+    "qid": "Q93701",
+    "question_id": "development-v6-construction_validation-creative_work-q93701-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q93701 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2007",
+      "2007."
+    ],
+    "prompt": "In which year was The Man from Earth first released? Answer with only the year.",
+    "qid": "Q93701",
+    "question_id": "development-v6-construction_validation-creative_work-q93701-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q93701 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of The Man from Earth? Answer with only the country name.",
+    "qid": "Q93701",
+    "question_id": "development-v6-construction_validation-creative_work-q93701-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q93701 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Rod Daniel",
+      "Rod Daniel."
+    ],
+    "prompt": "Who directed Home Alone 4? Answer with only one director name.",
+    "qid": "Q946562",
+    "question_id": "development-v6-construction_validation-creative_work-q946562-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q946562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2002",
+      "2002."
+    ],
+    "prompt": "In which year was Home Alone 4 first released? Answer with only the year.",
+    "qid": "Q946562",
+    "question_id": "development-v6-construction_validation-creative_work-q946562-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q946562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Home Alone 4? Answer with only the country name.",
+    "qid": "Q946562",
+    "question_id": "development-v6-construction_validation-creative_work-q946562-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q946562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Zack Snyder",
+      "Zack Snyder."
+    ],
+    "prompt": "Who directed Zack Snyder's Justice League? Answer with only one director name.",
+    "qid": "Q94998134",
+    "question_id": "development-v6-construction_validation-creative_work-q94998134-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q94998134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "2021",
+      "2021."
+    ],
+    "prompt": "In which year was Zack Snyder's Justice League first released? Answer with only the year.",
+    "qid": "Q94998134",
+    "question_id": "development-v6-construction_validation-creative_work-q94998134-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q94998134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Zack Snyder's Justice League? Answer with only the country name.",
+    "qid": "Q94998134",
+    "question_id": "development-v6-construction_validation-creative_work-q94998134-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q94998134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Douglas Sirk",
+      "Douglas Sirk."
+    ],
+    "prompt": "Who directed Written on the Wind? Answer with only one director name.",
+    "qid": "Q978520",
+    "question_id": "development-v6-construction_validation-creative_work-q978520-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q978520 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "1956",
+      "1956."
+    ],
+    "prompt": "In which year was Written on the Wind first released? Answer with only the year.",
+    "qid": "Q978520",
+    "question_id": "development-v6-construction_validation-creative_work-q978520-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q978520 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "What is the country of origin of Written on the Wind? Answer with only the country name.",
+    "qid": "Q978520",
+    "question_id": "development-v6-construction_validation-creative_work-q978520-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q978520 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe"
+  },
+  {
+    "accepted_aliases": [
+      "Sweden",
+      "Sweden."
+    ],
+    "prompt": "Which country is Swedish Social Democratic Party associated with? Answer with only the country name.",
+    "qid": "Q105112",
+    "question_id": "development-v6-construction_validation-organization-q105112-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q105112 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Stockholm",
+      "Stockholm."
+    ],
+    "prompt": "Where is Swedish Social Democratic Party headquartered? Answer with only the place name.",
+    "qid": "Q105112",
+    "question_id": "development-v6-construction_validation-organization-q105112-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q105112 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1889",
+      "1889."
+    ],
+    "prompt": "In which year was Swedish Social Democratic Party founded? Answer with only the year.",
+    "qid": "Q105112",
+    "question_id": "development-v6-construction_validation-organization-q105112-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q105112 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is 1. FC Union Berlin associated with? Answer with only the country name.",
+    "qid": "Q141971",
+    "question_id": "development-v6-construction_validation-organization-q141971-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q141971 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Berlin",
+      "Berlin."
+    ],
+    "prompt": "Where is 1. FC Union Berlin headquartered? Answer with only the place name.",
+    "qid": "Q141971",
+    "question_id": "development-v6-construction_validation-organization-q141971-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q141971 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1966",
+      "1966."
+    ],
+    "prompt": "In which year was 1. FC Union Berlin founded? Answer with only the year.",
+    "qid": "Q141971",
+    "question_id": "development-v6-construction_validation-organization-q141971-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q141971 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Jack in the Box associated with? Answer with only the country name.",
+    "qid": "Q1538507",
+    "question_id": "development-v6-construction_validation-organization-q1538507-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1538507 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "San Diego",
+      "San Diego."
+    ],
+    "prompt": "Where is Jack in the Box headquartered? Answer with only the place name.",
+    "qid": "Q1538507",
+    "question_id": "development-v6-construction_validation-organization-q1538507-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1538507 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1951",
+      "1951."
+    ],
+    "prompt": "In which year was Jack in the Box founded? Answer with only the year.",
+    "qid": "Q1538507",
+    "question_id": "development-v6-construction_validation-organization-q1538507-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1538507 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Houston Rockets associated with? Answer with only the country name.",
+    "qid": "Q161345",
+    "question_id": "development-v6-construction_validation-organization-q161345-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q161345 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Houston",
+      "Houston."
+    ],
+    "prompt": "Where is Houston Rockets headquartered? Answer with only the place name.",
+    "qid": "Q161345",
+    "question_id": "development-v6-construction_validation-organization-q161345-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q161345 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1967",
+      "1967."
+    ],
+    "prompt": "In which year was Houston Rockets founded? Answer with only the year.",
+    "qid": "Q161345",
+    "question_id": "development-v6-construction_validation-organization-q161345-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q161345 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Memphis Grizzlies associated with? Answer with only the country name.",
+    "qid": "Q165529",
+    "question_id": "development-v6-construction_validation-organization-q165529-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165529 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Memphis",
+      "Memphis."
+    ],
+    "prompt": "Where is Memphis Grizzlies headquartered? Answer with only the place name.",
+    "qid": "Q165529",
+    "question_id": "development-v6-construction_validation-organization-q165529-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165529 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1995",
+      "1995."
+    ],
+    "prompt": "In which year was Memphis Grizzlies founded? Answer with only the year.",
+    "qid": "Q165529",
+    "question_id": "development-v6-construction_validation-organization-q165529-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165529 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Inter Miami CF associated with? Answer with only the country name.",
+    "qid": "Q16844931",
+    "question_id": "development-v6-construction_validation-organization-q16844931-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q16844931 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Miami",
+      "Miami."
+    ],
+    "prompt": "Where is Inter Miami CF headquartered? Answer with only the place name.",
+    "qid": "Q16844931",
+    "question_id": "development-v6-construction_validation-organization-q16844931-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q16844931 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "2018",
+      "2018."
+    ],
+    "prompt": "In which year was Inter Miami CF founded? Answer with only the year.",
+    "qid": "Q16844931",
+    "question_id": "development-v6-construction_validation-organization-q16844931-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q16844931 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is New Orleans Pelicans associated with? Answer with only the country name.",
+    "qid": "Q172339",
+    "question_id": "development-v6-construction_validation-organization-q172339-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q172339 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "New Orleans",
+      "New Orleans."
+    ],
+    "prompt": "Where is New Orleans Pelicans headquartered? Answer with only the place name.",
+    "qid": "Q172339",
+    "question_id": "development-v6-construction_validation-organization-q172339-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q172339 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "2002",
+      "2002."
+    ],
+    "prompt": "In which year was New Orleans Pelicans founded? Answer with only the year.",
+    "qid": "Q172339",
+    "question_id": "development-v6-construction_validation-organization-q172339-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q172339 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United Kingdom",
+      "United Kingdom."
+    ],
+    "prompt": "Which country is Reading F.C. associated with? Answer with only the country name.",
+    "qid": "Q18729",
+    "question_id": "development-v6-construction_validation-organization-q18729-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q18729 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Reading",
+      "Reading."
+    ],
+    "prompt": "Where is Reading F.C. headquartered? Answer with only the place name.",
+    "qid": "Q18729",
+    "question_id": "development-v6-construction_validation-organization-q18729-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q18729 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1871",
+      "1871."
+    ],
+    "prompt": "In which year was Reading F.C. founded? Answer with only the year.",
+    "qid": "Q18729",
+    "question_id": "development-v6-construction_validation-organization-q18729-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q18729 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Denmark",
+      "Denmark."
+    ],
+    "prompt": "Which country is F.C. Copenhagen associated with? Answer with only the country name.",
+    "qid": "Q188430",
+    "question_id": "development-v6-construction_validation-organization-q188430-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188430 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Copenhagen",
+      "Copenhagen."
+    ],
+    "prompt": "Where is F.C. Copenhagen headquartered? Answer with only the place name.",
+    "qid": "Q188430",
+    "question_id": "development-v6-construction_validation-organization-q188430-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188430 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1992",
+      "1992."
+    ],
+    "prompt": "In which year was F.C. Copenhagen founded? Answer with only the year.",
+    "qid": "Q188430",
+    "question_id": "development-v6-construction_validation-organization-q188430-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188430 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Museum of Modern Art associated with? Answer with only the country name.",
+    "qid": "Q188740",
+    "question_id": "development-v6-construction_validation-organization-q188740-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188740 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "New York City",
+      "New York City."
+    ],
+    "prompt": "Where is Museum of Modern Art headquartered? Answer with only the place name.",
+    "qid": "Q188740",
+    "question_id": "development-v6-construction_validation-organization-q188740-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188740 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1929",
+      "1929."
+    ],
+    "prompt": "In which year was Museum of Modern Art founded? Answer with only the year.",
+    "qid": "Q188740",
+    "question_id": "development-v6-construction_validation-organization-q188740-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q188740 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Turkey",
+      "Turkey."
+    ],
+    "prompt": "Which country is Republican People's Party associated with? Answer with only the country name.",
+    "qid": "Q19079",
+    "question_id": "development-v6-construction_validation-organization-q19079-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q19079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Çankaya",
+      "Çankaya."
+    ],
+    "prompt": "Where is Republican People's Party headquartered? Answer with only the place name.",
+    "qid": "Q19079",
+    "question_id": "development-v6-construction_validation-organization-q19079-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q19079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1923",
+      "1923."
+    ],
+    "prompt": "In which year was Republican People's Party founded? Answer with only the year.",
+    "qid": "Q19079",
+    "question_id": "development-v6-construction_validation-organization-q19079-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q19079 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Egypt",
+      "Egypt."
+    ],
+    "prompt": "Which country is Egyptian Museum associated with? Answer with only the country name.",
+    "qid": "Q201219",
+    "question_id": "development-v6-construction_validation-organization-q201219-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q201219 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Cairo",
+      "Cairo."
+    ],
+    "prompt": "Where is Egyptian Museum headquartered? Answer with only the place name.",
+    "qid": "Q201219",
+    "question_id": "development-v6-construction_validation-organization-q201219-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q201219 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1902",
+      "1902."
+    ],
+    "prompt": "In which year was Egyptian Museum founded? Answer with only the year.",
+    "qid": "Q201219",
+    "question_id": "development-v6-construction_validation-organization-q201219-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q201219 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is The CW associated with? Answer with only the country name.",
+    "qid": "Q212252",
+    "question_id": "development-v6-construction_validation-organization-q212252-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q212252 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Burbank",
+      "Burbank."
+    ],
+    "prompt": "Where is The CW headquartered? Answer with only the place name.",
+    "qid": "Q212252",
+    "question_id": "development-v6-construction_validation-organization-q212252-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q212252 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "2006",
+      "2006."
+    ],
+    "prompt": "In which year was The CW founded? Answer with only the year.",
+    "qid": "Q212252",
+    "question_id": "development-v6-construction_validation-organization-q212252-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q212252 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is University of Virginia associated with? Answer with only the country name.",
+    "qid": "Q213439",
+    "question_id": "development-v6-construction_validation-organization-q213439-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q213439 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Charlottesville",
+      "Charlottesville."
+    ],
+    "prompt": "Where is University of Virginia headquartered? Answer with only the place name.",
+    "qid": "Q213439",
+    "question_id": "development-v6-construction_validation-organization-q213439-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q213439 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1819",
+      "1819."
+    ],
+    "prompt": "In which year was University of Virginia founded? Answer with only the year.",
+    "qid": "Q213439",
+    "question_id": "development-v6-construction_validation-organization-q213439-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q213439 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United Kingdom",
+      "United Kingdom."
+    ],
+    "prompt": "Which country is Oxford University Press associated with? Answer with only the country name.",
+    "qid": "Q217595",
+    "question_id": "development-v6-construction_validation-organization-q217595-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q217595 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Oxford",
+      "Oxford."
+    ],
+    "prompt": "Where is Oxford University Press headquartered? Answer with only the place name.",
+    "qid": "Q217595",
+    "question_id": "development-v6-construction_validation-organization-q217595-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q217595 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1586",
+      "1586."
+    ],
+    "prompt": "In which year was Oxford University Press founded? Answer with only the year.",
+    "qid": "Q217595",
+    "question_id": "development-v6-construction_validation-organization-q217595-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q217595 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Egypt",
+      "Egypt."
+    ],
+    "prompt": "Which country is Al Ahly SC associated with? Answer with only the country name.",
+    "qid": "Q223566",
+    "question_id": "development-v6-construction_validation-organization-q223566-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q223566 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Cairo",
+      "Cairo."
+    ],
+    "prompt": "Where is Al Ahly SC headquartered? Answer with only the place name.",
+    "qid": "Q223566",
+    "question_id": "development-v6-construction_validation-organization-q223566-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q223566 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1907",
+      "1907."
+    ],
+    "prompt": "In which year was Al Ahly SC founded? Answer with only the year.",
+    "qid": "Q223566",
+    "question_id": "development-v6-construction_validation-organization-q223566-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q223566 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United Kingdom",
+      "United Kingdom."
+    ],
+    "prompt": "Which country is University of Manchester associated with? Answer with only the country name.",
+    "qid": "Q230899",
+    "question_id": "development-v6-construction_validation-organization-q230899-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q230899 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Manchester",
+      "Manchester."
+    ],
+    "prompt": "Where is University of Manchester headquartered? Answer with only the place name.",
+    "qid": "Q230899",
+    "question_id": "development-v6-construction_validation-organization-q230899-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q230899 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1824",
+      "1824."
+    ],
+    "prompt": "In which year was University of Manchester founded? Answer with only the year.",
+    "qid": "Q230899",
+    "question_id": "development-v6-construction_validation-organization-q230899-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q230899 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Discovery Channel associated with? Answer with only the country name.",
+    "qid": "Q43404",
+    "question_id": "development-v6-construction_validation-organization-q43404-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43404 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Silver Spring",
+      "Silver Spring."
+    ],
+    "prompt": "Where is Discovery Channel headquartered? Answer with only the place name.",
+    "qid": "Q43404",
+    "question_id": "development-v6-construction_validation-organization-q43404-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43404 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1985",
+      "1985."
+    ],
+    "prompt": "In which year was Discovery Channel founded? Answer with only the year.",
+    "qid": "Q43404",
+    "question_id": "development-v6-construction_validation-organization-q43404-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q43404 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is University of Southern California associated with? Answer with only the country name.",
+    "qid": "Q4614",
+    "question_id": "development-v6-construction_validation-organization-q4614-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q4614 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Los Angeles",
+      "Los Angeles."
+    ],
+    "prompt": "Where is University of Southern California headquartered? Answer with only the place name.",
+    "qid": "Q4614",
+    "question_id": "development-v6-construction_validation-organization-q4614-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q4614 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1880",
+      "1880."
+    ],
+    "prompt": "In which year was University of Southern California founded? Answer with only the year.",
+    "qid": "Q4614",
+    "question_id": "development-v6-construction_validation-organization-q4614-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q4614 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Tesla associated with? Answer with only the country name.",
+    "qid": "Q478214",
+    "question_id": "development-v6-construction_validation-organization-q478214-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q478214 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Austin",
+      "Austin."
+    ],
+    "prompt": "Where is Tesla headquartered? Answer with only the place name.",
+    "qid": "Q478214",
+    "question_id": "development-v6-construction_validation-organization-q478214-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q478214 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "2003",
+      "2003."
+    ],
+    "prompt": "In which year was Tesla founded? Answer with only the year.",
+    "qid": "Q478214",
+    "question_id": "development-v6-construction_validation-organization-q478214-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q478214 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Norway",
+      "Norway."
+    ],
+    "prompt": "Which country is University of Oslo associated with? Answer with only the country name.",
+    "qid": "Q486156",
+    "question_id": "development-v6-construction_validation-organization-q486156-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q486156 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Blindern",
+      "Blindern."
+    ],
+    "prompt": "Where is University of Oslo headquartered? Answer with only the place name.",
+    "qid": "Q486156",
+    "question_id": "development-v6-construction_validation-organization-q486156-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q486156 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1811",
+      "1811."
+    ],
+    "prompt": "In which year was University of Oslo founded? Answer with only the year.",
+    "qid": "Q486156",
+    "question_id": "development-v6-construction_validation-organization-q486156-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q486156 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "France",
+      "France."
+    ],
+    "prompt": "Which country is Sciences Po associated with? Answer with only the country name.",
+    "qid": "Q859363",
+    "question_id": "development-v6-construction_validation-organization-q859363-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q859363 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Paris",
+      "Paris."
+    ],
+    "prompt": "Where is Sciences Po headquartered? Answer with only the place name.",
+    "qid": "Q859363",
+    "question_id": "development-v6-construction_validation-organization-q859363-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q859363 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1872",
+      "1872."
+    ],
+    "prompt": "In which year was Sciences Po founded? Answer with only the year.",
+    "qid": "Q859363",
+    "question_id": "development-v6-construction_validation-organization-q859363-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q859363 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country is Los Angeles Clippers associated with? Answer with only the country name.",
+    "qid": "Q976396",
+    "question_id": "development-v6-construction_validation-organization-q976396-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q976396 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Los Angeles",
+      "Los Angeles."
+    ],
+    "prompt": "Where is Los Angeles Clippers headquartered? Answer with only the place name.",
+    "qid": "Q976396",
+    "question_id": "development-v6-construction_validation-organization-q976396-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q976396 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1970",
+      "1970."
+    ],
+    "prompt": "In which year was Los Angeles Clippers founded? Answer with only the year.",
+    "qid": "Q976396",
+    "question_id": "development-v6-construction_validation-organization-q976396-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q976396 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Austria",
+      "Austria."
+    ],
+    "prompt": "Which country is FC Red Bull Salzburg associated with? Answer with only the country name.",
+    "qid": "Q994811",
+    "question_id": "development-v6-construction_validation-organization-q994811-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q994811 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Salzburg",
+      "Salzburg."
+    ],
+    "prompt": "Where is FC Red Bull Salzburg headquartered? Answer with only the place name.",
+    "qid": "Q994811",
+    "question_id": "development-v6-construction_validation-organization-q994811-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q994811 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "1933",
+      "1933."
+    ],
+    "prompt": "In which year was FC Red Bull Salzburg founded? Answer with only the year.",
+    "qid": "Q994811",
+    "question_id": "development-v6-construction_validation-organization-q994811-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q994811 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d"
+  },
+  {
+    "accepted_aliases": [
+      "Kingdom of England",
+      "Kingdom of England."
+    ],
+    "prompt": "Which country was Henry II of England a citizen of? Answer with only the country name.",
+    "qid": "Q102140",
+    "question_id": "development-v6-construction_validation-person-q102140-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q102140 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "monarch",
+      "monarch."
+    ],
+    "prompt": "What was Henry II of England's occupation? Answer with only one occupation.",
+    "qid": "Q102140",
+    "question_id": "development-v6-construction_validation-person-q102140-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q102140 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Le Mans",
+      "Le Mans."
+    ],
+    "prompt": "Where was Henry II of England born? Answer with only the place name.",
+    "qid": "Q102140",
+    "question_id": "development-v6-construction_validation-person-q102140-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q102140 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Peru",
+      "Peru."
+    ],
+    "prompt": "Which country was Joao Grimaldo a citizen of? Answer with only the country name.",
+    "qid": "Q108153171",
+    "question_id": "development-v6-construction_validation-person-q108153171-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q108153171 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Joao Grimaldo's occupation? Answer with only one occupation.",
+    "qid": "Q108153171",
+    "question_id": "development-v6-construction_validation-person-q108153171-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q108153171 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Lima",
+      "Lima."
+    ],
+    "prompt": "Where was Joao Grimaldo born? Answer with only the place name.",
+    "qid": "Q108153171",
+    "question_id": "development-v6-construction_validation-person-q108153171-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q108153171 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Spain",
+      "Spain."
+    ],
+    "prompt": "Which country was Iker Casillas a citizen of? Answer with only the country name.",
+    "qid": "Q11584",
+    "question_id": "development-v6-construction_validation-person-q11584-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q11584 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Iker Casillas's occupation? Answer with only one occupation.",
+    "qid": "Q11584",
+    "question_id": "development-v6-construction_validation-person-q11584-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q11584 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Móstoles",
+      "Móstoles."
+    ],
+    "prompt": "Where was Iker Casillas born? Answer with only the place name.",
+    "qid": "Q11584",
+    "question_id": "development-v6-construction_validation-person-q11584-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q11584 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Japan",
+      "Japan."
+    ],
+    "prompt": "Which country was Yoshihide Suga a citizen of? Answer with only the country name.",
+    "qid": "Q122465",
+    "question_id": "development-v6-construction_validation-person-q122465-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q122465 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Yoshihide Suga's occupation? Answer with only one occupation.",
+    "qid": "Q122465",
+    "question_id": "development-v6-construction_validation-person-q122465-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q122465 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Akinomiya",
+      "Akinomiya."
+    ],
+    "prompt": "Where was Yoshihide Suga born? Answer with only the place name.",
+    "qid": "Q122465",
+    "question_id": "development-v6-construction_validation-person-q122465-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q122465 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Urban I a citizen of? Answer with only the country name.",
+    "qid": "Q125631",
+    "question_id": "development-v6-construction_validation-person-q125631-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q125631 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Catholic priest",
+      "Catholic priest."
+    ],
+    "prompt": "What was Urban I's occupation? Answer with only one occupation.",
+    "qid": "Q125631",
+    "question_id": "development-v6-construction_validation-person-q125631-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q125631 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Rome",
+      "Rome."
+    ],
+    "prompt": "Where was Urban I born? Answer with only the place name.",
+    "qid": "Q125631",
+    "question_id": "development-v6-construction_validation-person-q125631-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q125631 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Sixtus II a citizen of? Answer with only the country name.",
+    "qid": "Q127385",
+    "question_id": "development-v6-construction_validation-person-q127385-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q127385 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Catholic priest",
+      "Catholic priest."
+    ],
+    "prompt": "What was Sixtus II's occupation? Answer with only one occupation.",
+    "qid": "Q127385",
+    "question_id": "development-v6-construction_validation-person-q127385-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q127385 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Greece",
+      "Greece."
+    ],
+    "prompt": "Where was Sixtus II born? Answer with only the place name.",
+    "qid": "Q127385",
+    "question_id": "development-v6-construction_validation-person-q127385-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q127385 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Kingdom of France",
+      "Kingdom of France."
+    ],
+    "prompt": "Which country was Philip IV of France a citizen of? Answer with only the country name.",
+    "qid": "Q130969",
+    "question_id": "development-v6-construction_validation-person-q130969-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q130969 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "ruler",
+      "ruler."
+    ],
+    "prompt": "What was Philip IV of France's occupation? Answer with only one occupation.",
+    "qid": "Q130969",
+    "question_id": "development-v6-construction_validation-person-q130969-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q130969 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Fontainebleau",
+      "Fontainebleau."
+    ],
+    "prompt": "Where was Philip IV of France born? Answer with only the place name.",
+    "qid": "Q130969",
+    "question_id": "development-v6-construction_validation-person-q130969-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q130969 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Egypt",
+      "Egypt."
+    ],
+    "prompt": "Which country was Mohamed Salah a citizen of? Answer with only the country name.",
+    "qid": "Q1354960",
+    "question_id": "development-v6-construction_validation-person-q1354960-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1354960 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Mohamed Salah's occupation? Answer with only one occupation.",
+    "qid": "Q1354960",
+    "question_id": "development-v6-construction_validation-person-q1354960-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1354960 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Nagrig",
+      "Nagrig."
+    ],
+    "prompt": "Where was Mohamed Salah born? Answer with only the place name.",
+    "qid": "Q1354960",
+    "question_id": "development-v6-construction_validation-person-q1354960-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1354960 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Caligula a citizen of? Answer with only the country name.",
+    "qid": "Q1409",
+    "question_id": "development-v6-construction_validation-person-q1409-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1409 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Caligula's occupation? Answer with only one occupation.",
+    "qid": "Q1409",
+    "question_id": "development-v6-construction_validation-person-q1409-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1409 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Antium",
+      "Antium."
+    ],
+    "prompt": "Where was Caligula born? Answer with only the place name.",
+    "qid": "Q1409",
+    "question_id": "development-v6-construction_validation-person-q1409-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1409 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Antoninus Pius a citizen of? Answer with only the country name.",
+    "qid": "Q1429",
+    "question_id": "development-v6-construction_validation-person-q1429-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1429 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Antoninus Pius's occupation? Answer with only one occupation.",
+    "qid": "Q1429",
+    "question_id": "development-v6-construction_validation-person-q1429-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1429 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Lanuvium",
+      "Lanuvium."
+    ],
+    "prompt": "Where was Antoninus Pius born? Answer with only the place name.",
+    "qid": "Q1429",
+    "question_id": "development-v6-construction_validation-person-q1429-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1429 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Russian Empire",
+      "Russian Empire."
+    ],
+    "prompt": "Which country was Paul I of Russia a citizen of? Answer with only the country name.",
+    "qid": "Q15189",
+    "question_id": "development-v6-construction_validation-person-q15189-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q15189 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "sovereign",
+      "sovereign."
+    ],
+    "prompt": "What was Paul I of Russia's occupation? Answer with only one occupation.",
+    "qid": "Q15189",
+    "question_id": "development-v6-construction_validation-person-q15189-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q15189 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Saint Petersburg",
+      "Saint Petersburg."
+    ],
+    "prompt": "Where was Paul I of Russia born? Answer with only the place name.",
+    "qid": "Q15189",
+    "question_id": "development-v6-construction_validation-person-q15189-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q15189 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "United Kingdom",
+      "United Kingdom."
+    ],
+    "prompt": "Which country was Gareth Bale a citizen of? Answer with only the country name.",
+    "qid": "Q184586",
+    "question_id": "development-v6-construction_validation-person-q184586-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q184586 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Gareth Bale's occupation? Answer with only one occupation.",
+    "qid": "Q184586",
+    "question_id": "development-v6-construction_validation-person-q184586-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q184586 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Cardiff",
+      "Cardiff."
+    ],
+    "prompt": "Where was Gareth Bale born? Answer with only the place name.",
+    "qid": "Q184586",
+    "question_id": "development-v6-construction_validation-person-q184586-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q184586 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "France",
+      "France."
+    ],
+    "prompt": "Which country was Karim Benzema a citizen of? Answer with only the country name.",
+    "qid": "Q1912",
+    "question_id": "development-v6-construction_validation-person-q1912-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1912 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Karim Benzema's occupation? Answer with only one occupation.",
+    "qid": "Q1912",
+    "question_id": "development-v6-construction_validation-person-q1912-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1912 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Lyon",
+      "Lyon."
+    ],
+    "prompt": "Where was Karim Benzema born? Answer with only the place name.",
+    "qid": "Q1912",
+    "question_id": "development-v6-construction_validation-person-q1912-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1912 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Italy",
+      "Italy."
+    ],
+    "prompt": "Which country was Francesco Totti a citizen of? Answer with only the country name.",
+    "qid": "Q20110",
+    "question_id": "development-v6-construction_validation-person-q20110-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q20110 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Francesco Totti's occupation? Answer with only one occupation.",
+    "qid": "Q20110",
+    "question_id": "development-v6-construction_validation-person-q20110-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q20110 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Rome",
+      "Rome."
+    ],
+    "prompt": "Where was Francesco Totti born? Answer with only the place name.",
+    "qid": "Q20110",
+    "question_id": "development-v6-construction_validation-person-q20110-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q20110 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Spain",
+      "Spain."
+    ],
+    "prompt": "Which country was Charles II of Spain a citizen of? Answer with only the country name.",
+    "qid": "Q36174",
+    "question_id": "development-v6-construction_validation-person-q36174-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q36174 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "ruler",
+      "ruler."
+    ],
+    "prompt": "What was Charles II of Spain's occupation? Answer with only one occupation.",
+    "qid": "Q36174",
+    "question_id": "development-v6-construction_validation-person-q36174-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q36174 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Madrid",
+      "Madrid."
+    ],
+    "prompt": "Where was Charles II of Spain born? Answer with only the place name.",
+    "qid": "Q36174",
+    "question_id": "development-v6-construction_validation-person-q36174-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q36174 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "United States",
+      "United States."
+    ],
+    "prompt": "Which country was Michael Phelps a citizen of? Answer with only the country name.",
+    "qid": "Q39562",
+    "question_id": "development-v6-construction_validation-person-q39562-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "swimmer",
+      "swimmer."
+    ],
+    "prompt": "What was Michael Phelps's occupation? Answer with only one occupation.",
+    "qid": "Q39562",
+    "question_id": "development-v6-construction_validation-person-q39562-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Baltimore",
+      "Baltimore."
+    ],
+    "prompt": "Where was Michael Phelps born? Answer with only the place name.",
+    "qid": "Q39562",
+    "question_id": "development-v6-construction_validation-person-q39562-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q39562 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Aurelian a citizen of? Answer with only the country name.",
+    "qid": "Q46780",
+    "question_id": "development-v6-construction_validation-person-q46780-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q46780 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Aurelian's occupation? Answer with only one occupation.",
+    "qid": "Q46780",
+    "question_id": "development-v6-construction_validation-person-q46780-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q46780 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Sirmium",
+      "Sirmium."
+    ],
+    "prompt": "Where was Aurelian born? Answer with only the place name.",
+    "qid": "Q46780",
+    "question_id": "development-v6-construction_validation-person-q46780-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q46780 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Ancient Rome",
+      "Ancient Rome."
+    ],
+    "prompt": "Which country was Linus a citizen of? Answer with only the country name.",
+    "qid": "Q47144",
+    "question_id": "development-v6-construction_validation-person-q47144-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q47144 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Christian cleric",
+      "Christian cleric."
+    ],
+    "prompt": "What was Linus's occupation? Answer with only one occupation.",
+    "qid": "Q47144",
+    "question_id": "development-v6-construction_validation-person-q47144-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q47144 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Tuscany",
+      "Tuscany."
+    ],
+    "prompt": "Where was Linus born? Answer with only the place name.",
+    "qid": "Q47144",
+    "question_id": "development-v6-construction_validation-person-q47144-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q47144 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Spain",
+      "Spain."
+    ],
+    "prompt": "Which country was Sergio Busquets a citizen of? Answer with only the country name.",
+    "qid": "Q49704",
+    "question_id": "development-v6-construction_validation-person-q49704-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q49704 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Sergio Busquets's occupation? Answer with only one occupation.",
+    "qid": "Q49704",
+    "question_id": "development-v6-construction_validation-person-q49704-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q49704 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Sabadell",
+      "Sabadell."
+    ],
+    "prompt": "Where was Sergio Busquets born? Answer with only the place name.",
+    "qid": "Q49704",
+    "question_id": "development-v6-construction_validation-person-q49704-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q49704 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Italy",
+      "Italy."
+    ],
+    "prompt": "Which country was Gianluigi Buffon a citizen of? Answer with only the country name.",
+    "qid": "Q68060",
+    "question_id": "development-v6-construction_validation-person-q68060-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q68060 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was Gianluigi Buffon's occupation? Answer with only one occupation.",
+    "qid": "Q68060",
+    "question_id": "development-v6-construction_validation-person-q68060-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q68060 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Carrara",
+      "Carrara."
+    ],
+    "prompt": "Where was Gianluigi Buffon born? Answer with only the place name.",
+    "qid": "Q68060",
+    "question_id": "development-v6-construction_validation-person-q68060-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q68060 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Indonesia",
+      "Indonesia."
+    ],
+    "prompt": "Which country was Megawati Soekarnoputri a citizen of? Answer with only the country name.",
+    "qid": "Q76179",
+    "question_id": "development-v6-construction_validation-person-q76179-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q76179 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Megawati Soekarnoputri's occupation? Answer with only one occupation.",
+    "qid": "Q76179",
+    "question_id": "development-v6-construction_validation-person-q76179-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q76179 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Yogyakarta",
+      "Yogyakarta."
+    ],
+    "prompt": "Where was Megawati Soekarnoputri born? Answer with only the place name.",
+    "qid": "Q76179",
+    "question_id": "development-v6-construction_validation-person-q76179-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q76179 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Kingdom of France",
+      "Kingdom of France."
+    ],
+    "prompt": "Which country was Louis XVIII of France a citizen of? Answer with only the country name.",
+    "qid": "Q7750",
+    "question_id": "development-v6-construction_validation-person-q7750-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q7750 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Louis XVIII of France's occupation? Answer with only one occupation.",
+    "qid": "Q7750",
+    "question_id": "development-v6-construction_validation-person-q7750-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q7750 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Palace of Versailles",
+      "Palace of Versailles."
+    ],
+    "prompt": "Where was Louis XVIII of France born? Answer with only the place name.",
+    "qid": "Q7750",
+    "question_id": "development-v6-construction_validation-person-q7750-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q7750 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "France",
+      "France."
+    ],
+    "prompt": "Which country was Louis XI of France a citizen of? Answer with only the country name.",
+    "qid": "Q8058",
+    "question_id": "development-v6-construction_validation-person-q8058-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q8058 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "politician",
+      "politician."
+    ],
+    "prompt": "What was Louis XI of France's occupation? Answer with only one occupation.",
+    "qid": "Q8058",
+    "question_id": "development-v6-construction_validation-person-q8058-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q8058 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Bourges",
+      "Bourges."
+    ],
+    "prompt": "Where was Louis XI of France born? Answer with only the place name.",
+    "qid": "Q8058",
+    "question_id": "development-v6-construction_validation-person-q8058-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q8058 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Spain",
+      "Spain."
+    ],
+    "prompt": "Which country was David Villa a citizen of? Answer with only the country name.",
+    "qid": "Q83006",
+    "question_id": "development-v6-construction_validation-person-q83006-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q83006 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "association football player",
+      "association football player."
+    ],
+    "prompt": "What was David Villa's occupation? Answer with only one occupation.",
+    "qid": "Q83006",
+    "question_id": "development-v6-construction_validation-person-q83006-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q83006 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Tiuya / Tuilla",
+      "Tiuya / Tuilla."
+    ],
+    "prompt": "Where was David Villa born? Answer with only the place name.",
+    "qid": "Q83006",
+    "question_id": "development-v6-construction_validation-person-q83006-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q83006 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Bad Windsheim in? Answer with only the country name.",
+    "qid": "Q132278",
+    "question_id": "development-v6-construction_validation-place-q132278-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q132278 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Neustadt an der Aisch-Bad Windsheim",
+      "Neustadt an der Aisch-Bad Windsheim."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Bad Windsheim? Answer with only that entity name.",
+    "qid": "Q132278",
+    "question_id": "development-v6-construction_validation-place-q132278-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q132278 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Bad Windsheim located? Answer with only the continent name.",
+    "qid": "Q132278",
+    "question_id": "development-v6-construction_validation-place-q132278-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q132278 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "India",
+      "India."
+    ],
+    "prompt": "Which country is Muzaffarpur in? Answer with only the country name.",
+    "qid": "Q1453196",
+    "question_id": "development-v6-construction_validation-place-q1453196-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1453196 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Muzaffarpur district",
+      "Muzaffarpur district."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Muzaffarpur? Answer with only that entity name.",
+    "qid": "Q1453196",
+    "question_id": "development-v6-construction_validation-place-q1453196-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1453196 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Muzaffarpur located? Answer with only the continent name.",
+    "qid": "Q1453196",
+    "question_id": "development-v6-construction_validation-place-q1453196-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1453196 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Philippines",
+      "Philippines."
+    ],
+    "prompt": "Which country is Manila in? Answer with only the country name.",
+    "qid": "Q1461",
+    "question_id": "development-v6-construction_validation-place-q1461-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1461 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Metro Manila",
+      "Metro Manila."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Manila? Answer with only that entity name.",
+    "qid": "Q1461",
+    "question_id": "development-v6-construction_validation-place-q1461-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1461 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Manila located? Answer with only the continent name.",
+    "qid": "Q1461",
+    "question_id": "development-v6-construction_validation-place-q1461-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q1461 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Bad Muskau in? Answer with only the country name.",
+    "qid": "Q165131",
+    "question_id": "development-v6-construction_validation-place-q165131-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165131 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Görlitz District",
+      "Görlitz District."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Bad Muskau? Answer with only that entity name.",
+    "qid": "Q165131",
+    "question_id": "development-v6-construction_validation-place-q165131-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165131 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Bad Muskau located? Answer with only the continent name.",
+    "qid": "Q165131",
+    "question_id": "development-v6-construction_validation-place-q165131-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q165131 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Brazil",
+      "Brazil."
+    ],
+    "prompt": "Which country is Feira de Santana in? Answer with only the country name.",
+    "qid": "Q194343",
+    "question_id": "development-v6-construction_validation-place-q194343-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q194343 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Bahia",
+      "Bahia."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Feira de Santana? Answer with only that entity name.",
+    "qid": "Q194343",
+    "question_id": "development-v6-construction_validation-place-q194343-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q194343 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "South America",
+      "South America."
+    ],
+    "prompt": "On which continent is Feira de Santana located? Answer with only the continent name.",
+    "qid": "Q194343",
+    "question_id": "development-v6-construction_validation-place-q194343-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q194343 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Mexico",
+      "Mexico."
+    ],
+    "prompt": "Which country is Chilpancingo de los Bravo in? Answer with only the country name.",
+    "qid": "Q207935",
+    "question_id": "development-v6-construction_validation-place-q207935-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q207935 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Chilpancingo de los Bravo Municipality",
+      "Chilpancingo de los Bravo Municipality."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Chilpancingo de los Bravo? Answer with only that entity name.",
+    "qid": "Q207935",
+    "question_id": "development-v6-construction_validation-place-q207935-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q207935 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "North America",
+      "North America."
+    ],
+    "prompt": "On which continent is Chilpancingo de los Bravo located? Answer with only the continent name.",
+    "qid": "Q207935",
+    "question_id": "development-v6-construction_validation-place-q207935-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q207935 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "India",
+      "India."
+    ],
+    "prompt": "Which country is Cherrapunji in? Answer with only the country name.",
+    "qid": "Q211030",
+    "question_id": "development-v6-construction_validation-place-q211030-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q211030 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "East Khasi Hills district",
+      "East Khasi Hills district."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Cherrapunji? Answer with only that entity name.",
+    "qid": "Q211030",
+    "question_id": "development-v6-construction_validation-place-q211030-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q211030 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Cherrapunji located? Answer with only the continent name.",
+    "qid": "Q211030",
+    "question_id": "development-v6-construction_validation-place-q211030-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q211030 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Greece",
+      "Greece."
+    ],
+    "prompt": "Which country is Ios in? Answer with only the country name.",
+    "qid": "Q216993",
+    "question_id": "development-v6-construction_validation-place-q216993-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q216993 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Ios Municipality",
+      "Ios Municipality."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Ios? Answer with only that entity name.",
+    "qid": "Q216993",
+    "question_id": "development-v6-construction_validation-place-q216993-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q216993 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Ios located? Answer with only the continent name.",
+    "qid": "Q216993",
+    "question_id": "development-v6-construction_validation-place-q216993-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q216993 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Japan",
+      "Japan."
+    ],
+    "prompt": "Which country is Aizuwakamatsu in? Answer with only the country name.",
+    "qid": "Q237699",
+    "question_id": "development-v6-construction_validation-place-q237699-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q237699 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Fukushima Prefecture",
+      "Fukushima Prefecture."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Aizuwakamatsu? Answer with only that entity name.",
+    "qid": "Q237699",
+    "question_id": "development-v6-construction_validation-place-q237699-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q237699 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Aizuwakamatsu located? Answer with only the continent name.",
+    "qid": "Q237699",
+    "question_id": "development-v6-construction_validation-place-q237699-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q237699 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Ulm in? Answer with only the country name.",
+    "qid": "Q3012",
+    "question_id": "development-v6-construction_validation-place-q3012-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q3012 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Tübingen Government Region",
+      "Tübingen Government Region."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Ulm? Answer with only that entity name.",
+    "qid": "Q3012",
+    "question_id": "development-v6-construction_validation-place-q3012-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q3012 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Ulm located? Answer with only the continent name.",
+    "qid": "Q3012",
+    "question_id": "development-v6-construction_validation-place-q3012-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q3012 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Guatemala",
+      "Guatemala."
+    ],
+    "prompt": "Which country is Quetzaltenango in? Answer with only the country name.",
+    "qid": "Q334577",
+    "question_id": "development-v6-construction_validation-place-q334577-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q334577 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Quetzaltenango Department",
+      "Quetzaltenango Department."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Quetzaltenango? Answer with only that entity name.",
+    "qid": "Q334577",
+    "question_id": "development-v6-construction_validation-place-q334577-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q334577 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "North America",
+      "North America."
+    ],
+    "prompt": "On which continent is Quetzaltenango located? Answer with only the continent name.",
+    "qid": "Q334577",
+    "question_id": "development-v6-construction_validation-place-q334577-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q334577 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Argentina",
+      "Argentina."
+    ],
+    "prompt": "Which country is San Luis in? Answer with only the country name.",
+    "qid": "Q44243",
+    "question_id": "development-v6-construction_validation-place-q44243-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q44243 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Juan Martín de Pueyrredón Department",
+      "Juan Martín de Pueyrredón Department."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains San Luis? Answer with only that entity name.",
+    "qid": "Q44243",
+    "question_id": "development-v6-construction_validation-place-q44243-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q44243 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "South America",
+      "South America."
+    ],
+    "prompt": "On which continent is San Luis located? Answer with only the continent name.",
+    "qid": "Q44243",
+    "question_id": "development-v6-construction_validation-place-q44243-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q44243 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Pakistan",
+      "Pakistan."
+    ],
+    "prompt": "Which country is Muzaffarabad in? Answer with only the country name.",
+    "qid": "Q461307",
+    "question_id": "development-v6-construction_validation-place-q461307-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q461307 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Muzaffarabad District",
+      "Muzaffarabad District."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Muzaffarabad? Answer with only that entity name.",
+    "qid": "Q461307",
+    "question_id": "development-v6-construction_validation-place-q461307-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q461307 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Muzaffarabad located? Answer with only the continent name.",
+    "qid": "Q461307",
+    "question_id": "development-v6-construction_validation-place-q461307-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q461307 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Afghanistan",
+      "Afghanistan."
+    ],
+    "prompt": "Which country is Pul-e Khomri in? Answer with only the country name.",
+    "qid": "Q477148",
+    "question_id": "development-v6-construction_validation-place-q477148-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q477148 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Puli Khumri",
+      "Puli Khumri."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Pul-e Khomri? Answer with only that entity name.",
+    "qid": "Q477148",
+    "question_id": "development-v6-construction_validation-place-q477148-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q477148 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Pul-e Khomri located? Answer with only the continent name.",
+    "qid": "Q477148",
+    "question_id": "development-v6-construction_validation-place-q477148-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q477148 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Weil der Stadt in? Answer with only the country name.",
+    "qid": "Q505147",
+    "question_id": "development-v6-construction_validation-place-q505147-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q505147 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Böblingen district",
+      "Böblingen district."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Weil der Stadt? Answer with only that entity name.",
+    "qid": "Q505147",
+    "question_id": "development-v6-construction_validation-place-q505147-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q505147 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Weil der Stadt located? Answer with only the continent name.",
+    "qid": "Q505147",
+    "question_id": "development-v6-construction_validation-place-q505147-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q505147 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Venezuela",
+      "Venezuela."
+    ],
+    "prompt": "Which country is Ciudad Guayana in? Answer with only the country name.",
+    "qid": "Q507080",
+    "question_id": "development-v6-construction_validation-place-q507080-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q507080 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Bolívar",
+      "Bolívar."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Ciudad Guayana? Answer with only that entity name.",
+    "qid": "Q507080",
+    "question_id": "development-v6-construction_validation-place-q507080-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q507080 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "South America",
+      "South America."
+    ],
+    "prompt": "On which continent is Ciudad Guayana located? Answer with only the continent name.",
+    "qid": "Q507080",
+    "question_id": "development-v6-construction_validation-place-q507080-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q507080 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Malaysia",
+      "Malaysia."
+    ],
+    "prompt": "Which country is George Town in? Answer with only the country name.",
+    "qid": "Q61092",
+    "question_id": "development-v6-construction_validation-place-q61092-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61092 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Penang",
+      "Penang."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains George Town? Answer with only that entity name.",
+    "qid": "Q61092",
+    "question_id": "development-v6-construction_validation-place-q61092-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61092 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is George Town located? Answer with only the continent name.",
+    "qid": "Q61092",
+    "question_id": "development-v6-construction_validation-place-q61092-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61092 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Ukraine",
+      "Ukraine."
+    ],
+    "prompt": "Which country is Khrustalnyi in? Answer with only the country name.",
+    "qid": "Q612773",
+    "question_id": "development-v6-construction_validation-place-q612773-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q612773 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Khrustalnyi urban hromada",
+      "Khrustalnyi urban hromada."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Khrustalnyi? Answer with only that entity name.",
+    "qid": "Q612773",
+    "question_id": "development-v6-construction_validation-place-q612773-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q612773 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Khrustalnyi located? Answer with only the continent name.",
+    "qid": "Q612773",
+    "question_id": "development-v6-construction_validation-place-q612773-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q612773 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Weil am Rhein in? Answer with only the country name.",
+    "qid": "Q61909",
+    "question_id": "development-v6-construction_validation-place-q61909-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61909 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Lörrach",
+      "Lörrach."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Weil am Rhein? Answer with only that entity name.",
+    "qid": "Q61909",
+    "question_id": "development-v6-construction_validation-place-q61909-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61909 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Weil am Rhein located? Answer with only the continent name.",
+    "qid": "Q61909",
+    "question_id": "development-v6-construction_validation-place-q61909-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q61909 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Iran",
+      "Iran."
+    ],
+    "prompt": "Which country is Ray in? Answer with only the country name.",
+    "qid": "Q636188",
+    "question_id": "development-v6-construction_validation-place-q636188-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q636188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Central District",
+      "Central District."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Ray? Answer with only that entity name.",
+    "qid": "Q636188",
+    "question_id": "development-v6-construction_validation-place-q636188-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q636188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Ray located? Answer with only the continent name.",
+    "qid": "Q636188",
+    "question_id": "development-v6-construction_validation-place-q636188-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q636188 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Ukraine",
+      "Ukraine."
+    ],
+    "prompt": "Which country is Bar in? Answer with only the country name.",
+    "qid": "Q737925",
+    "question_id": "development-v6-construction_validation-place-q737925-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q737925 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Bar urban hromada",
+      "Bar urban hromada."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Bar? Answer with only that entity name.",
+    "qid": "Q737925",
+    "question_id": "development-v6-construction_validation-place-q737925-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q737925 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Bar located? Answer with only the continent name.",
+    "qid": "Q737925",
+    "question_id": "development-v6-construction_validation-place-q737925-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q737925 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Germany",
+      "Germany."
+    ],
+    "prompt": "Which country is Bischofswerda in? Answer with only the country name.",
+    "qid": "Q81717",
+    "question_id": "development-v6-construction_validation-place-q81717-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q81717 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Bautzen District",
+      "Bautzen District."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Bischofswerda? Answer with only that entity name.",
+    "qid": "Q81717",
+    "question_id": "development-v6-construction_validation-place-q81717-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q81717 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Europe",
+      "Europe."
+    ],
+    "prompt": "On which continent is Bischofswerda located? Answer with only the continent name.",
+    "qid": "Q81717",
+    "question_id": "development-v6-construction_validation-place-q81717-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q81717 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "India",
+      "India."
+    ],
+    "prompt": "Which country is Machilipatnam in? Answer with only the country name.",
+    "qid": "Q845662",
+    "question_id": "development-v6-construction_validation-place-q845662-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q845662 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Krishna district",
+      "Krishna district."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Machilipatnam? Answer with only that entity name.",
+    "qid": "Q845662",
+    "question_id": "development-v6-construction_validation-place-q845662-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q845662 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Machilipatnam located? Answer with only the continent name.",
+    "qid": "Q845662",
+    "question_id": "development-v6-construction_validation-place-q845662-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q845662 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Bangladesh",
+      "Bangladesh."
+    ],
+    "prompt": "Which country is Cox's Bazar in? Answer with only the country name.",
+    "qid": "Q949746",
+    "question_id": "development-v6-construction_validation-place-q949746-q1",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q949746 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Cox's Bazar Sadar Upazila",
+      "Cox's Bazar Sadar Upazila."
+    ],
+    "prompt": "According to Wikidata, what direct administrative territorial entity (P131) contains Cox's Bazar? Answer with only that entity name.",
+    "qid": "Q949746",
+    "question_id": "development-v6-construction_validation-place-q949746-q2",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q949746 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  },
+  {
+    "accepted_aliases": [
+      "Asia",
+      "Asia."
+    ],
+    "prompt": "On which continent is Cox's Bazar located? Answer with only the continent name.",
+    "qid": "Q949746",
+    "question_id": "development-v6-construction_validation-place-q949746-q3",
+    "schema_version": 1,
+    "source_provenance": "Wikidata EntityData Q949746 (CC0), retrieved 2026-07-25; fa-development-source-v6-r8; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43"
+  }
+]
