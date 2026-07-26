@@ -1,0 +1,16 @@
+{
+  "claim_scope": "development_instrument_readiness_only",
+  "colab_hardware": "Tesla T4",
+  "git_commit": "1b3bb3185e02b0adacb11da32ead4accd29922b7",
+  "result_bundle_sha256": "1e0356eb1dbbd350c8b735307cb572c16101057d74f96f35ef0cfa41a7e1131e",
+  "runtime": {
+    "accelerate": "1.12.0",
+    "cuda_available": true,
+    "torch": "2.11.0+cu128",
+    "transformers": "4.57.1"
+  },
+  "runtime_deviations": [
+    "PyTorch was 2.11.0+cu128 rather than the fa-core.lock version 2.7.1. The model, tokenizer, chat template, generation settings, source corpus, parser, and preregistered gate remained pinned. This run is development-only and cannot support a confirmatory claim."
+  ],
+  "schema_version": 1
+}

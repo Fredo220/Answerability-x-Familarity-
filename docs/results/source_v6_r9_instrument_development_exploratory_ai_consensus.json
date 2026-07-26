@@ -1,0 +1,43 @@
+{
+  "claim_scope": "post_hoc_development_diagnostic_only",
+  "corrected_qualified_by_domain": {
+    "creative_work": 6,
+    "organization": 9,
+    "person": 5,
+    "place": 12
+  },
+  "corrected_success_by_domain_relation": {
+    "creative_work": {
+      "P495": 9,
+      "P57": 4,
+      "P577": 6
+    },
+    "organization": {
+      "P159": 10,
+      "P17": 11,
+      "P571": 3
+    },
+    "person": {
+      "P106": 10,
+      "P19": 2,
+      "P27": 5
+    },
+    "place": {
+      "P131": 2,
+      "P17": 12,
+      "P30": 12
+    }
+  },
+  "label_pair_counts": {
+    "ambiguous|ambiguous": 6,
+    "ambiguous|incorrect": 1,
+    "semantic_equivalent|ambiguous": 2,
+    "semantic_equivalent|semantic_equivalent": 11,
+    "incorrect|incorrect": 49
+  },
+  "method": "A strict-score failure was corrected only when both exploratory AI auditors independently assigned semantic_equivalent. Ambiguous cases remained incorrect.",
+  "original_failure_count": 69,
+  "schema_version": 1,
+  "strict_consensus_equivalent_count": 11,
+  "warning": "These are exploratory AI ratings, not the two independent human ratings required by the protocol. This sensitivity analysis cannot replace or rescue the frozen R9 gate."
+}

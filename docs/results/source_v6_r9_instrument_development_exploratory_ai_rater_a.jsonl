@@ -1,0 +1,69 @@
+{"question_id":"development-v6-instrument_development-creative_work-q1321622-q1","label":"incorrect","rationale":"George Stevens is a different director from the accepted Michael Curtiz."}
+{"question_id":"development-v6-instrument_development-creative_work-q1321622-q2","label":"incorrect","rationale":"1936 is not equivalent to the accepted release year 1942."}
+{"question_id":"development-v6-instrument_development-creative_work-q15293047-q1","label":"incorrect","rationale":"Makoto Shinkai is a different director from the accepted Takashi Yamazaki."}
+{"question_id":"development-v6-instrument_development-creative_work-q15293047-q2","label":"incorrect","rationale":"2023 is not equivalent to the accepted release year 2014."}
+{"question_id":"development-v6-instrument_development-creative_work-q1999930-q1","label":"incorrect","rationale":"John Huston is a different director from the accepted Leonid Gaidai."}
+{"question_id":"development-v6-instrument_development-creative_work-q1999930-q2","label":"incorrect","rationale":"1987 is not equivalent to the accepted release year 1969."}
+{"question_id":"development-v6-instrument_development-creative_work-q1999930-q3","label":"ambiguous","rationale":"Russia is closely associated with the Soviet film and is sometimes used as a modern geographic shorthand, but it is not the same historical polity as the accepted Soviet Union."}
+{"question_id":"development-v6-instrument_development-creative_work-q277648-q1","label":"incorrect","rationale":"John McTiernan is a different director from the accepted Gerard Krawczyk."}
+{"question_id":"development-v6-instrument_development-creative_work-q277648-q2","label":"incorrect","rationale":"2023 is not equivalent to the accepted release year 2003."}
+{"question_id":"development-v6-instrument_development-creative_work-q338599-q1","label":"semantic_equivalent","rationale":"Pasolini unambiguously identifies the accepted director Pier Paolo Pasolini in this question, despite omitting the given names."}
+{"question_id":"development-v6-instrument_development-creative_work-q586310-q1","label":"incorrect","rationale":"David Lynch is a different director from the accepted Vittorio De Sica."}
+{"question_id":"development-v6-instrument_development-creative_work-q586310-q2","label":"incorrect","rationale":"2019 is not equivalent to the accepted release year 1946."}
+{"question_id":"development-v6-instrument_development-creative_work-q586310-q3","label":"incorrect","rationale":"United States is a different country from the accepted Italy."}
+{"question_id":"development-v6-instrument_development-creative_work-q627975-q1","label":"incorrect","rationale":"John Waters is a different director from the accepted Francois Truffaut."}
+{"question_id":"development-v6-instrument_development-creative_work-q627975-q2","label":"incorrect","rationale":"2023 is not equivalent to the accepted release year 1970."}
+{"question_id":"development-v6-instrument_development-creative_work-q627975-q3","label":"incorrect","rationale":"United States is a different country from the accepted France."}
+{"question_id":"development-v6-instrument_development-creative_work-q918380-q1","label":"incorrect","rationale":"Jerry Bruckheimer is not the accepted director P. J. Hogan."}
+{"question_id":"development-v6-instrument_development-creative_work-q930134-q1","label":"incorrect","rationale":"Chris Columbus is a different director from the accepted Mark Dindal."}
+{"question_id":"development-v6-instrument_development-organization-q1075553-q3","label":"incorrect","rationale":"1953 is not equivalent to the accepted founding year 1882."}
+{"question_id":"development-v6-instrument_development-organization-q1158-q1","label":"incorrect","rationale":"Switzerland is a different country from the accepted Monaco."}
+{"question_id":"development-v6-instrument_development-organization-q1158-q3","label":"incorrect","rationale":"1987 is not equivalent to the accepted founding year 1912."}
+{"question_id":"development-v6-instrument_development-organization-q185163-q3","label":"incorrect","rationale":"1976 is not equivalent to the accepted founding year 1904."}
+{"question_id":"development-v6-instrument_development-organization-q188430-q3","label":"incorrect","rationale":"1903 is not equivalent to the accepted founding year 1992."}
+{"question_id":"development-v6-instrument_development-organization-q188710-q2","label":"incorrect","rationale":"Bangkok contains Chatuchak, but the broader city is not semantically equivalent to the accepted headquarters place."}
+{"question_id":"development-v6-instrument_development-organization-q188710-q3","label":"incorrect","rationale":"1956 is not equivalent to the accepted founding year 1960."}
+{"question_id":"development-v6-instrument_development-organization-q191472-q3","label":"ambiguous","rationale":"1964 corresponds to the BBC service's renaming as BBC1, whereas 1936 denotes the start of the television service; the underspecified word founded makes this a plausible entity-history ambiguity."}
+{"question_id":"development-v6-instrument_development-organization-q194445-q3","label":"incorrect","rationale":"1825 is not equivalent to the accepted founding year 1908."}
+{"question_id":"development-v6-instrument_development-organization-q6039733-q2","label":"incorrect","rationale":"Ankara is a different place from the accepted Gebze."}
+{"question_id":"development-v6-instrument_development-organization-q6039733-q3","label":"incorrect","rationale":"2022 is not equivalent to the accepted founding year 2018."}
+{"question_id":"development-v6-instrument_development-organization-q859363-q3","label":"incorrect","rationale":"1973 is not equivalent to the accepted founding year 1872."}
+{"question_id":"development-v6-instrument_development-person-q102140-q1","label":"semantic_equivalent","rationale":"England is the ordinary short country name for the accepted Kingdom of England in the context of Henry II."}
+{"question_id":"development-v6-instrument_development-person-q102140-q3","label":"incorrect","rationale":"Farnham is a different birthplace from the accepted Le Mans."}
+{"question_id":"development-v6-instrument_development-person-q12154-q1","label":"ambiguous","rationale":"Egypt can denote the ancient civilization or the modern country, so it is related to but not unambiguously identical with the accepted historical polity Ancient Egypt."}
+{"question_id":"development-v6-instrument_development-person-q12154-q2","label":"semantic_equivalent","rationale":"Pharaoh is the specific Egyptian title for a ruler or monarch and answers the requested occupation equivalently."}
+{"question_id":"development-v6-instrument_development-person-q12154-q3","label":"incorrect","rationale":"Valley of the Kings is not the accepted birthplace Amarna."}
+{"question_id":"development-v6-instrument_development-person-q129027-q2","label":"semantic_equivalent","rationale":"Professional footballer is a direct, more specific wording of the accepted occupation footballer."}
+{"question_id":"development-v6-instrument_development-person-q129027-q3","label":"incorrect","rationale":"Manchester is a different birthplace from the accepted Lagny-sur-Marne."}
+{"question_id":"development-v6-instrument_development-person-q130969-q1","label":"semantic_equivalent","rationale":"France is the ordinary short country name for the accepted Kingdom of France in the context of Philip IV."}
+{"question_id":"development-v6-instrument_development-person-q130969-q2","label":"semantic_equivalent","rationale":"King is a direct instance of the accepted occupation ruler or monarch."}
+{"question_id":"development-v6-instrument_development-person-q130969-q3","label":"incorrect","rationale":"Chartres is a different birthplace from the accepted Fontainebleau."}
+{"question_id":"development-v6-instrument_development-person-q131261-q2","label":"semantic_equivalent","rationale":"Goalkeeper is a specific association-football playing occupation and therefore entails the accepted footballer occupation."}
+{"question_id":"development-v6-instrument_development-person-q131261-q3","label":"incorrect","rationale":"Garching is a different birthplace from the accepted Karlsruhe."}
+{"question_id":"development-v6-instrument_development-person-q134817-q2","label":"semantic_equivalent","rationale":"Sultan is a sovereign or monarch title and is semantically equivalent for the requested occupation."}
+{"question_id":"development-v6-instrument_development-person-q134817-q3","label":"semantic_equivalent","rationale":"Constantinople is the historical name of the same city now called Istanbul and identifies the accepted birthplace."}
+{"question_id":"development-v6-instrument_development-person-q1423-q1","label":"ambiguous","rationale":"Rome can refer to the Roman state or to the city, so it is related to but not unambiguously identical with the accepted polity Ancient Rome."}
+{"question_id":"development-v6-instrument_development-person-q1423-q2","label":"incorrect","rationale":"Emperor is a sovereign title, not semantically equivalent to the accepted occupation politician."}
+{"question_id":"development-v6-instrument_development-person-q1429-q1","label":"ambiguous","rationale":"Rome can refer to the Roman state or to the city, so it is related to but not unambiguously identical with the accepted polity Ancient Rome."}
+{"question_id":"development-v6-instrument_development-person-q1429-q2","label":"incorrect","rationale":"Emperor is a sovereign title, not semantically equivalent to the accepted occupation politician."}
+{"question_id":"development-v6-instrument_development-person-q1429-q3","label":"incorrect","rationale":"Rome is a different birthplace from the accepted Lanuvium."}
+{"question_id":"development-v6-instrument_development-person-q1434-q1","label":"ambiguous","rationale":"Rome can refer to the Roman state or to the city, so it is related to but not unambiguously identical with the accepted polity Ancient Rome."}
+{"question_id":"development-v6-instrument_development-person-q1434-q2","label":"semantic_equivalent","rationale":"Roman Emperor is a direct instance of the accepted occupation ruler or monarch."}
+{"question_id":"development-v6-instrument_development-person-q1434-q3","label":"incorrect","rationale":"Rome is a different birthplace from the accepted Lanuvium."}
+{"question_id":"development-v6-instrument_development-person-q214204-q3","label":"incorrect","rationale":"Belgium is the containing country, not the accepted birthplace La Louviere."}
+{"question_id":"development-v6-instrument_development-person-q43915-q1","label":"ambiguous","rationale":"Germany is a modern geographic shorthand for much of the relevant area but is not the same historical polity as the accepted Holy Roman Empire."}
+{"question_id":"development-v6-instrument_development-person-q43915-q2","label":"semantic_equivalent","rationale":"King is a direct instance of the accepted occupation ruler or monarch."}
+{"question_id":"development-v6-instrument_development-person-q43915-q3","label":"incorrect","rationale":"East Francia is a broad historical polity, not the accepted birthplace Wallhausen."}
+{"question_id":"development-v6-instrument_development-person-q57265-q2","label":"semantic_equivalent","rationale":"President is a specific political office and identifies the accepted occupation politician in this context."}
+{"question_id":"development-v6-instrument_development-person-q57265-q3","label":"incorrect","rationale":"Omdurman is a different birthplace from the accepted Hosh Bannaga."}
+{"question_id":"development-v6-instrument_development-place-q12434-q2","label":"incorrect","rationale":"Rheinland-Pfalz is not the accepted direct administrative entity Rhein-Sieg District."}
+{"question_id":"development-v6-instrument_development-place-q132278-q2","label":"incorrect","rationale":"Germany is a broader country, not the accepted direct administrative entity Neustadt an der Aisch-Bad Windsheim."}
+{"question_id":"development-v6-instrument_development-place-q194343-q2","label":"semantic_equivalent","rationale":"State of Bahia is an expanded form of the accepted entity name Bahia."}
+{"question_id":"development-v6-instrument_development-place-q221283-q2","label":"incorrect","rationale":"Ghana is a broader country, not the accepted direct administrative entity Central Region."}
+{"question_id":"development-v6-instrument_development-place-q3012-q2","label":"incorrect","rationale":"Germany is a broader country, not the accepted direct administrative entity Tubingen Government Region."}
+{"question_id":"development-v6-instrument_development-place-q3926-q2","label":"incorrect","rationale":"South Africa is a broader country, not the accepted direct administrative entity City of Tshwane Metropolitan Municipality."}
+{"question_id":"development-v6-instrument_development-place-q486991-q2","label":"incorrect","rationale":"Landkreis Aschersleben is not the accepted direct administrative entity Salzlandkreis; a related or historical district name is not equivalent to the requested direct P131 value."}
+{"question_id":"development-v6-instrument_development-place-q498078-q2","label":"incorrect","rationale":"Germany is a broader country, not the accepted direct administrative entity Waldeck-Frankenberg."}
+{"question_id":"development-v6-instrument_development-place-q505147-q2","label":"incorrect","rationale":"Baden-Wurttemberg is a broader state, not the accepted direct administrative entity Boblingen district."}
+{"question_id":"development-v6-instrument_development-place-q58650-q2","label":"incorrect","rationale":"China is a broader country, not the accepted direct administrative entity Hebei."}
+{"question_id":"development-v6-instrument_development-place-q676778-q2","label":"incorrect","rationale":"Morocco is a broader country, not the accepted direct administrative entity Chefchaouen Province."}
