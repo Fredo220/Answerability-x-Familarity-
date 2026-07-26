@@ -1,0 +1,76 @@
+{
+  "audit_scope": {
+    "alias_correction_review": "all 118 correction rows independently checked against frozen R8 blocker evidence; all 53 selected corrections checked for materialization in R9 questions",
+    "candidate_review": "all 96 selected registered candidates independently checked against frozen R8 English label/alias identity evidence",
+    "fail_closed": true,
+    "prompt_and_collision_review": "all registered prompts checked against relation templates; exact normalized selected candidate/answer collisions checked",
+    "question_review": "all 288 registered question-ground-truth-accepted-surface triples across both R9 splits",
+    "source_evidence": "immutable R8 QLever and Wikidata entity caches plus the hash-bound R9 alias correction manifest"
+  },
+  "auditor_id": "codex-independent-r9-exhaustive-semantic-auditor-v1",
+  "blocker_count": 0,
+  "blocker_taxonomy": {},
+  "coverage": {
+    "candidate_count": 96,
+    "candidate_qids_sha256": "b5d06772414ee0bfafa99d6175af609332dbe1f812c1d95b5c301b699cda0eaa",
+    "question_count": 288,
+    "question_ids_sha256": "1dfb568d22ad527cf006245b456761af800abb5f019e2221d550378bdec56456"
+  },
+  "evidence_bindings": {
+    "alias_corrections_sha256": "5106684d3ab9171a0c70149475528cdf93b6e788380975692cdd53cc502875d9",
+    "r8_audit_items_sha256": "fd1cf8f6099c3f224d2a8f2e124f00594703f9c56040cb95389f44a36f9325c8",
+    "structural_provenance_audit_sha256": "091d49639a448943bce02dc68bd28b5a300806fcae349344f63bf4742f4c7cf2"
+  },
+  "items_file": "pre_model_semantic_audit_items_v1.jsonl",
+  "items_sha256": "54d56a3eb7061d9913077d79fc7013d530ae78c2874a683778d74789819beca6",
+  "kind": "fa_source_v6_pre_model_semantic_audit",
+  "model_output_inspected": false,
+  "schema_version": 1,
+  "source_integrity_sha256": "aaf9a25bbd90d478494c01a09b18a6f543adbad52adf3a2e8952601e6f6c5f24",
+  "source_revision": "fa-development-source-v6-r9",
+  "status": "passed",
+  "summary": {
+    "blocked_question_count": 0,
+    "by_domain": {
+      "creative_work": {
+        "blocked": 0,
+        "passed": 72,
+        "total": 72
+      },
+      "organization": {
+        "blocked": 0,
+        "passed": 72,
+        "total": 72
+      },
+      "person": {
+        "blocked": 0,
+        "passed": 72,
+        "total": 72
+      },
+      "place": {
+        "blocked": 0,
+        "passed": 72,
+        "total": 72
+      }
+    },
+    "by_split": {
+      "construction_validation": {
+        "blocked": 0,
+        "passed": 144,
+        "total": 144
+      },
+      "instrument_development": {
+        "blocked": 0,
+        "passed": 144,
+        "total": 144
+      }
+    },
+    "correction_manifest_complete_count": 118,
+    "correction_manifest_count": 118,
+    "passed_question_count": 288,
+    "selected_correction_count": 53,
+    "selected_corrections_materialized_count": 53,
+    "source_value_mismatch_count": 0,
+    "unresolved_corrected_question_count": 0
+  }
+}

@@ -1,0 +1,1236 @@
+[
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q1321622",
+    "name": "Yankee Doodle Dandy",
+    "qid": "Q1321622",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Michael Curtiz",
+        "Michael Curtiz."
+      ],
+      [
+        "1942",
+        "1942."
+      ],
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1321622 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1321622.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q1347609",
+    "name": "Idiocracy",
+    "qid": "Q1347609",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Mike Judge",
+        "Mike Judge."
+      ],
+      [
+        "2006",
+        "2006."
+      ],
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1347609 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1347609.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q15293047",
+    "name": "Stand by Me Doraemon",
+    "qid": "Q15293047",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Takashi Yamazaki",
+        "Takashi Yamazaki."
+      ],
+      [
+        "2014",
+        "2014."
+      ],
+      [
+        "Japan",
+        "Japan."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q15293047 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q15293047.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q1999930",
+    "name": "The Diamond Arm",
+    "qid": "Q1999930",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Leonid Gaidai",
+        "Leonid Gaidai."
+      ],
+      [
+        "1969",
+        "1969."
+      ],
+      [
+        "Soviet Union",
+        "Soviet Union.",
+        "USSR",
+        "USSR."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1999930 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1999930.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q277648",
+    "name": "Taxi 3",
+    "qid": "Q277648",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Gérard Krawczyk",
+        "Gérard Krawczyk.",
+        "Gerard Krawczyk",
+        "Gerard Krawczyk."
+      ],
+      [
+        "2003",
+        "2003."
+      ],
+      [
+        "France",
+        "France."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q277648 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q277648.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q338599",
+    "name": "Accattone",
+    "qid": "Q338599",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Pier Paolo Pasolini",
+        "Pier Paolo Pasolini."
+      ],
+      [
+        "1961",
+        "1961."
+      ],
+      [
+        "Italy",
+        "Italy."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q338599 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q338599.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q586310",
+    "name": "Shoeshine",
+    "qid": "Q586310",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Vittorio De Sica",
+        "Vittorio De Sica."
+      ],
+      [
+        "1946",
+        "1946."
+      ],
+      [
+        "Italy",
+        "Italy."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q586310 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q586310.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q627975",
+    "name": "Bed and Board",
+    "qid": "Q627975",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "François Truffaut",
+        "François Truffaut.",
+        "Francois Truffaut",
+        "Francois Truffaut."
+      ],
+      [
+        "1970",
+        "1970."
+      ],
+      [
+        "France",
+        "France."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q627975 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q627975.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q753141",
+    "name": "The Virgin Spring",
+    "qid": "Q753141",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ingmar Bergman",
+        "Ingmar Bergman."
+      ],
+      [
+        "1960",
+        "1960."
+      ],
+      [
+        "Sweden",
+        "Sweden."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q753141 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q753141.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q918380",
+    "name": "My Best Friend's Wedding",
+    "qid": "Q918380",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "P. J. Hogan",
+        "P. J. Hogan."
+      ],
+      [
+        "1997",
+        "1997."
+      ],
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q918380 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q918380.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q930134",
+    "name": "Cats Don't Dance",
+    "qid": "Q930134",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Mark Dindal",
+        "Mark Dindal."
+      ],
+      [
+        "1997",
+        "1997."
+      ],
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q930134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q930134.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "creative_work",
+    "entity_id": "development-v6-instrument_development-creative_work-q94998134",
+    "name": "Zack Snyder's Justice League",
+    "qid": "Q94998134",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Zack Snyder",
+        "Zack Snyder."
+      ],
+      [
+        "2021",
+        "2021."
+      ],
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q94998134 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 9aeb4904a3195193de872cf0b90b9737b1ae7f375ecba3aa7b8b370a1fdf0fbe",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q94998134.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q1075553",
+    "name": "Egyptian Armed Forces",
+    "qid": "Q1075553",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Egypt",
+        "Egypt."
+      ],
+      [
+        "Cairo",
+        "Cairo."
+      ],
+      [
+        "1882",
+        "1882."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1075553 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1075553.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q1158",
+    "name": "World Athletics",
+    "qid": "Q1158",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Monaco",
+        "Monaco."
+      ],
+      [
+        "Monaco",
+        "Monaco."
+      ],
+      [
+        "1912",
+        "1912."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1158 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1158.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q167186",
+    "name": "National Geographic Society",
+    "qid": "Q167186",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "United States",
+        "United States.",
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S.",
+        "US"
+      ],
+      [
+        "Washington, D.C.",
+        "Washington, D.C..",
+        "Washington DC",
+        "Washington DC."
+      ],
+      [
+        "1888",
+        "1888."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q167186 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q167186.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q185163",
+    "name": "OGC Nice",
+    "qid": "Q185163",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "France",
+        "France."
+      ],
+      [
+        "Nice",
+        "Nice."
+      ],
+      [
+        "1904",
+        "1904."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q185163 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q185163.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q188430",
+    "name": "F.C. Copenhagen",
+    "qid": "Q188430",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Denmark",
+        "Denmark."
+      ],
+      [
+        "Copenhagen",
+        "Copenhagen."
+      ],
+      [
+        "1992",
+        "1992."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q188430 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q188430.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q188710",
+    "name": "Thai Airways",
+    "qid": "Q188710",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Thailand",
+        "Thailand."
+      ],
+      [
+        "Chatuchak",
+        "Chatuchak."
+      ],
+      [
+        "1960",
+        "1960."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q188710 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q188710.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q191472",
+    "name": "BBC One",
+    "qid": "Q191472",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "United Kingdom",
+        "United Kingdom.",
+        "UK",
+        "UK."
+      ],
+      [
+        "London",
+        "London."
+      ],
+      [
+        "1936",
+        "1936."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q191472 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q191472.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q194445",
+    "name": "Cairo University",
+    "qid": "Q194445",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Egypt",
+        "Egypt."
+      ],
+      [
+        "Giza",
+        "Giza."
+      ],
+      [
+        "1908",
+        "1908."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q194445 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q194445.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q214341",
+    "name": "University of Amsterdam",
+    "qid": "Q214341",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Netherlands",
+        "Netherlands.",
+        "the Netherlands",
+        "the Netherlands."
+      ],
+      [
+        "Amsterdam",
+        "Amsterdam."
+      ],
+      [
+        "1632",
+        "1632."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q214341 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q214341.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q218506",
+    "name": "Lund University",
+    "qid": "Q218506",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Sweden",
+        "Sweden."
+      ],
+      [
+        "Lund",
+        "Lund."
+      ],
+      [
+        "1666",
+        "1666."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q218506 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q218506.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q6039733",
+    "name": "Togg",
+    "qid": "Q6039733",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Turkey",
+        "Turkey.",
+        "Türkiye",
+        "Türkiye."
+      ],
+      [
+        "Gebze",
+        "Gebze."
+      ],
+      [
+        "2018",
+        "2018."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q6039733 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q6039733.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "organization",
+    "entity_id": "development-v6-instrument_development-organization-q859363",
+    "name": "Sciences Po",
+    "qid": "Q859363",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "France",
+        "France."
+      ],
+      [
+        "Paris",
+        "Paris."
+      ],
+      [
+        "1872",
+        "1872."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q859363 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 ce645570216b0a0b73da17e5a4e5424aba09215eda57b08d25ca17510acc247d",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q859363.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q102140",
+    "name": "Henry II of England",
+    "qid": "Q102140",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Kingdom of England",
+        "Kingdom of England."
+      ],
+      [
+        "monarch",
+        "monarch.",
+        "king",
+        "king."
+      ],
+      [
+        "Le Mans",
+        "Le Mans."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q102140 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q102140.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q12154",
+    "name": "Tutankhamun",
+    "qid": "Q12154",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ancient Egypt",
+        "Ancient Egypt."
+      ],
+      [
+        "ruler",
+        "ruler.",
+        "monarch",
+        "monarch."
+      ],
+      [
+        "Amarna",
+        "Amarna."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q12154 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q12154.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q129027",
+    "name": "Paul Pogba",
+    "qid": "Q129027",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "France",
+        "France."
+      ],
+      [
+        "association football player",
+        "association football player.",
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ],
+      [
+        "Lagny-sur-Marne",
+        "Lagny-sur-Marne."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q129027 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q129027.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q130969",
+    "name": "Philip IV of France",
+    "qid": "Q130969",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Kingdom of France",
+        "Kingdom of France."
+      ],
+      [
+        "ruler",
+        "ruler.",
+        "monarch",
+        "monarch."
+      ],
+      [
+        "Fontainebleau",
+        "Fontainebleau."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q130969 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q130969.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q131261",
+    "name": "Oliver Kahn",
+    "qid": "Q131261",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "association football player",
+        "association football player.",
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ],
+      [
+        "Karlsruhe",
+        "Karlsruhe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q131261 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q131261.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q134817",
+    "name": "Abdul Hamid II",
+    "qid": "Q134817",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ottoman Empire",
+        "Ottoman Empire."
+      ],
+      [
+        "sovereign",
+        "sovereign.",
+        "monarch",
+        "monarch."
+      ],
+      [
+        "Istanbul",
+        "Istanbul."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q134817 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q134817.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q1423",
+    "name": "Domitian",
+    "qid": "Q1423",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ancient Rome",
+        "Ancient Rome."
+      ],
+      [
+        "politician",
+        "politician."
+      ],
+      [
+        "Rome",
+        "Rome."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1423 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1423.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q1429",
+    "name": "Antoninus Pius",
+    "qid": "Q1429",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ancient Rome",
+        "Ancient Rome."
+      ],
+      [
+        "politician",
+        "politician."
+      ],
+      [
+        "Lanuvium",
+        "Lanuvium."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1429 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1429.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q1434",
+    "name": "Commodus",
+    "qid": "Q1434",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ancient Rome",
+        "Ancient Rome."
+      ],
+      [
+        "ruler",
+        "ruler.",
+        "monarch",
+        "monarch."
+      ],
+      [
+        "Lanuvium",
+        "Lanuvium."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q1434 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q1434.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q214204",
+    "name": "Eden Hazard",
+    "qid": "Q214204",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Belgium",
+        "Belgium."
+      ],
+      [
+        "association football player",
+        "association football player.",
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ],
+      [
+        "La Louvière",
+        "La Louvière."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q214204 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q214204.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q43915",
+    "name": "Otto I the Great",
+    "qid": "Q43915",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Holy Roman Empire",
+        "Holy Roman Empire."
+      ],
+      [
+        "ruler",
+        "ruler.",
+        "monarch",
+        "monarch."
+      ],
+      [
+        "Wallhausen",
+        "Wallhausen."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q43915 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q43915.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "person",
+    "entity_id": "development-v6-instrument_development-person-q57265",
+    "name": "Omar al-Bashir",
+    "qid": "Q57265",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Sudan",
+        "Sudan."
+      ],
+      [
+        "politician",
+        "politician."
+      ],
+      [
+        "Hosh Bannaga",
+        "Hosh Bannaga."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q57265 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 7e8899d6666ef0def3f35b65431a994638e10b92d8f297c0040ba13730ce8b23",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q57265.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q12434",
+    "name": "Bad Honnef",
+    "qid": "Q12434",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Rhein-Sieg District",
+        "Rhein-Sieg District."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q12434 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q12434.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q132278",
+    "name": "Bad Windsheim",
+    "qid": "Q132278",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Neustadt an der Aisch-Bad Windsheim",
+        "Neustadt an der Aisch-Bad Windsheim."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q132278 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q132278.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q194343",
+    "name": "Feira de Santana",
+    "qid": "Q194343",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Brazil",
+        "Brazil."
+      ],
+      [
+        "Bahia",
+        "Bahia."
+      ],
+      [
+        "South America",
+        "South America."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q194343 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q194343.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q221283",
+    "name": "Cape Coast",
+    "qid": "Q221283",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Ghana",
+        "Ghana."
+      ],
+      [
+        "Central Region",
+        "Central Region."
+      ],
+      [
+        "Africa",
+        "Africa."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q221283 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q221283.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q3012",
+    "name": "Ulm",
+    "qid": "Q3012",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Tübingen Government Region",
+        "Tübingen Government Region."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q3012 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q3012.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q3926",
+    "name": "Pretoria",
+    "qid": "Q3926",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "South Africa",
+        "South Africa."
+      ],
+      [
+        "City of Tshwane Metropolitan Municipality",
+        "City of Tshwane Metropolitan Municipality."
+      ],
+      [
+        "Africa",
+        "Africa."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q3926 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q3926.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q486991",
+    "name": "Aschersleben",
+    "qid": "Q486991",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Salzlandkreis",
+        "Salzlandkreis."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q486991 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q486991.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q498078",
+    "name": "Bad Arolsen",
+    "qid": "Q498078",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Waldeck-Frankenberg",
+        "Waldeck-Frankenberg."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q498078 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q498078.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q505147",
+    "name": "Weil der Stadt",
+    "qid": "Q505147",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Germany",
+        "Germany."
+      ],
+      [
+        "Böblingen district",
+        "Böblingen district."
+      ],
+      [
+        "Europe",
+        "Europe."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q505147 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q505147.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q58560",
+    "name": "Qinhuangdao",
+    "qid": "Q58560",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "People's Republic of China",
+        "People's Republic of China.",
+        "China",
+        "China.",
+        "PRC",
+        "PRC."
+      ],
+      [
+        "Hebei",
+        "Hebei."
+      ],
+      [
+        "Asia",
+        "Asia."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q58560 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q58560.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q58650",
+    "name": "Zhangjiakou",
+    "qid": "Q58650",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "People's Republic of China",
+        "People's Republic of China.",
+        "China",
+        "China.",
+        "PRC",
+        "PRC."
+      ],
+      [
+        "Hebei",
+        "Hebei."
+      ],
+      [
+        "Asia",
+        "Asia."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q58650 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q58650.json",
+    "split": "instrument_development"
+  },
+  {
+    "coarse_type": "place",
+    "entity_id": "development-v6-instrument_development-place-q676778",
+    "name": "Chefchaouen",
+    "qid": "Q676778",
+    "schema_version": 1,
+    "screening_aliases": [
+      [
+        "Morocco",
+        "Morocco."
+      ],
+      [
+        "Chefchaouen Province",
+        "Chefchaouen Province."
+      ],
+      [
+        "Africa",
+        "Africa."
+      ]
+    ],
+    "source_provenance": "Wikidata EntityData Q676778 (CC0), retrieved 2026-07-25; fa-development-source-v6-r9; domain query SHA-256 f8e1923f3f1985bc2337e738d0f26b4f9aef4f2f9e5e3b8b109ca0f275d77a43",
+    "source_query": "https://www.wikidata.org/wiki/Special:EntityData/Q676778.json",
+    "split": "instrument_development"
+  }
+]
