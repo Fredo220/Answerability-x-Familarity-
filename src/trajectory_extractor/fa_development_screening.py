@@ -49,6 +49,7 @@ _ALLOWED_SOURCE_REVISIONS = frozenset(
         "fa-development-source-v6-r4",
         "fa-development-source-v6-r5",
         "fa-development-source-v6-r6",
+        "fa-development-source-v6-r7",
     }
 )
 _INTEGRITY_FILE = "source_integrity_v1.json"
@@ -98,10 +99,11 @@ def run_development_screening(
         if source["source_revision"] in {
             "fa-development-source-v6-r5",
             "fa-development-source-v6-r6",
+            "fa-development-source-v6-r7",
         }:
             if pre_model_semantic_audit is None:
                 raise ValueError(
-                    "R5 requires a passing pre-model semantic audit"
+                    "this source revision requires a passing pre-model semantic audit"
                 )
             semantic_audit_sha256 = _verify_pre_model_semantic_audit(
                 Path(pre_model_semantic_audit),

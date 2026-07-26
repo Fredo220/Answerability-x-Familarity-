@@ -67,7 +67,7 @@ def _criteria(
 ) -> dict[str, object]:
     criteria: dict[str, object] = {
         "schema_version": 2,
-        "source_revision": "fa-development-source-v6-r6",
+        "source_revision": "fa-development-source-v6-r7",
         "development_gate": {
             "candidate_count": candidate_count,
             "prompt_count": candidate_count * 3,
@@ -239,7 +239,7 @@ def _manual_audit(
     manifest = {
         "schema_version": 1,
         "kind": "fa_source_v6_manual_error_audit",
-        "source_revision": "fa-development-source-v6-r6",
+        "source_revision": "fa-development-source-v6-r7",
         "development_execution_identity_sha256": development[
             "execution_identity_sha256"
         ],

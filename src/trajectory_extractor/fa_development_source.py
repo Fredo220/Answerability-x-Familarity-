@@ -37,13 +37,14 @@ DEVELOPMENT_SPLITS = (
     "instrument_development",
     "construction_validation",
 )
-DEFAULT_SOURCE_REVISION = "fa-development-source-v6-r6"
+DEFAULT_SOURCE_REVISION = "fa-development-source-v6-r7"
 _FRAME_TO_SOURCE_REVISION = {
     "fa-development-source-frame-v6-r2": "fa-development-source-v6-r2",
     "fa-development-source-frame-v6-r3": "fa-development-source-v6-r3",
     "fa-development-source-frame-v6-r4": "fa-development-source-v6-r4",
     "fa-development-source-frame-v6-r5": "fa-development-source-v6-r5",
     "fa-development-source-frame-v6-r6": "fa-development-source-v6-r6",
+    "fa-development-source-frame-v6-r7": "fa-development-source-v6-r7",
 }
 DEVELOPMENT_DOMAIN_FIELDS = {
     **DOMAIN_FIELDS,
@@ -145,13 +146,10 @@ def build_development_source_records_from_ranked_values(
             ranked.raw_values,
             strict=True,
         ):
-            ranked_aliases = _ranked_value_aliases(field, raw_value, entities)
-            canonical_keys = _canonical_value_label_keys(raw_value, entities)
-            aliases = tuple(
-                alias
-                for alias in ranked_aliases
-                if _is_safe_development_alias(alias)
-                or _normal_form(alias.removesuffix(".")) in canonical_keys
+            aliases = _canonical_value_aliases(
+                field,
+                raw_value,
+                entities,
             )
             if not aliases:
                 break
@@ -178,26 +176,24 @@ def build_development_source_records_from_ranked_values(
     return tuple(records)
 
 
-def _is_safe_development_alias(value: str) -> bool:
-    base = value.removesuffix(".").strip()
-    compact = "".join(character for character in base if character.isalnum())
-    return not (compact.isalpha() and len(compact) < 4)
-
-
-def _canonical_value_label_keys(
+def _canonical_value_aliases(
+    field: ScreeningField,
     raw_value: str,
     entities: Mapping[str, Mapping[str, Any]],
-) -> frozenset[str]:
-    keys = set()
+) -> tuple[str, ...]:
+    if field.value_kind == "year":
+        return _ranked_value_aliases(field, raw_value, entities)
+    aliases = []
     for value in raw_value.split("|"):
         qid = value.rsplit("/", 1)[-1]
         entity = entities.get(qid)
         if not isinstance(entity, Mapping):
             continue
         label = _english_label(entity)
-        if label:
-            keys.add(_normal_form(label))
-    return frozenset(keys)
+        compact = "".join(character for character in label if character.isalnum())
+        if label and not (compact.isalpha() and len(compact) < 4):
+            aliases.extend((label, f"{label}."))
+    return tuple(dict.fromkeys(aliases))
 
 
 def filter_development_matchable_records(
@@ -209,6 +205,7 @@ def filter_development_matchable_records(
     """Retain the first sufficient ranked reserve of tokenizer-compatible rows."""
     if type(required_per_domain) is not int or required_per_domain <= 0:
         raise ValueError("required development matchable count must be positive")
+    conflicting_qids = _surface_conflict_qids(records_by_domain)
     selected_real_names_and_aliases: set[str] = set()
     used_pseudonyms: set[str] = set()
     selected = {}
@@ -222,17 +219,10 @@ def filter_development_matchable_records(
         )
         for record in ordered:
             examined += 1
-            record_names_and_aliases = {
-                _normal_form(value)
-                for value in (
-                    record.label,
-                    *(
-                        alias
-                        for _, aliases in record.property_values
-                        for alias in aliases
-                    ),
-                )
-            }
+            if record.qid in conflicting_qids:
+                continue
+            candidate_name, answer_aliases = _record_surfaces(record)
+            record_names_and_aliases = {candidate_name, *answer_aliases}
             if record_names_and_aliases.intersection(used_pseudonyms):
                 continue
             entity_id = f"development-v6-frame-{domain}-{record.qid.lower()}"
@@ -262,6 +252,7 @@ def filter_development_matchable_records(
             pseudonyms = {_normal_form(row.name) for row in synthetic}
             if (
                 len(pseudonyms) != 3
+                or pseudonyms.intersection(record_names_and_aliases)
                 or pseudonyms.intersection(selected_real_names_and_aliases)
                 or pseudonyms.intersection(used_pseudonyms)
             ):
@@ -279,7 +270,7 @@ def filter_development_matchable_records(
             )
         selected[domain] = tuple(accepted)
     policy_payload = {
-        "revision": "fa-development-matchability-v2",
+        "revision": "fa-development-matchability-v4",
         "generator_revision": GENERATOR_REVISION,
         "variants_per_entity": 3,
         "required_per_domain": required_per_domain,
@@ -293,7 +284,8 @@ def filter_development_matchable_records(
             domain: len(selected[domain]) for domain in REGISTERED_DOMAINS
         },
         "examined_counts": examined_counts,
-        "global_alias_collision_policy": "selected_source_names_and_aliases",
+        "surface_conflict_qids": sorted(conflicting_qids),
+        "global_alias_collision_policy": "symmetric_full_pool",
         "required_per_domain": required_per_domain,
         "generator_revision": GENERATOR_REVISION,
         "policy_sha256": hashlib.sha256(
@@ -304,6 +296,40 @@ def filter_development_matchable_records(
             ).encode()
         ).hexdigest(),
     }
+
+
+def _record_surfaces(record: SourceRecord) -> tuple[str, set[str]]:
+    return (
+        _normal_form(record.label),
+        {
+            _normal_form(value)
+            for _, aliases in record.property_values
+            for value in aliases
+        },
+    )
+
+
+def _surface_conflict_qids(
+    records_by_domain: Mapping[str, Sequence[SourceRecord]],
+) -> frozenset[str]:
+    candidate_owners: dict[str, set[str]] = {}
+    answer_owners: dict[str, set[str]] = {}
+    conflicts = set()
+    for domain in REGISTERED_DOMAINS:
+        for record in records_by_domain.get(domain, ()):
+            candidate_name, answer_aliases = _record_surfaces(record)
+            candidate_owners.setdefault(candidate_name, set()).add(record.qid)
+            for alias in answer_aliases:
+                answer_owners.setdefault(alias, set()).add(record.qid)
+            if candidate_name in answer_aliases:
+                conflicts.add(record.qid)
+    for owners in candidate_owners.values():
+        if len(owners) > 1:
+            conflicts.update(owners)
+    for surface in candidate_owners.keys() & answer_owners.keys():
+        conflicts.update(candidate_owners[surface])
+        conflicts.update(answer_owners[surface])
+    return frozenset(conflicts)
 
 
 def assign_development_pools(

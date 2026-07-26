@@ -114,19 +114,27 @@ def test_place_query_replaces_timezone_with_single_continent_current_facts():
     assert "wdt:P421" not in query
     assert "?countryStatement ps:P17 ?country" in query
     assert "?adminStatement ps:P131 ?admin" in query
-    assert "?admin wdt:P31/wdt:P279* wd:Q56061" in query
-    assert "?raw_1 wdt:P30 ?continent" in query
+    assert "?countryStatement wikibase:rank ?countryRank" in query
+    assert "?countryRank != wikibase:DeprecatedRank" in query
+    assert "FILTER NOT EXISTS { ?countryStatement pq:P582 ?countryEnd. }" in query
+    assert "FILTER NOT EXISTS { ?adminStatement pq:P582 ?adminEnd. }" in query
+    assert "?raw_2 wdt:P31/wdt:P279* wd:Q56061" in query
+    assert "?raw_1 p:P30 ?continentStatement" in query
+    assert "?continentStatement ps:P30 ?continent" in query
     assert "HAVING(COUNT(DISTINCT ?country) = 1)" in query
     assert "HAVING(COUNT(DISTINCT ?admin) = 1)" in query
     assert "HAVING(COUNT(DISTINCT ?continent) = 1)" in query
     assert "FILTER(?raw_2 != ?raw_1)" in query
     assert "rdfs:label ?itemLabel" in query
     assert "PREFIX rdfs:" in query
-    assert "?other rdfs:label ?itemLabel" in query
+    assert "?other rdfs:label ?otherLabel" in query
     assert "?other wdt:P31/wdt:P279* wd:Q515" not in query
     assert "FILTER(?other != ?item)" in query
-    assert "pq:P582" in query
     assert "FILTER NOT EXISTS" in query
+    assert "?other skos:altLabel ?otherAlias" in query
+    assert "LCASE(STR(?otherLabel)) = LCASE(STR(?itemLabel))" in query
+    assert "?raw_1 rdfs:label ?raw_1Label" in query
+    assert "?otherAnswer skos:altLabel ?raw_1Alias" in query
     assert "LIMIT 17" in query
 
 
@@ -135,15 +143,20 @@ def test_organization_query_requires_single_targets_and_settlement_headquarters(
 
     assert "?item wdt:P31/wdt:P279* wd:Q56061" in query
     assert "?raw_2 wdt:P31/wdt:P279* wd:Q486972" in query
-    assert "?item p:P17 ?countryStatement" in query
-    assert "?countryStatement ps:P17 ?country" in query
-    assert "?item p:P159 ?headquartersStatement" in query
-    assert "?headquartersStatement ps:P159 ?headquarters" in query
-    assert "?item p:P571 ?inceptionStatement" in query
-    assert "?inceptionStatement ps:P571 ?inception" in query
-    assert "HAVING(COUNT(DISTINCT ?country) = 1)" in query
-    assert "HAVING(COUNT(DISTINCT ?headquarters) = 1)" in query
-    assert "HAVING(COUNT(DISTINCT ?inception) = 1)" in query
+    assert "?item p:P17 ?field1Statement" in query
+    assert "?field1Statement ps:P17 ?field1" in query
+    assert "?item p:P159 ?field2Statement" in query
+    assert "?field2Statement ps:P159 ?field2" in query
+    assert "?item p:P571 ?field3Statement" in query
+    assert "?field3Statement ps:P571 ?field3" in query
+    assert "?field1Statement wikibase:rank ?field1Rank" in query
+    assert "?field1Rank != wikibase:DeprecatedRank" in query
+    assert "FILTER NOT EXISTS { ?field1Statement pq:P582 ?field1End. }" in query
+    assert "FILTER NOT EXISTS { ?field2Statement pq:P582 ?field2End. }" in query
+    assert "FILTER NOT EXISTS { ?field3Statement pq:P582 ?field3End. }" not in query
+    assert "HAVING(COUNT(DISTINCT ?field1) = 1)" in query
+    assert "HAVING(COUNT(DISTINCT ?field2) = 1)" in query
+    assert "HAVING(COUNT(DISTINCT ?field3) = 1)" in query
     assert "FILTER NOT EXISTS" in query
     assert "LIMIT 17" in query
 
@@ -152,9 +165,22 @@ def test_creative_work_query_excludes_duplicate_english_titles():
     query = build_development_domain_query("creative_work", limit=17)
 
     assert "rdfs:label ?itemLabel" in query
-    assert "?other wdt:P31/wdt:P279* wd:Q11424" in query
+    assert "?other rdfs:label ?otherLabel" in query
+    assert "?other skos:altLabel ?otherAlias" in query
     assert "FILTER(?other != ?item)" in query
+    assert "HAVING(COUNT(DISTINCT ?field1) = 1)" in query
+    assert "HAVING(COUNT(DISTINCT ?field2) = 1)" in query
+    assert "HAVING(COUNT(DISTINCT ?field3) = 1)" in query
     assert "LIMIT 17" in query
+
+
+def test_person_query_requires_one_value_for_every_registered_relation():
+    query = build_development_domain_query("person", limit=17)
+
+    assert "?item p:P27 ?field1Statement" in query
+    assert "?item p:P106 ?field2Statement" in query
+    assert "?item p:P19 ?field3Statement" in query
+    assert query.count("HAVING(COUNT(DISTINCT ?field") == 3
 
 
 def test_builds_bounded_frame_with_exclusions_collisions_and_provenance(
@@ -191,6 +217,23 @@ def test_builds_bounded_frame_with_exclusions_collisions_and_provenance(
         "Q10001" not in {row["qid"] for row in rows}
         for rows in frame["records_by_domain"].values()
     )
+
+
+def test_r7_rejects_seed_entity_caches_before_network_access(tmp_path):
+    seed = tmp_path / "seed.json"
+    seed.write_text("{}")
+
+    with pytest.raises(ValueError, match="R7 forbids seed entity caches"):
+        build_development_frame(
+            output_dir=tmp_path / "frame",
+            tokenizer=_WordTokenizer(),
+            tokenizer_revision="a" * 40,
+            query_limit=17,
+            required_per_domain=2,
+            excluded_qids=frozenset(),
+            retrieval_date="2026-07-25",
+            seed_entity_cache=seed,
+        )
 
 
 def test_place_query_limit_changes_only_place_and_is_bound_in_design(

@@ -18,7 +18,6 @@ from trajectory_extractor.fa_confirmatory_source import (
     SourceRecord,
     _fetch_entities,
     _post_sparql,
-    build_domain_query,
     exclude_cross_domain_source_collisions,
     parse_qlever_candidates,
 )
@@ -29,136 +28,181 @@ from trajectory_extractor.fa_development_source import (
 )
 from trajectory_extractor.fa_runtime import load_pinned_tokenizer
 
-SOURCE_FRAME_REVISION = "fa-development-source-frame-v6-r6"
+SOURCE_FRAME_REVISION = "fa-development-source-frame-v6-r7"
 _ENTITY_URI = re.compile(r"^http://www\.wikidata\.org/entity/(Q[1-9][0-9]*)$")
 
 
 def build_development_domain_query(domain: str, *, limit: int) -> str:
-    """Build the revisioned open-development query without changing Source-v5."""
-    if domain not in {"place", "organization", "creative_work"}:
-        return build_domain_query(domain, limit=limit)
+    """Build the exact-value, globally disambiguated R7 development query."""
+    if domain not in DEVELOPMENT_DOMAIN_FIELDS:
+        raise ValueError(f"unregistered domain: {domain}")
     if type(limit) is not int or limit <= 0:
         raise ValueError("query limit must be a positive integer")
-    if domain == "organization":
-        return (
-            f"{_PREFIXES}\n"
-            "PREFIX p: <http://www.wikidata.org/prop/>\n"
-            "PREFIX ps: <http://www.wikidata.org/prop/statement/>\n"
-            "SELECT ?item ?sitelinks\n"
-            "       (STR(?raw_1) AS ?value_1)\n"
-            "       (STR(?raw_2) AS ?value_2)\n"
-            "       (STR(?raw_3) AS ?value_3)\n"
-            "WHERE {\n"
-            "  ?item wdt:P31/wdt:P279* wd:Q43229;\n"
-            "        wikibase:sitelinks ?sitelinks.\n"
-            "  FILTER NOT EXISTS {\n"
-            "    ?item wdt:P31/wdt:P279* wd:Q56061.\n"
-            "  }\n"
+    type_pattern = {
+        "person": "wdt:P31 wd:Q5",
+        "place": "wdt:P31/wdt:P279* wd:Q515",
+        "organization": "wdt:P31/wdt:P279* wd:Q43229",
+        "creative_work": "wdt:P31/wdt:P279* wd:Q11424",
+    }[domain]
+    field_subqueries = []
+    answer_entity_indexes = []
+    if domain == "place":
+        for index, property_id, variable in (
+            (1, "P17", "country"),
+            (2, "P131", "admin"),
+        ):
+            field_subqueries.append(
+                _exact_item_value_subquery(
+                    index,
+                    property_id,
+                    variable,
+                    require_unended=True,
+                )
+            )
+            answer_entity_indexes.append(index)
+        field_subqueries.append(
             "  {\n"
-            "    SELECT ?item (SAMPLE(?country) AS ?raw_1)\n"
+            "    SELECT ?raw_1 (SAMPLE(?continent) AS ?raw_3)\n"
             "    WHERE {\n"
-            "      ?item p:P17 ?countryStatement.\n"
-            "      ?countryStatement ps:P17 ?country.\n"
+            "      ?raw_1 p:P30 ?continentStatement.\n"
+            "      ?continentStatement ps:P30 ?continent.\n"
+            "      ?continentStatement wikibase:rank ?continentRank.\n"
+            "      FILTER(?continentRank != wikibase:DeprecatedRank)\n"
             "    }\n"
-            "    GROUP BY ?item\n"
-            "    HAVING(COUNT(DISTINCT ?country) = 1)\n"
+            "    GROUP BY ?raw_1\n"
+            "    HAVING(COUNT(DISTINCT ?continent) = 1)\n"
             "  }\n"
-            "  {\n"
-            "    SELECT ?item (SAMPLE(?headquarters) AS ?raw_2)\n"
-            "    WHERE {\n"
-            "      ?item p:P159 ?headquartersStatement.\n"
-            "      ?headquartersStatement ps:P159 ?headquarters.\n"
-            "    }\n"
-            "    GROUP BY ?item\n"
-            "    HAVING(COUNT(DISTINCT ?headquarters) = 1)\n"
-            "  }\n"
-            "  ?raw_2 wdt:P31/wdt:P279* wd:Q486972.\n"
-            "  {\n"
-            "    SELECT ?item (SAMPLE(?inception) AS ?raw_3)\n"
-            "    WHERE {\n"
-            "      ?item p:P571 ?inceptionStatement.\n"
-            "      ?inceptionStatement ps:P571 ?inception.\n"
-            "    }\n"
-            "    GROUP BY ?item\n"
-            "    HAVING(COUNT(DISTINCT ?inception) = 1)\n"
-            "  }\n"
-            "  FILTER(?sitelinks >= 10)\n"
-            "}\n"
-            "ORDER BY DESC(?sitelinks) ?item\n"
-            f"LIMIT {limit}"
         )
-    if domain == "creative_work":
-        base_query = build_domain_query(domain, limit=limit)
-        return (
-            base_query.replace(
-                _PREFIXES,
-                f"{_PREFIXES}\nPREFIX rdfs: "
-                "<http://www.w3.org/2000/01/rdf-schema#>",
-            ).replace(
-                "        wikibase:sitelinks ?sitelinks.\n",
-                (
-                    "        wikibase:sitelinks ?sitelinks;\n"
-                    "        rdfs:label ?itemLabel.\n"
-                    '  FILTER(LANG(?itemLabel) = "en")\n'
-                    "  FILTER NOT EXISTS {\n"
-                    "    ?other wdt:P31/wdt:P279* wd:Q11424;\n"
-                    "           rdfs:label ?itemLabel.\n"
-                    "    FILTER(?other != ?item)\n"
-                    "  }\n"
-                ),
+        answer_entity_indexes.append(3)
+    else:
+        for index, field in enumerate(
+            DEVELOPMENT_DOMAIN_FIELDS[domain],
+            start=1,
+        ):
+            require_unended = domain == "organization" and field.property_id in {
+                "P17",
+                "P159",
+            }
+            field_subqueries.append(
+                _exact_item_value_subquery(
+                    index,
+                    field.property_id,
+                    f"field{index}",
+                    require_unended=require_unended,
+                )
+            )
+            if field.value_kind == "entity":
+                answer_entity_indexes.append(index)
+    extra_filters = []
+    if domain == "place":
+        extra_filters.extend(
+            (
+                "  ?raw_2 wdt:P31/wdt:P279* wd:Q56061.\n",
+                "  FILTER(?raw_2 != ?raw_1)\n",
             )
         )
+    elif domain == "organization":
+        extra_filters.extend(
+            (
+                "  FILTER NOT EXISTS {\n"
+                "    ?item wdt:P31/wdt:P279* wd:Q56061.\n"
+                "  }\n",
+                "  ?raw_2 wdt:P31/wdt:P279* wd:Q486972.\n",
+            )
+        )
+    answer_label_filters = "".join(
+        _unique_answer_label_filters(index) for index in answer_entity_indexes
+    )
     return (
         f"{_PREFIXES}\n"
         "PREFIX p: <http://www.wikidata.org/prop/>\n"
         "PREFIX ps: <http://www.wikidata.org/prop/statement/>\n"
         "PREFIX pq: <http://www.wikidata.org/prop/qualifier/>\n"
         "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+        "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n"
         "SELECT ?item ?sitelinks\n"
         "       (STR(?raw_1) AS ?value_1)\n"
         "       (STR(?raw_2) AS ?value_2)\n"
         "       (STR(?raw_3) AS ?value_3)\n"
         "WHERE {\n"
-        "  ?item wdt:P31/wdt:P279* wd:Q515;\n"
+        f"  ?item {type_pattern};\n"
         "        wikibase:sitelinks ?sitelinks;\n"
         "        rdfs:label ?itemLabel.\n"
         '  FILTER(LANG(?itemLabel) = "en")\n'
         "  FILTER NOT EXISTS {\n"
-        "    ?other rdfs:label ?itemLabel.\n"
+        "    ?other rdfs:label ?otherLabel.\n"
+        '    FILTER(LANG(?otherLabel) = "en")\n'
+        "    FILTER(LCASE(STR(?otherLabel)) = LCASE(STR(?itemLabel)))\n"
         "    FILTER(?other != ?item)\n"
         "  }\n"
-        "  {\n"
-        "    SELECT ?item (SAMPLE(?country) AS ?raw_1)\n"
-        "    WHERE {\n"
-        "      ?item p:P17 ?countryStatement.\n"
-        "      ?countryStatement ps:P17 ?country.\n"
-        "      FILTER NOT EXISTS { ?countryStatement pq:P582 ?countryEnd. }\n"
-        "    }\n"
-        "    GROUP BY ?item\n"
-        "    HAVING(COUNT(DISTINCT ?country) = 1)\n"
+        "  FILTER NOT EXISTS {\n"
+        "    ?other skos:altLabel ?otherAlias.\n"
+        '    FILTER(LANG(?otherAlias) = "en")\n'
+        "    FILTER(LCASE(STR(?otherAlias)) = LCASE(STR(?itemLabel)))\n"
+        "    FILTER(?other != ?item)\n"
         "  }\n"
-        "  {\n"
-        "    SELECT ?item (SAMPLE(?admin) AS ?raw_2)\n"
-        "    WHERE {\n"
-        "      ?item p:P131 ?adminStatement.\n"
-        "      ?adminStatement ps:P131 ?admin.\n"
-        "      FILTER NOT EXISTS { ?adminStatement pq:P582 ?adminEnd. }\n"
-        "      ?admin wdt:P31/wdt:P279* wd:Q56061.\n"
-        "    }\n"
-        "    GROUP BY ?item\n"
-        "    HAVING(COUNT(DISTINCT ?admin) = 1)\n"
-        "  }\n"
-        "  {\n"
-        "    SELECT ?raw_1 (SAMPLE(?continent) AS ?raw_3)\n"
-        "    WHERE { ?raw_1 wdt:P30 ?continent. }\n"
-        "    GROUP BY ?raw_1\n"
-        "    HAVING(COUNT(DISTINCT ?continent) = 1)\n"
-        "  }\n"
-        "  FILTER(?raw_2 != ?raw_1)\n"
+        f"{''.join(field_subqueries)}"
+        f"{answer_label_filters}"
+        f"{''.join(extra_filters)}"
         "  FILTER(?sitelinks >= 10)\n"
         "}\n"
         "ORDER BY DESC(?sitelinks) ?item\n"
         f"LIMIT {limit}"
+    )
+
+
+def _exact_item_value_subquery(
+    index: int,
+    property_id: str,
+    variable: str,
+    *,
+    require_unended: bool = False,
+) -> str:
+    current_filter = (
+        "      FILTER NOT EXISTS { "
+        f"?{variable}Statement pq:P582 ?{variable}End. "
+        "}\n"
+        if require_unended
+        else ""
+    )
+    return (
+        "  {\n"
+        f"    SELECT ?item (SAMPLE(?{variable}) AS ?raw_{index})\n"
+        "    WHERE {\n"
+        f"      ?item p:{property_id} ?{variable}Statement.\n"
+        f"      ?{variable}Statement ps:{property_id} ?{variable}.\n"
+        f"      ?{variable}Statement wikibase:rank ?{variable}Rank.\n"
+        f"      FILTER(?{variable}Rank != wikibase:DeprecatedRank)\n"
+        f"{current_filter}"
+        "    }\n"
+        "    GROUP BY ?item\n"
+        f"    HAVING(COUNT(DISTINCT ?{variable}) = 1)\n"
+        "  }\n"
+    )
+
+
+def _unique_answer_label_filters(index: int) -> str:
+    return (
+        f"  ?raw_{index} rdfs:label ?raw_{index}Label.\n"
+        f'  FILTER(LANG(?raw_{index}Label) = "en")\n'
+        "  FILTER NOT EXISTS {\n"
+        f"    ?otherAnswer rdfs:label ?raw_{index}OtherLabel.\n"
+        f'    FILTER(LANG(?raw_{index}OtherLabel) = "en")\n'
+        "    FILTER("
+        f"LCASE(STR(?raw_{index}OtherLabel)) = "
+        f"LCASE(STR(?raw_{index}Label))"
+        ")\n"
+        f"    FILTER(?otherAnswer != ?raw_{index})\n"
+        "  }\n"
+        "  FILTER NOT EXISTS {\n"
+        f"    ?otherAnswer skos:altLabel ?raw_{index}Alias.\n"
+        f'    FILTER(LANG(?raw_{index}Alias) = "en")\n'
+        "    FILTER("
+        f"LCASE(STR(?raw_{index}Alias)) = "
+        f"LCASE(STR(?raw_{index}Label))"
+        ")\n"
+        f"    FILTER(?otherAnswer != ?raw_{index})\n"
+        "  }\n"
     )
 
 
@@ -177,6 +221,8 @@ def build_development_frame(
     seed_entity_cache: Path | None = None,
 ) -> dict[str, Any]:
     """Build or replay one immutable, bounded, development-only source frame."""
+    if seed_entity_cache is not None:
+        raise ValueError("R7 forbids seed entity caches")
     _validate_design(
         tokenizer_revision=tokenizer_revision,
         query_limit=query_limit,

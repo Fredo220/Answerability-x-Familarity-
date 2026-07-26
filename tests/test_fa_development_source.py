@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_place_source_rejects_property_alias_equal_to_entity_label():
     )
 
 
-def test_development_source_drops_ambiguous_short_entity_aliases():
+def test_development_source_uses_only_canonical_entity_aliases():
     ranked = (
         RankedSource(
             qid="Q100",
@@ -142,13 +143,13 @@ def test_development_source_drops_ambiguous_short_entity_aliases():
         for alias in values
     }
     assert "Belarus" in aliases
-    assert "Belarusian state" in aliases
+    assert "Belarusian state" not in aliases
     assert "BY" not in aliases
     assert "Dr" not in aliases
     assert "MSQ" not in aliases
 
 
-def test_development_source_preserves_short_canonical_value_labels():
+def test_development_source_rejects_short_canonical_value_labels():
     ranked = (
         RankedSource(
             qid="Q200",
@@ -179,19 +180,125 @@ def test_development_source_preserves_short_canonical_value_labels():
         },
     }
 
-    records = build_development_source_records_from_ranked_values(
-        "person",
-        ranked,
-        entities,
+    assert (
+        build_development_source_records_from_ranked_values(
+            "person",
+            ranked,
+            entities,
+        )
+        == ()
     )
 
-    aliases = {
-        alias
-        for _, values in records[0].property_values
-        for alias in values
+
+def test_matchability_rejects_candidate_answer_name_collisions():
+    tokenizer = _WordTokenizer()
+    records = _records(count=3)
+    person = list(records["person"])
+    place = list(records["place"])
+    place[0] = SourceRecord(
+        qid=place[0].qid,
+        label=person[0].property_values[0][1][0],
+        domain="place",
+        sitelinks=place[0].sitelinks,
+        source_rank=place[0].source_rank,
+        property_values=place[0].property_values,
+    )
+    records["place"] = tuple(place)
+
+    selected, _audit = filter_development_matchable_records(
+        records,
+        tokenizer,
+        required_per_domain=2,
+    )
+
+    assert selected["place"][0].qid != place[0].qid
+
+
+def test_matchability_rejects_a_candidate_equal_to_its_own_answer():
+    tokenizer = _WordTokenizer()
+    records = _records(count=3)
+    person = list(records["person"])
+    first = person[0]
+    person[0] = SourceRecord(
+        qid=first.qid,
+        label=first.property_values[0][1][0],
+        domain=first.domain,
+        sitelinks=first.sitelinks,
+        source_rank=first.source_rank,
+        property_values=first.property_values,
+    )
+    records["person"] = tuple(person)
+
+    selected, _audit = filter_development_matchable_records(
+        records,
+        tokenizer,
+        required_per_domain=2,
+    )
+
+    assert selected["person"][0].qid != person[0].qid
+
+
+def test_matchability_rejects_both_sides_of_candidate_answer_collisions():
+    tokenizer = _WordTokenizer()
+    records = _records(count=4)
+    person = list(records["person"])
+    place = list(records["place"])
+    person_answer = person[0].property_values[0][1][0]
+    place[0] = SourceRecord(
+        qid=place[0].qid,
+        label=person_answer,
+        domain=place[0].domain,
+        sitelinks=place[0].sitelinks,
+        source_rank=place[0].source_rank,
+        property_values=place[0].property_values,
+    )
+    records["person"] = tuple(person)
+    records["place"] = tuple(place)
+
+    selected, _audit = filter_development_matchable_records(
+        records,
+        tokenizer,
+        required_per_domain=2,
+    )
+
+    selected_qids = {
+        record.qid for domain_rows in selected.values() for record in domain_rows
     }
-    assert {"LA", "US", "AI"}.issubset(aliases)
-    assert not {"LAX", "USA", "ML"}.intersection(aliases)
+    assert person[0].qid not in selected_qids
+    assert place[0].qid not in selected_qids
+
+
+def test_matchability_rejects_pseudonym_equal_to_current_answer(monkeypatch):
+    tokenizer = _WordTokenizer()
+    records = _records(count=3)
+    rejected_qid = records["person"][0].qid
+
+    def fake_generate(candidates, _tokenizer, **_kwargs):
+        candidate = tuple(candidates)[0]
+        if candidate.qid == rejected_qid:
+            names = (
+                candidate.screening_aliases[0][0],
+                "Unique Pseudonym A",
+                "Unique Pseudonym B",
+            )
+        else:
+            names = tuple(
+                f"Pseudo {candidate.qid} {index}" for index in range(3)
+            )
+        return tuple(SimpleNamespace(name=name) for name in names)
+
+    monkeypatch.setattr(
+        "trajectory_extractor.fa_development_source.generate_synthetic_candidates",
+        fake_generate,
+    )
+
+    selected, _audit = filter_development_matchable_records(
+        records,
+        tokenizer,
+        required_per_domain=2,
+    )
+
+    assert rejected_qid not in {row.qid for row in selected["person"]}
 
 
 def test_assignment_is_balanced_deterministic_and_excludes_prior_qids():
@@ -246,7 +353,7 @@ def test_matchability_filter_precedes_assignment_and_returns_exact_frame():
     assert audit["complete_matchable_counts"] == {
         domain: 4 for domain in REGISTERED_DOMAINS
     }
-    assert audit["global_alias_collision_policy"] == "selected_source_names_and_aliases"
+    assert audit["global_alias_collision_policy"] == "symmetric_full_pool"
     assert len(audit["policy_sha256"]) == 64
 
 

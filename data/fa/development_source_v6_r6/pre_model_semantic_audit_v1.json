@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "fa_source_v6_pre_model_semantic_audit",
+  "source_revision": "fa-development-source-v6-r6",
+  "source_integrity_sha256": "eb1d27fbfe0323c2190f2c5baf9f6f0410fa9a1a3fede49ac925e3fe973d6965",
+  "auditor_id": "codex-subagent-halley-019f9b9f",
+  "status": "blocked",
+  "blocker_count": 8,
+  "coverage": {
+    "place_candidates": "all 48 candidates",
+    "non_place_candidates": "8 SHA-256-sorted candidates per domain and split"
+  },
+  "model_output_inspected": false,
+  "claim_scope": "instrument_validity_only",
+  "blockers": [
+    {
+      "id": "B001",
+      "category": "alias_policy",
+      "summary": "A short canonical label exposed an unresolved scoring-policy ambiguity."
+    },
+    {
+      "id": "B002",
+      "category": "candidate_answer_collision",
+      "summary": "A candidate label could also be a correct answer surface form for another item."
+    },
+    {
+      "id": "B003",
+      "category": "multiple_ground_truth_values",
+      "summary": "Some relations admitted multiple directors, countries, or citizenships."
+    },
+    {
+      "id": "B004",
+      "category": "occupation_multiplicity",
+      "summary": "Some person occupation questions did not have one determinate answer."
+    },
+    {
+      "id": "B005",
+      "category": "candidate_label_ambiguity",
+      "summary": "Some English labels identified multiple plausible entities."
+    },
+    {
+      "id": "B006",
+      "category": "answer_alias_false_positive",
+      "summary": "Some accepted aliases were unsafe abbreviations or pseudonym-like surfaces."
+    },
+    {
+      "id": "B007",
+      "category": "answer_granularity",
+      "summary": "Some country and administrative answers used inconsistent granularity or codes."
+    },
+    {
+      "id": "B008",
+      "category": "temporal_ambiguity",
+      "summary": "Some facts were ambiguous between historical and current values."
+    }
+  ]
+}

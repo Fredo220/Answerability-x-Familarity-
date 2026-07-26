@@ -16,17 +16,21 @@ write the token into this repository, a notebook cell, an artifact, or a log.
 
 ## 2. Build the Open Source Frame
 
+From the clean Git-bound R7 commit, run the registered syntax-only `LIMIT 1`
+QLever preflight. Record only request success and expected binding columns; do
+not retain or inspect candidate identities or yields. A syntax failure blocks
+construction and requires a code correction under R8.
+
 Construct a QLever/Wikidata frame using the pinned source-frame command:
 
 ```bash
 PYTHONPATH=src python tools/build_fa_development_frame.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --output-dir data/fa/development_source_v6_r6/frame \
+  --output-dir data/fa/development_source_v6_r7/frame \
   --query-limit 4000 \
   --place-query-limit 6000 \
   --required-per-domain 48 \
   --retrieval-date 2026-07-25 \
-  --seed-entity-cache data/fa/development_source_v6_r5/frame/source_cache/entity_records_v1.json \
   --exclude-candidates data/fa/confirmatory_source_v5/candidate_entities_mechanism_train_v1.json \
   --exclude-candidates data/fa/confirmatory_source_v5/candidate_entities_locked_validation_v1.json \
   --exclude-candidates data/fa/confirmatory_source_v5/candidate_entities_behavior_test_v1.json \
@@ -40,24 +44,27 @@ PYTHONPATH=src python tools/build_fa_development_frame.py \
   --exclude-candidates data/fa/development_source_v6_r4/candidate_entities_construction_validation_v1.json \
   --exclude-candidates data/fa/development_source_v6_r4/pre_model_semantic_exclusions_v1.json \
   --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_instrument_development_v1.json \
-  --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_construction_validation_v1.json
+  --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_construction_validation_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/candidate_entities_instrument_development_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/candidate_entities_construction_validation_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/r7_semantic_blocker_exclusions_v1.json
 ```
 
 The command fails closed if any domain has fewer than 48 complete
 tokenizer-compatible pseudonym reserves. Changing the query limit, relations,
 aliases, or wording creates a new instrument revision.
 
-R6 keeps the R5 query limits and corrects only the pre-model semantic defects
-registered in the R6 amendment. The R5 entity cache is a hash-bound fetch cache;
-all R6 records are recomputed under the R6 code. All inspected R5 entities are
-excluded.
+R7 keeps the R6 query limits and corrects only the pre-model semantic defects
+registered in the R7 amendment. R7 fetches its own entity labels so the query
+and materialized answer surfaces use the same source revision. All inspected
+R6 entities and all QIDs named by the R6 semantic audit are excluded.
 
 ## 3. Materialize Development Splits
 
 ```bash
 PYTHONPATH=src python tools/build_fa_development_source.py materialize \
-  --source-frame data/fa/development_source_v6_r6/frame/development_source_frame_v1.json \
-  --output-dir data/fa/development_source_v6_r6 \
+  --source-frame data/fa/development_source_v6_r7/frame/development_source_frame_v1.json \
+  --output-dir data/fa/development_source_v6_r7 \
   --candidates-per-domain-per-split 24 \
   --split-seed 20260725 \
   --exclude-candidates data/fa/confirmatory_source_v5/candidate_entities_mechanism_train_v1.json \
@@ -73,17 +80,31 @@ PYTHONPATH=src python tools/build_fa_development_source.py materialize \
   --exclude-candidates data/fa/development_source_v6_r4/candidate_entities_construction_validation_v1.json \
   --exclude-candidates data/fa/development_source_v6_r4/pre_model_semantic_exclusions_v1.json \
   --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_instrument_development_v1.json \
-  --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_construction_validation_v1.json
+  --exclude-candidates data/fa/development_source_v6_r5/candidate_entities_construction_validation_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/candidate_entities_instrument_development_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/candidate_entities_construction_validation_v1.json \
+  --exclude-candidates data/fa/development_source_v6_r6/r7_semantic_blocker_exclusions_v1.json
 ```
 
 Do not rename either split to a protected confirmatory namespace.
+
+Before any semantic audit or model run, independently verify:
+
+- exact `24`-per-domain counts in both splits;
+- zero QID overlap between splits;
+- zero QID overlap with every listed prior-corpus and R6 manifest;
+- equality between the frame's `excluded_prior_qids` and the union of every
+  exclusion manifest in the registered command;
+- source-frame, snapshot, integrity, provenance, and semantic replay hashes.
+
+Any mismatch blocks R7 and requires R8 rather than a repaired R7 artifact.
 
 ## 4. Screen `instrument_development`
 
 First require the machine-readable independent audit:
 
 ```text
-data/fa/development_source_v6_r6/pre_model_semantic_audit_v1.json
+data/fa/development_source_v6_r7/pre_model_semantic_audit_v1.json
 ```
 
 It must bind the exact source-integrity SHA, report zero blockers, and be
@@ -98,14 +119,14 @@ test -z "$(git status --porcelain --untracked-files=all)"
 PYTHONPATH=src /content/fa-venv/bin/python \
   tools/run_fa_development_screening.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root data/fa/development_source_v6_r6 \
+  --source-root data/fa/development_source_v6_r7 \
   --split instrument_development \
-  --output-root /content/fa-r6-artifacts \
-  --checkpoint-root /content/drive/MyDrive/fa-r6-checkpoints \
+  --output-root /content/fa-r7-artifacts \
+  --checkpoint-root /content/drive/MyDrive/fa-r7-checkpoints \
   --batch-size 16 \
-  --success-criteria configs/fa_source_v6_r6_success_criteria.json \
+  --success-criteria configs/fa_source_v6_r7_success_criteria.json \
   --pre-model-semantic-audit \
-    data/fa/development_source_v6_r6/pre_model_semantic_audit_v1.json \
+    data/fa/development_source_v6_r7/pre_model_semantic_audit_v1.json \
   --git-commit "$COMMIT"
 ```
 
@@ -128,7 +149,7 @@ disagreements. AI ratings are not human evidence. A completed independent audit
 is required before the instrument can be frozen or `construction_validation`
 opened.
 
-R6 fixes the packet seed at `20260725`; if a domain has fewer errors, every
+R7 fixes the packet seed at `20260725`; if a domain has fewer errors, every
 error in that domain is audited. Human and model correctness must agree on every
 sampled row.
 Any final `ambiguous_ground_truth`, `incomplete_alias_set`,
@@ -160,11 +181,11 @@ Write the criteria as a JSON object, then seal the instrument:
 ```bash
 PYTHONPATH=src python tools/freeze_fa_development_instrument.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root data/fa/development_source_v6_r6 \
-  --development-run-dir /content/fa-r6-artifacts/instrument_development/<execution-identity-sha256> \
-  --success-criteria configs/fa_source_v6_r6_success_criteria.json \
-  --manual-audit-manifest /content/fa-r6-audit/compiled_audit_v1.json \
-  --output /content/fa-r6-freeze/instrument_freeze_v1.json \
+  --source-root data/fa/development_source_v6_r7 \
+  --development-run-dir /content/fa-r7-artifacts/instrument_development/<execution-identity-sha256> \
+  --success-criteria configs/fa_source_v6_r7_success_criteria.json \
+  --manual-audit-manifest /content/fa-r7-audit/compiled_audit_v1.json \
+  --output /content/fa-r7-freeze/instrument_freeze_v1.json \
   --git-commit <screening-code-commit>
 ```
 
@@ -173,10 +194,10 @@ PYTHONPATH=src python tools/freeze_fa_development_instrument.py \
 ```bash
 PYTHONPATH=src python tools/run_fa_development_screening.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root data/fa/development_source_v6_r6 \
+  --source-root data/fa/development_source_v6_r7 \
   --split construction_validation \
-  --output-root /content/fa-r6-artifacts \
-  --freeze-manifest /content/fa-r6-freeze/instrument_freeze_v1.json \
+  --output-root /content/fa-r7-artifacts \
+  --freeze-manifest /content/fa-r7-freeze/instrument_freeze_v1.json \
   --batch-size 16
 ```
 
