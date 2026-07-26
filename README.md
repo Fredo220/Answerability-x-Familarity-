@@ -54,16 +54,22 @@ beyond the registered task.
   activation extraction.
 - The human naturalness audit remains a required external input.
 
-Use Python 3.12 in this worktree:
+Use Python 3.12 from a fresh clone:
 
 ```bash
-../../.venv/bin/python -m pytest -q
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements/fa-core.lock
+python -m pip install --no-deps -e .
+python -m pytest -q
 ```
 
-The Colab workflow is in
-[`notebooks/06_familiarity_answerability_colab.ipynb`](notebooks/06_familiarity_answerability_colab.ipynb).
-Scientific logic remains in tested Python modules; notebooks only orchestrate
-resumable CLI transactions.
+The current Colab entry point is the
+[`Source-v6 R10 runbook`](docs/fa_source_v6_r10_runbook.md). Notebook
+[`06_familiarity_answerability_colab.ipynb`](notebooks/06_familiarity_answerability_colab.ipynb)
+is retained only as the archived Source-v5 execution record and must not be
+used for R10. Scientific logic remains in tested Python modules; notebooks and
+runbooks only orchestrate CLI transactions.
 
 The R10 registration was introduced at commit
 `e2968387167350913b624393b4e4b28ed86d491d`. The run must record the exact

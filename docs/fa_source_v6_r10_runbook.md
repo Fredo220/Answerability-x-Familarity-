@@ -4,17 +4,27 @@ R10 is a one-shot, open instrument follow-up. It reuses the unchanged,
 previously unopened R9 `construction_validation` split. It cannot test the
 Familiarity-by-Answerability hypothesis.
 
-## Update the existing Colab checkout
+## Prepare the Colab checkout
+
+For a fresh runtime:
+
+```bash
+!git clone --branch main \
+  https://github.com/Fredo220/Answerability-x-Familarity-.git \
+  /content/Answerability-x-Familarity-
+```
+
+For an existing checkout:
 
 ```bash
 %cd /content/Answerability-x-Familarity-
 !git fetch origin
-!git checkout codex/fa-source-v6-development
-!git pull --ff-only origin codex/fa-source-v6-development
+!git checkout main
+!git pull --ff-only origin main
 ```
 
-Do not re-clone the repository, re-upload a bundle, or recreate the model
-runtime when this checkout already exists.
+Do not re-clone the repository or recreate the model runtime when this checkout
+already exists. Record the exact clean commit checked out for the run.
 
 ## Execute once
 
