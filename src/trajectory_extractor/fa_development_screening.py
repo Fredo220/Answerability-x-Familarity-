@@ -75,6 +75,8 @@ def run_development_screening(
     success_criteria: Mapping[str, Any] | None = None,
     pre_model_semantic_audit: str | Path | None = None,
     pre_model_structural_audit: str | Path | None = None,
+    followup_amendment: str | Path | None = None,
+    prior_gate: str | Path | None = None,
     checkpoint_root: str | Path | None = None,
     git_commit: str | None = None,
 ) -> dict[str, Any]:
@@ -84,6 +86,15 @@ def run_development_screening(
     if type(batch_size) is not int or batch_size <= 0:
         raise ValueError("batch_size must be a positive integer")
     _verify_config(config)
+    followup_requested = followup_amendment is not None or prior_gate is not None
+    if followup_requested and (
+        split != "construction_validation"
+        or followup_amendment is None
+        or prior_gate is None
+        or success_criteria is None
+        or freeze_manifest is not None
+    ):
+        raise ValueError("R10 follow-up registration is incomplete")
     resolved_git_commit = git_commit or _current_git_commit()
     _validate_git_commit(resolved_git_commit)
     source = _load_verified_source(Path(source_root), split)
@@ -107,6 +118,7 @@ def run_development_screening(
     criteria_sha256 = None
     semantic_audit_sha256 = None
     frozen_criteria: Mapping[str, Any] | None = None
+    followup_identity: Mapping[str, Any] | None = None
     if split == "instrument_development":
         if success_criteria is None:
             raise ValueError(
@@ -160,20 +172,51 @@ def run_development_screening(
                 questions=audit_questions,
             )
     if split == "construction_validation":
-        if freeze_manifest is None:
-            raise ValueError(
-                "construction_validation requires a frozen instrument manifest"
+        if followup_requested:
+            followup_identity = _verify_registered_followup(
+                success_criteria,
+                source_revision=source["source_revision"],
+                amendment_path=Path(followup_amendment),
+                prior_gate_path=Path(prior_gate),
             )
-        frozen = _verify_freeze_manifest(
-            Path(freeze_manifest),
-            source_revision=source["source_revision"],
-            source_integrity_sha256=source["integrity_sha256"],
-            config_sha256=config.config_hash,
-            git_commit=resolved_git_commit,
-        )
-        freeze_sha256 = frozen["manifest_sha256"]
-        criteria_sha256 = frozen["success_criteria_sha256"]
-        frozen_criteria = frozen["success_criteria"]
+            criteria_sha256 = _canonical_sha256(success_criteria)
+            frozen_criteria = success_criteria
+            if pre_model_semantic_audit is None:
+                raise ValueError(
+                    "R10 follow-up requires the passing pre-model semantic audit"
+                )
+            instrument_source = _load_verified_source(
+                Path(source_root),
+                "instrument_development",
+            )
+            semantic_audit_sha256 = _verify_pre_model_semantic_audit(
+                Path(pre_model_semantic_audit),
+                source_revision=source["source_revision"],
+                source_integrity_sha256=source["integrity_sha256"],
+                candidates=(
+                    *instrument_source["candidates"],
+                    *source["candidates"],
+                ),
+                questions=(
+                    *instrument_source["questions"],
+                    *source["questions"],
+                ),
+            )
+        else:
+            if freeze_manifest is None:
+                raise ValueError(
+                    "construction_validation requires a frozen instrument manifest"
+                )
+            frozen = _verify_freeze_manifest(
+                Path(freeze_manifest),
+                source_revision=source["source_revision"],
+                source_integrity_sha256=source["integrity_sha256"],
+                config_sha256=config.config_hash,
+                git_commit=resolved_git_commit,
+            )
+            freeze_sha256 = frozen["manifest_sha256"]
+            criteria_sha256 = frozen["success_criteria_sha256"]
+            frozen_criteria = frozen["success_criteria"]
     candidates = source["candidates"]
     questions = source["questions"]
     prompts = _ordered_prompts(candidates, questions)
@@ -202,6 +245,8 @@ def run_development_screening(
         "r9_derivation_sha256": r9_derivation_sha256,
         "pre_model_structural_audit_sha256": structural_audit_sha256,
     }
+    if followup_identity is not None:
+        identity.update(followup_identity)
     identity_sha256 = _sha256_bytes(_canonical_bytes(identity))
     run_dir = Path(output_root) / split / identity_sha256
     _write_immutable(run_dir / "execution_identity.json", _canonical_bytes(identity))
@@ -271,7 +316,7 @@ def run_development_screening(
     _write_immutable(summary_path, _canonical_bytes(summary))
     gate_criteria = (
         success_criteria
-        if split == "instrument_development"
+        if split == "instrument_development" or followup_requested
         else frozen_criteria
     )
     gate_result = (
@@ -279,11 +324,16 @@ def run_development_screening(
         if gate_criteria is not None
         else None
     )
-    gate_path = run_dir / (
+    gate_filename = (
         "instrument_readiness_gate.json"
         if split == "instrument_development"
-        else "construction_validation_gate.json"
+        else (
+            "instrument_followup_readiness_gate.json"
+            if followup_requested
+            else "construction_validation_gate.json"
+        )
     )
+    gate_path = run_dir / gate_filename
     if gate_result is not None:
         _write_immutable(gate_path, _canonical_bytes(gate_result))
     final_checkpoint = (
@@ -1234,6 +1284,9 @@ def _item_row(
     parsed_completion = parse_development_screening_answer(
         completion,
         question.accepted_aliases,
+        allow_occupation_modifier=(
+            candidate.coarse_type == "person" and question_index == 1
+        ),
     )
     probe = [""] * 3
     probe[question_index] = parsed_completion
@@ -1256,6 +1309,8 @@ def _item_row(
 def parse_development_screening_answer(
     raw_output: str,
     accepted_aliases: Sequence[str],
+    *,
+    allow_occupation_modifier: bool = False,
 ) -> str:
     """Remove only registered wrappers before exact alias scoring."""
     if not isinstance(raw_output, str):
@@ -1283,6 +1338,16 @@ def parse_development_screening_answer(
         alias_keys = {_answer_key(alias) for alias in aliases}
         if _answer_key(base) in alias_keys and _answer_key(qualifier) in alias_keys:
             return base
+    if allow_occupation_modifier:
+        modified = re.fullmatch(
+            r"(?:former professional|professional|former)\s+(.+)",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if modified is not None:
+            base = modified.group(1).strip()
+            if _answer_key(base) in {_answer_key(alias) for alias in aliases}:
+                return base
     return value
 
 
@@ -1290,7 +1355,7 @@ def development_screening_parser_sha256() -> str:
     """Bind resumable checkpoints to the exact development answer parser."""
     return _canonical_sha256(
         {
-            "revision": "fa-development-screening-answer-v2",
+            "revision": "fa-development-screening-answer-v3",
             "implementation": inspect.getsource(parse_development_screening_answer),
             "rules": [
                 "strip",
@@ -1299,9 +1364,44 @@ def development_screening_parser_sha256() -> str:
                 "registered-answer-prefix-only",
                 "single-matching-quote-pair",
                 "parenthetical-only-when-both-parts-are-registered-aliases",
+                "occupation-modifier-only-before-an-exact-registered-alias",
             ],
         }
     )
+
+
+def _verify_registered_followup(
+    success_criteria: Mapping[str, Any],
+    *,
+    source_revision: str,
+    amendment_path: Path,
+    prior_gate_path: Path,
+) -> dict[str, str]:
+    followup = success_criteria.get("followup")
+    prior_gate_sha256 = _sha256_file(prior_gate_path)
+    amendment_sha256 = _sha256_file(amendment_path)
+    expected = {
+        "revision": "fa-development-screening-r10",
+        "source_split": "construction_validation",
+        "selection": "frozen_r9_construction_validation_unchanged",
+        "claim_scope": "instrument_readiness_only",
+        "prior_gate_sha256": prior_gate_sha256,
+        "amendment_sha256": amendment_sha256,
+    }
+    prior_gate = _read_json(prior_gate_path)
+    if (
+        source_revision != "fa-development-source-v6-r9"
+        or success_criteria.get("source_revision") != source_revision
+        or followup != expected
+        or not isinstance(prior_gate, dict)
+        or prior_gate.get("gate_passed") is not False
+    ):
+        raise ValueError("R10 follow-up registration is invalid")
+    return {
+        "followup_revision": expected["revision"],
+        "followup_amendment_sha256": amendment_sha256,
+        "prior_gate_sha256": prior_gate_sha256,
+    }
 
 
 def _answer_key(value: str) -> str:
@@ -1460,6 +1560,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--success-criteria", type=Path)
     parser.add_argument("--pre-model-semantic-audit", type=Path)
     parser.add_argument("--pre-model-structural-audit", type=Path)
+    parser.add_argument("--followup-amendment", type=Path)
+    parser.add_argument("--prior-gate", type=Path)
     parser.add_argument(
         "--checkpoint-root",
         type=Path,
@@ -1489,6 +1591,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         success_criteria=success_criteria,
         pre_model_semantic_audit=args.pre_model_semantic_audit,
         pre_model_structural_audit=args.pre_model_structural_audit,
+        followup_amendment=args.followup_amendment,
+        prior_gate=args.prior_gate,
         checkpoint_root=args.checkpoint_root,
         git_commit=resolved_commit,
     )

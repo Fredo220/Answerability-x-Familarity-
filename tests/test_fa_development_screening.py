@@ -561,6 +561,31 @@ def test_development_parser_accepts_only_registered_answer_wrappers(
     assert parse_development_screening_answer(raw_output, aliases) == answer
 
 
+def test_development_parser_accepts_occupation_modifier_only_for_registered_alias():
+    aliases = ("association football player", "footballer", "soccer player")
+
+    assert (
+        parse_development_screening_answer(
+            "Professional footballer",
+            aliases,
+            allow_occupation_modifier=True,
+        )
+        == "footballer"
+    )
+    assert (
+        parse_development_screening_answer(
+            "Professional athlete",
+            aliases,
+            allow_occupation_modifier=True,
+        )
+        == "Professional athlete"
+    )
+    assert (
+        parse_development_screening_answer("Professional France", ("France",))
+        == "Professional France"
+    )
+
+
 @pytest.mark.parametrize(
     ("raw_output", "aliases"),
     [
@@ -580,7 +605,7 @@ def test_development_parser_does_not_create_alias_false_positives(
 def test_development_parser_hash_binds_exact_implementation():
     expected = development_screening._canonical_sha256(
         {
-            "revision": "fa-development-screening-answer-v2",
+            "revision": "fa-development-screening-answer-v3",
             "implementation": inspect.getsource(
                 development_screening.parse_development_screening_answer
             ),
@@ -591,6 +616,7 @@ def test_development_parser_hash_binds_exact_implementation():
                 "registered-answer-prefix-only",
                 "single-matching-quote-pair",
                 "parenthetical-only-when-both-parts-are-registered-aliases",
+                "occupation-modifier-only-before-an-exact-registered-alias",
             ],
         }
     )
@@ -812,6 +838,64 @@ def test_construction_validation_requires_matching_freeze_before_model_call(tmp_
             git_commit="a" * 40,
         )
     assert runner.calls == 0
+
+
+def test_registered_r10_followup_uses_unopened_r9_validation_without_freeze(tmp_path):
+    source = Path("data/fa/development_source_v6_r9")
+    questions = json.loads(
+        (
+            source / "screening_questions_construction_validation_v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    answers = {
+        question["prompt"]: question["accepted_aliases"][0]
+        for question in questions
+    }
+    amendment = tmp_path / "r10-amendment.md"
+    amendment.write_text("# Registered R10 follow-up\n", encoding="utf-8")
+    prior_gate = Path(
+        "docs/results/"
+        "source_v6_r9_instrument_development_readiness_gate.json"
+    )
+    criteria = _criteria(candidate_count=48, minimum_qualified_per_domain=8)
+    criteria["source_revision"] = "fa-development-source-v6-r9"
+    criteria["followup"] = {
+        "revision": "fa-development-screening-r10",
+        "source_split": "construction_validation",
+        "selection": "frozen_r9_construction_validation_unchanged",
+        "claim_scope": "instrument_readiness_only",
+        "prior_gate_sha256": development_screening._sha256_file(prior_gate),
+        "amendment_sha256": development_screening._sha256_file(amendment),
+    }
+
+    result = run_development_screening(
+        _config(),
+        source,
+        "construction_validation",
+        tmp_path / "output",
+        batch_size=16,
+        runner=FakeRunner(answers),
+        success_criteria=criteria,
+        pre_model_semantic_audit=source / "pre_model_semantic_audit_v1.json",
+        pre_model_structural_audit=(
+            source / "structural_provenance_audit_v1.json"
+        ),
+        followup_amendment=amendment,
+        prior_gate=prior_gate,
+        git_commit=development_screening._current_git_commit(),
+    )
+
+    identity = json.loads(
+        (
+            Path(result["items_path"]).parent / "execution_identity.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert result["gate_result"]["gate_passed"]
+    assert identity["followup_revision"] == "fa-development-screening-r10"
+    assert identity["prior_gate_sha256"] == criteria["followup"][
+        "prior_gate_sha256"
+    ]
+    assert identity["freeze_manifest_sha256"] is None
 
 
 def test_runner_fails_closed_if_checkpoint_manifest_is_tampered(tmp_path):

@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "source_revision": "fa-development-source-v6-r9",
+  "claim_scope": "instrument_readiness_only",
+  "followup": {
+    "revision": "fa-development-screening-r10",
+    "source_split": "construction_validation",
+    "selection": "frozen_r9_construction_validation_unchanged",
+    "claim_scope": "instrument_readiness_only",
+    "prior_gate_sha256": "68eb8fb85ead2b805521e057b6aff36fbd80e227a13ad495f8a81ad6284e5b5d",
+    "amendment_sha256": "bc155220a8f74eafda9d5da9fb9318d6ceb9f5a6397fdd25ba51d4aa7d3b90ae"
+  },
+  "development_gate": {
+    "candidate_count": 48,
+    "prompt_count": 144,
+    "qualification_threshold": 2,
+    "minimum_qualified_per_domain": 8,
+    "minimum_success_by_domain_relation": {
+      "creative_work": {"P57": 1, "P577": 1, "P495": 1},
+      "organization": {"P17": 1, "P159": 1, "P571": 1},
+      "person": {"P19": 1, "P27": 1, "P106": 1},
+      "place": {"P17": 1, "P30": 1, "P131": 1}
+    }
+  },
+  "human_audit": {
+    "adjudicator_required_on_disagreement": true,
+    "disallowed_error_labels": [
+      "ambiguous_ground_truth",
+      "incomplete_alias_set",
+      "wrong_granularity",
+      "parser_failure",
+      "source_error",
+      "other"
+    ],
+    "independent_initial_raters": 2,
+    "maximum_disallowed_count": 0,
+    "required_before_confirmatory_execution": true,
+    "sample_per_domain": 4,
+    "success_sample_per_domain": 2,
+    "maximum_scoring_disagreement_count": 0,
+    "seed": 20260726
+  }
+}
