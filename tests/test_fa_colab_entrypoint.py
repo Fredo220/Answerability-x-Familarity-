@@ -16,7 +16,7 @@ def test_entrypoint_import_does_not_load_unrelated_study_dependencies(
     original_import = builtins.__import__
 
     def guarded_import(name, *args, **kwargs):
-        if name == "datasets" or name.startswith("trajectory_extractor.rlmf"):
+        if name == "datasets":
             raise AssertionError(f"unrelated import attempted: {name}")
         return original_import(name, *args, **kwargs)
 

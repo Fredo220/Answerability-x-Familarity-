@@ -6,8 +6,6 @@
 
 **Branch:** `codex/familiarity-answerability`
 
-**Frozen predecessor:** The RLMF and metacognitive feature-flow work remains isolated in the existing `codex/metacognitive-feature-flow-impl` worktree. This study does not overwrite, reinterpret, or silently reuse its confirmatory endpoints.
-
 **Working title:** *Familiarity Without Evidence: Separating Entity Recognition from Answerability in Small Language Models*
 
 ## 1. Executive Summary
@@ -112,7 +110,7 @@ The study will not claim:
 - that all hallucinations arise from entity familiarity;
 - that a replacement model or attribution graph is itself causal evidence about the original model;
 - that steering is a production-ready hallucination solution;
-- that Remizov or Chernoff theory mathematically governs transformer layers.
+- that any continuous operator theory mathematically governs transformer layers.
 
 "Artificial intuition" may appear only as an informal motivation for an early warning signal, never as a measured construct.
 
@@ -195,7 +193,8 @@ The implementation must pin the exact Hugging Face model revision, tokenizer rev
 - gated circuit-tracing cases with CPU/disk offload;
 - resumable, append-only artifacts synchronized after every completed shard.
 
-The core study performs inference and small probe fitting, not RL or model fine-tuning. It is therefore substantially cheaper and less interruption-sensitive than the frozen RLMF study.
+The core study performs inference and small probe fitting, not RL or model
+fine-tuning. It is therefore suitable for a bounded Colab execution.
 
 ## 7. Experimental Design
 
@@ -500,7 +499,9 @@ The following are mandatory:
 
 Cross-layer dynamics are a secondary extension, not the project's foundation. H6 supports an incremental claim only if static-plus-dynamics reduces `probe_test` log loss by at least 1% relative to the nested static-internal model, the crossed-bootstrap 95% interval excludes zero in the beneficial direction, and the result exceeds every registered layer-order and random-map null.
 
-The operator-residual implementation from the predecessor project may be included as one dynamics baseline. It must be described as an empirical predictor, not a Remizov theorem or continuous transformer model.
+An operator-residual may be included as one dynamics baseline. It must be
+described as an empirical predictor, not a theorem or continuous transformer
+model.
 
 ### 9.8 Interpretation under different outcomes
 
@@ -669,7 +670,11 @@ The implementation must enforce:
 - raw failure logs and interrupted-run recovery records;
 - no manual editing of generated result tables.
 
-The old RLMF artifact namespace remains read-only from the perspective of this branch. The runtime root is `runs/familiarity_answerability/`, but published manifests and checksums are emitted to `release/familiarity_answerability/`, which is not ignored by Git. Large raw shards may be released through a versioned external archive, but their content hashes and retrieval manifest must be checked in.
+The runtime root is `runs/familiarity_answerability/`, while published
+manifests and checksums are emitted to `release/familiarity_answerability/`,
+which is not ignored by Git. Large raw shards may be released through a
+versioned external archive, but their content hashes and retrieval manifest
+must be checked in.
 
 ### 13.1 Artifact store and unlock state machine
 
@@ -698,7 +703,9 @@ For Colab-to-Drive synchronization, only atomically completed shards and their c
 
 ## 14. Software Architecture and Planned Interfaces
 
-The implementation should reuse generic extraction, artifact hashing, probing, plotting, and steering utilities where their contracts fit. RLMF-specific data, rewards, GRPO, confidence suffixes, and cMFG metrics must not become dependencies of this study.
+The implementation should reuse generic extraction, artifact hashing, probing,
+plotting, and steering utilities where their contracts fit. Unrelated training
+or evaluation frameworks must not become dependencies of this study.
 
 ### 14.1 New modules
 

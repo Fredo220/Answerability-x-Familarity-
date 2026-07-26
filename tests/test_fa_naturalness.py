@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from trajectory_extractor import cli, fa_cli
+from trajectory_extractor import fa_cli, main as cli
 from trajectory_extractor.fa_artifacts import FAArtifactStore
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_entities import EntityMatch, audit_naturalness_manifest

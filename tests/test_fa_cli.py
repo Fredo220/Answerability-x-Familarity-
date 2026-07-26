@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from trajectory_extractor import cli
+from trajectory_extractor import main as cli
 from trajectory_extractor.fa_artifacts import FAArtifactStore, UnlockReceipt
 import trajectory_extractor.fa_cli as fa_cli
 import trajectory_extractor.fa_probes as fa_probes
@@ -2304,8 +2304,6 @@ def test_behavior_test_command_closes_one_use_endpoint_with_canonical_metrics(
 
 def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
     install_fake_tokenizer(monkeypatch)
-    args = argparse.Namespace(command="rlmf-prepare-data")
-    assert dispatch_fa(args) is None
 
     config = FAConfig.from_json(CONFIG_PATH)
     matches = screened_matches_manifest(tmp_path, config, smoke_pilot_matches())

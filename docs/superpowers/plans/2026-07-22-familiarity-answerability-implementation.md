@@ -4,7 +4,9 @@
 
 **Goal:** Build a reproducible, leakage-resistant pipeline for the preregistered Familiarity-vs-Answerability behavioral study (F1), mechanistic decoding study (F2A), gated causal intervention study (F2B), and optional circuit follow-up (F3).
 
-**Architecture:** Add an isolated `fa_*` study stack beside the legacy concept-mixing and RLMF stacks. Reuse only generic numerical and Hugging Face techniques; do not reuse legacy run state, endpoint stores, study objects, or decoding hooks. Scientific logic lives in tested Python modules, while notebooks only orchestrate resumable commands.
+**Architecture:** Implement an isolated `fa_*` study stack. Scientific logic
+lives in tested Python modules, while notebooks only orchestrate resumable
+commands.
 
 **Tech Stack:** Python 3.12, PyTorch, Hugging Face Transformers, NumPy, pandas, scikit-learn, Matplotlib, optional SAELens/Gemma Scope, optional `decoderesearch/circuit-tracer`, pytest.
 
@@ -31,7 +33,8 @@ not required to interpret or publish the F1/F2A result.
 ## Global Constraints
 
 - Preserve the baseline of `362 passed, 3 skipped`.
-- Keep the old RLMF and metacognitive-feature-flow namespaces read-only; no `fa_*` module may import `rlmf_*`, `secondary_study`, `study`, or `intervention_study`.
+- No `fa_*` module may import code outside the Familiarity-vs.-Answerability
+  package surface.
 - Runtime artifacts live under `runs/familiarity_answerability/<run_id>/`; publishable manifests live under `release/familiarity_answerability/`.
 - Keep `pilot`, `mechanism_train`, `locked_validation`, `behavior_test`, `probe_test`, `intervention_test`, and `circuit_dev` physically and logically separate.
 - Endpoint state is exactly `sealed -> unlocked_once -> evaluated -> closed`; each test endpoint can be opened once and only with its registered parent manifests.
@@ -844,7 +847,7 @@ Expected: no failures and at least the original `362 passed, 3 skipped` plus all
 
 Run: `git diff --check`
 
-Run: `rg -n "TODO|TBD|placeholder|artificial intuition|exact jailbreak|human-like" src/trajectory_extractor/fa_* docs/familiarity_answerability_* notebooks/0[678]_*.ipynb`
+Run: `rg -n "TODO|TBD|placeholder|artificial intuition|human-like" src/trajectory_extractor/fa_* docs/familiarity_answerability_* notebooks/0[678]_*.ipynb`
 
 Expected: no implementation placeholders or unsupported claim language.
 

@@ -173,6 +173,12 @@ def run_development_screening(
             )
     if split == "construction_validation":
         if followup_requested:
+            if (
+                success_criteria is None
+                or followup_amendment is None
+                or prior_gate is None
+            ):
+                raise RuntimeError("validated R10 registration became incomplete")
             followup_identity = _verify_registered_followup(
                 success_criteria,
                 source_revision=source["source_revision"],
@@ -599,6 +605,7 @@ def evaluate_instrument_readiness(
             "development gate requires a complete positive "
             "domain-relation threshold matrix"
         )
+    assert isinstance(minimum_matrix, Mapping)
     if any(
         observed["success_by_domain_relation"].get(domain, {}).get(relation, 0)
         < threshold
@@ -1070,6 +1077,7 @@ def _verify_r9_derivation(
     )
     if not expected:
         raise ValueError("R9 derivation identity is invalid")
+    assert isinstance(decisions, list)
     _validate_git_commit(manifest["r9_construction_commit"])
     try:
         ancestry = subprocess.run(

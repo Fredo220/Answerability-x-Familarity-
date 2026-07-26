@@ -213,8 +213,8 @@ scikit-learn, PyTorch, Transformers, or Accelerate modules. A dedicated
 import, the registered Torch, Transformers, and Accelerate versions, and CUDA
 availability inside the virtual environment. `pip check` must report no broken
 requirements in that environment. A minimal
-`trajectory_extractor.fa_colab_entrypoint` avoids importing unrelated RLMF study
-dependencies. This separation prevents a package downgrade from leaving already
+`trajectory_extractor.fa_colab_entrypoint` avoids importing unrelated optional
+study dependencies. This separation prevents a package downgrade from leaving already
 imported binary extensions in an ABI-incompatible state. All model and artifact
 work then runs as CLI subprocesses under the same virtual-environment
 interpreter. The persisted runtime observation includes Python and package

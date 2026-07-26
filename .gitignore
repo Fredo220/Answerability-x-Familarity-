@@ -12,16 +12,8 @@ data/external/
 .superpowers/
 .worktrees/
 
-# Local RLMF/Colab state. Sealed study artifacts are written under runs/rlmf/.
-.rlmf-cache/
-.rlmf-colab/
-*.rlmf.tmp
-
-# Graphify outputs are committed for project navigation; local cache/cost state is not.
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/20*/
 .playwright-cli/
+graphify-out/
 
 # Human naturalness ratings remain blinded until the registered audit is complete.
 human_ratings/**/private/
