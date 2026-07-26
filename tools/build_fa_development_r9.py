@@ -20,12 +20,12 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     config = FAConfig.from_json(args.config)
-    tokenizer = load_pinned_tokenizer(config)
+    prepared = load_pinned_tokenizer(config)
     result = derive_r9_source(
         r8_root=args.r8_root,
         corrections_path=args.corrections,
         output_dir=args.output_dir,
-        tokenizer=tokenizer,
+        tokenizer=prepared.tokenizer,
         config=config,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
