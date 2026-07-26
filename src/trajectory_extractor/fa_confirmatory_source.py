@@ -21,12 +21,12 @@ from typing import Any
 
 import trajectory_extractor.fa_confirmatory_synthetics as fa_confirmatory_synthetics
 import trajectory_extractor.fa_entities as fa_entities
+from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_confirmatory_synthetics import (
     GENERATOR_REVISION,
     MAX_ATTEMPTS_PER_ENTITY,
     generate_synthetic_candidates,
 )
-from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_entities import CandidateEntity, ScreeningQuestion
 from trajectory_extractor.fa_runtime import load_pinned_tokenizer
 
@@ -1161,6 +1161,37 @@ def _load_excluded_qids(paths: Sequence[Path]) -> frozenset[str]:
     return frozenset(excluded)
 
 
+def _load_development_excluded_qids(
+    path: Path,
+    derivation_path: Path,
+) -> frozenset[str]:
+    manifest = _read_json_object(path)
+    derivation = _read_json_object(derivation_path)
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("kind") != "source_v7_exclusions"
+        or manifest.get("source_revision") != "fa-development-source-v6-r9"
+        or derivation.get("schema_version") != 1
+        or derivation.get("kind") != "fa_source_v6_r9_derivation"
+        or derivation.get("source_revision") != "fa-development-source-v6-r9"
+        or derivation.get("source_v7_exclusions_file") != path.name
+        or derivation.get("source_v7_exclusions_sha256") != _sha256_file(path)
+    ):
+        raise ValueError("development exclusion manifest identity is invalid")
+    qids = manifest.get("excluded_qids")
+    if (
+        not isinstance(qids, list)
+        or not qids
+        or any(
+            not isinstance(qid, str) or _QID.fullmatch(qid) is None
+            for qid in qids
+        )
+        or len(set(qids)) != len(qids)
+    ):
+        raise ValueError("development exclusion manifest QIDs are invalid")
+    return frozenset(qids)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Build the pre-outcome confirmatory Wikidata source corpus."
@@ -1170,17 +1201,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--split-seed", type=int, default=20260722)
     parser.add_argument("--retrieval-date", default=date.today().isoformat())
     parser.add_argument(
+        "--development-exclusions",
+        type=Path,
+        required=True,
+        help=(
+            "The Source-v6 R9 source_v7_exclusions_v1.json manifest. "
+            "This prevents reuse of any inspected development QID."
+        ),
+    )
+    parser.add_argument(
+        "--development-derivation",
+        type=Path,
+        required=True,
+        help="The R9 derivation manifest that hash-binds the exclusions.",
+    )
+    parser.add_argument(
         "--exclude-candidates",
         type=Path,
         action="append",
         default=[],
-        help="Candidate manifest whose QIDs must not enter the confirmatory corpus.",
+        help=(
+            "Optional additional candidate manifest whose QIDs must not enter "
+            "the confirmatory corpus."
+        ),
     )
     args = parser.parse_args(argv)
+    excluded_qids = (
+        _load_development_excluded_qids(
+            args.development_exclusions,
+            args.development_derivation,
+        )
+        | _load_excluded_qids(args.exclude_candidates)
+    )
     payload = fetch_confirmatory_source(
         output_dir=args.output_dir,
         split_seed=args.split_seed,
-        excluded_qids=_load_excluded_qids(args.exclude_candidates),
+        excluded_qids=excluded_qids,
         retrieval_date=args.retrieval_date,
         config=FAConfig.from_json(args.config),
     )

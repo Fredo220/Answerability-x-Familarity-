@@ -1,0 +1,1255 @@
+{
+  "schema_version": 1,
+  "kind": "fa_source_v6_r9_alias_corrections",
+  "source_revision": "fa-development-source-v6-r9",
+  "auditor_id": "codex-subagent-semantic-auditor",
+  "source_audit_items_sha256": "fd1cf8f6099c3f224d2a8f2e124f00594703f9c56040cb95389f44a36f9325c8",
+  "item_count": 118,
+  "items_sha256": "29323754adfed2487dd47e8d1efe8fd5f054a604eeeffb5968b60ac9169fe891",
+  "items": [
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q1130297-q3",
+      "qid": "Q1130297",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q114819-q3",
+      "qid": "Q114819",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q1195311-q3",
+      "qid": "Q1195311",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q1454815-q3",
+      "qid": "Q1454815",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q23759268-q3",
+      "qid": "Q23759268",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q368451-q3",
+      "qid": "Q368451",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q39970-q3",
+      "qid": "Q39970",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q43370937-q3",
+      "qid": "Q43370937",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q470329-q3",
+      "qid": "Q470329",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q533383-q3",
+      "qid": "Q533383",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q55188-q3",
+      "qid": "Q55188",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "USSR",
+        "USSR."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q589894-q3",
+      "qid": "Q589894",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q627975-q1",
+      "qid": "Q627975",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Francois Truffaut",
+        "Francois Truffaut."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q756574-q1",
+      "qid": "Q756574",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Gerard Krawczyk",
+        "Gerard Krawczyk."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q778161-q3",
+      "qid": "Q778161",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q918380-q3",
+      "qid": "Q918380",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q930134-q3",
+      "qid": "Q930134",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q93701-q3",
+      "qid": "Q93701",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q946562-q3",
+      "qid": "Q946562",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q94998134-q3",
+      "qid": "Q94998134",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-creative_work-q978520-q3",
+      "qid": "Q978520",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q1538507-q1",
+      "qid": "Q1538507",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q161345-q1",
+      "qid": "Q161345",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q165529-q1",
+      "qid": "Q165529",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q16844931-q1",
+      "qid": "Q16844931",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q172339-q1",
+      "qid": "Q172339",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q18729-q1",
+      "qid": "Q18729",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q188740-q1",
+      "qid": "Q188740",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q188740-q2",
+      "qid": "Q188740",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "NYC",
+        "NYC."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q19079-q1",
+      "qid": "Q19079",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Türkiye",
+        "Türkiye."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q212252-q1",
+      "qid": "Q212252",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q213439-q1",
+      "qid": "Q213439",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q217595-q1",
+      "qid": "Q217595",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q230899-q1",
+      "qid": "Q230899",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q43404-q1",
+      "qid": "Q43404",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q4614-q1",
+      "qid": "Q4614",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q478214-q1",
+      "qid": "Q478214",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-organization-q976396-q1",
+      "qid": "Q976396",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q102140-q2",
+      "qid": "Q102140",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "king",
+        "king."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q108153171-q2",
+      "qid": "Q108153171",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q11584-q2",
+      "qid": "Q11584",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q11584-q3",
+      "qid": "Q11584",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Mostoles",
+        "Mostoles."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q125631-q2",
+      "qid": "Q125631",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "priest",
+        "priest."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q127385-q2",
+      "qid": "Q127385",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "priest",
+        "priest."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q130969-q2",
+      "qid": "Q130969",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q1354960-q2",
+      "qid": "Q1354960",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q15189-q2",
+      "qid": "Q15189",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q15189-q3",
+      "qid": "Q15189",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "St Petersburg",
+        "St Petersburg."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q184586-q1",
+      "qid": "Q184586",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q184586-q2",
+      "qid": "Q184586",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q1912-q2",
+      "qid": "Q1912",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q20110-q2",
+      "qid": "Q20110",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q36174-q2",
+      "qid": "Q36174",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q39562-q1",
+      "qid": "Q39562",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q47144-q2",
+      "qid": "Q47144",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "cleric",
+        "cleric."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q49704-q2",
+      "qid": "Q49704",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q68060-q2",
+      "qid": "Q68060",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q83006-q2",
+      "qid": "Q83006",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-person-q83006-q3",
+      "qid": "Q83006",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Tiuya",
+        "Tiuya.",
+        "Tuilla",
+        "Tuilla.",
+        "Tiuya/Tuilla",
+        "Tiuya/Tuilla."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-place-q207935-q3",
+      "qid": "Q207935",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "North-America",
+        "North-America."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-place-q334577-q3",
+      "qid": "Q334577",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "North-America",
+        "North-America."
+      ]
+    },
+    {
+      "question_id": "development-v6-construction_validation-place-q44243-q2",
+      "qid": "Q44243",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Juan Martin de Pueyrredon Department",
+        "Juan Martin de Pueyrredon Department."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1089281-q3",
+      "qid": "Q1089281",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1125566-q3",
+      "qid": "Q1125566",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1131556-q3",
+      "qid": "Q1131556",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1132535-q3",
+      "qid": "Q1132535",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1140317-q3",
+      "qid": "Q1140317",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1199902-q3",
+      "qid": "Q1199902",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1321622-q3",
+      "qid": "Q1321622",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1347609-q3",
+      "qid": "Q1347609",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q1999930-q3",
+      "qid": "Q1999930",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "USSR",
+        "USSR."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q274400-q3",
+      "qid": "Q274400",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q277648-q1",
+      "qid": "Q277648",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Gerard Krawczyk",
+        "Gerard Krawczyk."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q381758-q3",
+      "qid": "Q381758",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q501105-q3",
+      "qid": "Q501105",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q506013-q3",
+      "qid": "Q506013",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q5493376-q3",
+      "qid": "Q5493376",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q838149-q3",
+      "qid": "Q838149",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "USSR",
+        "USSR."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-creative_work-q84220-q3",
+      "qid": "Q84220",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q130879-q1",
+      "qid": "Q130879",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q167186-q1",
+      "qid": "Q167186",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q167186-q2",
+      "qid": "Q167186",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Washington DC",
+        "Washington DC."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q170649-q1",
+      "qid": "Q170649",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q189021-q1",
+      "qid": "Q189021",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q189021-q2",
+      "qid": "Q189021",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "NYC",
+        "NYC."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q191472-q1",
+      "qid": "Q191472",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q19607-q1",
+      "qid": "Q19607",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q214341-q1",
+      "qid": "Q214341",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "the Netherlands",
+        "the Netherlands."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q30113-q1",
+      "qid": "Q30113",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q6039733-q1",
+      "qid": "Q6039733",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Türkiye",
+        "Türkiye."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q740308-q1",
+      "qid": "Q740308",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "United States of America",
+        "United States of America.",
+        "USA",
+        "USA.",
+        "U.S."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-organization-q740308-q2",
+      "qid": "Q740308",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "NYC",
+        "NYC."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q101384-q2",
+      "qid": "Q101384",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q12154-q2",
+      "qid": "Q12154",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q129027-q2",
+      "qid": "Q129027",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q131261-q2",
+      "qid": "Q131261",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q133001-q2",
+      "qid": "Q133001",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "priest",
+        "priest."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q133028-q2",
+      "qid": "Q133028",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "king",
+        "king."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q134817-q2",
+      "qid": "Q134817",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q1434-q2",
+      "qid": "Q1434",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q172653-q1",
+      "qid": "Q172653",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q172653-q2",
+      "qid": "Q172653",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "actress",
+        "actress."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q178638-q1",
+      "qid": "Q178638",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Sultanate of Rûm",
+        "Sultanate of Rûm."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q178638-q2",
+      "qid": "Q178638",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "qadi",
+        "qadi."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q214204-q2",
+      "qid": "Q214204",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q357984-q2",
+      "qid": "Q357984",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q40930-q2",
+      "qid": "Q40930",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "queen",
+        "queen."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q43915-q2",
+      "qid": "Q43915",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "monarch",
+        "monarch."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q47746-q2",
+      "qid": "Q47746",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "priest",
+        "priest."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q483309-q2",
+      "qid": "Q483309",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q73360-q2",
+      "qid": "Q73360",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "footballer",
+        "footballer.",
+        "soccer player",
+        "soccer player."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-person-q80516-q2",
+      "qid": "Q80516",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "priest",
+        "priest."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q237683-q2",
+      "qid": "Q237683",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "Tôkyô",
+        "Tôkyô."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q274584-q3",
+      "qid": "Q274584",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "North-America",
+        "North-America."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q58560-q1",
+      "qid": "Q58560",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "China",
+        "China.",
+        "PRC",
+        "PRC."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q58650-q1",
+      "qid": "Q58650",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "China",
+        "China.",
+        "PRC",
+        "PRC."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q612-q1",
+      "qid": "Q612",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UAE",
+        "UAE."
+      ]
+    },
+    {
+      "question_id": "development-v6-instrument_development-place-q648732-q1",
+      "qid": "Q648732",
+      "blocker_id": "ordinary_surface_missing",
+      "accepted_surfaces_to_add": [
+        "UK",
+        "UK."
+      ]
+    }
+  ]
+}

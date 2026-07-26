@@ -742,6 +742,32 @@ def test_write_development_source_seals_manifests_and_exclusion_lineage(tmp_path
     assert replay["source_snapshot_sha256"] == result["source_snapshot_sha256"]
 
 
+def test_write_development_source_can_preserve_all_future_exclusions(tmp_path):
+    design = _design()
+    manifests = materialize_development_manifests(
+        assign_development_pools(_records(), design),
+        design=design,
+        retrieval_date="2026-07-25",
+        query_hashes={domain: domain * 4 for domain in REGISTERED_DOMAINS},
+    )
+    future_excluded = {"Q1", "Q2", "Q9000"}
+
+    result = write_development_source(
+        tmp_path / "development_source_v6",
+        manifests,
+        design=design,
+        future_excluded_qids=future_excluded,
+    )
+
+    exclusions = json.loads(result["source_v7_exclusions"].read_text())
+    selected_qids = {
+        candidate.qid
+        for split in DEVELOPMENT_SPLITS
+        for candidate in manifests[split][0]
+    }
+    assert set(exclusions["excluded_qids"]) == future_excluded | selected_qids
+
+
 def test_write_development_source_refuses_nonidentical_overwrite(tmp_path):
     design = _design()
     manifests = materialize_development_manifests(

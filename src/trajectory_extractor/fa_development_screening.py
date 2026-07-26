@@ -51,6 +51,7 @@ _ALLOWED_SOURCE_REVISIONS = frozenset(
         "fa-development-source-v6-r6",
         "fa-development-source-v6-r7",
         "fa-development-source-v6-r8",
+        "fa-development-source-v6-r9",
     }
 )
 _INTEGRITY_FILE = "source_integrity_v1.json"
@@ -73,6 +74,7 @@ def run_development_screening(
     freeze_manifest: str | Path | None = None,
     success_criteria: Mapping[str, Any] | None = None,
     pre_model_semantic_audit: str | Path | None = None,
+    pre_model_structural_audit: str | Path | None = None,
     checkpoint_root: str | Path | None = None,
     git_commit: str | None = None,
 ) -> dict[str, Any]:
@@ -82,9 +84,25 @@ def run_development_screening(
     if type(batch_size) is not int or batch_size <= 0:
         raise ValueError("batch_size must be a positive integer")
     _verify_config(config)
-    source = _load_verified_source(Path(source_root), split)
     resolved_git_commit = git_commit or _current_git_commit()
     _validate_git_commit(resolved_git_commit)
+    source = _load_verified_source(Path(source_root), split)
+    r9_derivation_sha256 = None
+    structural_audit_sha256 = None
+    if source["source_revision"] == "fa-development-source-v6-r9":
+        r9_derivation_sha256 = _verify_r9_derivation(
+            Path(source_root),
+            source=source,
+            config=config,
+            screening_commit=resolved_git_commit,
+        )
+        if pre_model_structural_audit is None:
+            raise ValueError("R9 requires a passing pre-model structural audit")
+        structural_audit_sha256 = _verify_r9_structural_audit(
+            Path(pre_model_structural_audit),
+            source_integrity_sha256=source["integrity_sha256"],
+            derivation_sha256=r9_derivation_sha256,
+        )
     freeze_sha256 = None
     criteria_sha256 = None
     semantic_audit_sha256 = None
@@ -102,6 +120,7 @@ def run_development_screening(
             "fa-development-source-v6-r6",
             "fa-development-source-v6-r7",
             "fa-development-source-v6-r8",
+            "fa-development-source-v6-r9",
         }:
             if pre_model_semantic_audit is None:
                 raise ValueError(
@@ -109,7 +128,10 @@ def run_development_screening(
                 )
             audit_candidates = source["candidates"]
             audit_questions = source["questions"]
-            if source["source_revision"] == "fa-development-source-v6-r8":
+            if source["source_revision"] in {
+                "fa-development-source-v6-r8",
+                "fa-development-source-v6-r9",
+            }:
                 validation_source = _load_verified_source(
                     Path(source_root),
                     "construction_validation",
@@ -177,6 +199,8 @@ def run_development_screening(
         "freeze_manifest_sha256": freeze_sha256,
         "success_criteria_sha256": criteria_sha256,
         "pre_model_semantic_audit_sha256": semantic_audit_sha256,
+        "r9_derivation_sha256": r9_derivation_sha256,
+        "pre_model_structural_audit_sha256": structural_audit_sha256,
     }
     identity_sha256 = _sha256_bytes(_canonical_bytes(identity))
     run_dir = Path(output_root) / split / identity_sha256
@@ -929,6 +953,161 @@ def _verify_config(config: FAConfig) -> None:
         )
 
 
+def _verify_r9_derivation(
+    root: Path,
+    *,
+    source: Mapping[str, Any],
+    config: FAConfig,
+    screening_commit: str,
+) -> str:
+    from trajectory_extractor import fa_development_r9 as r9
+
+    path = root / "r9_derivation_manifest_v1.json"
+    manifest = _read_json(path)
+    implementation_sha256s = (
+        manifest.get("implementation_sha256s")
+        if isinstance(manifest, dict)
+        else None
+    )
+    required_implementations = {
+        "fa_development_r9.py",
+        "fa_development_source.py",
+        "fa_confirmatory_synthetics.py",
+        "fa_entities.py",
+    }
+    decisions = manifest.get("decisions") if isinstance(manifest, dict) else None
+    decision_qids = {
+        row.get("qid") for row in decisions if isinstance(row, dict)
+    } if isinstance(decisions, list) else set()
+    expected = (
+        isinstance(manifest, dict)
+        and manifest.get("schema_version") == 1
+        and manifest.get("kind") == "fa_source_v6_r9_derivation"
+        and manifest.get("source_revision") == "fa-development-source-v6-r9"
+        and manifest.get("claim_scope") == "instrument_development_only"
+        and manifest.get("source_integrity_sha256")
+        == source["integrity_sha256"]
+        and manifest.get("config_sha256") == config.config_hash
+        and manifest.get("model_id") == config.model_id
+        and manifest.get("model_revision") == config.model_revision
+        and manifest.get("tokenizer_revision") == config.tokenizer_revision
+        and manifest.get("chat_template_sha256")
+        == config.chat_template_sha256
+        and isinstance(implementation_sha256s, dict)
+        and implementation_sha256s == r9._implementation_sha256s()
+        and set(implementation_sha256s) == required_implementations
+        and manifest.get("amendment_sha256")
+        == _sha256_file(r9.R9_AMENDMENT_PATH)
+        and manifest.get("r8_construction_commit") == r9.R8_CONSTRUCTION_COMMIT
+        and manifest.get("r8_frame_sha256") == r9.R8_FRAME_SHA256
+        and manifest.get("r8_integrity_sha256") == r9.R8_INTEGRITY_SHA256
+        and manifest.get("r8_audit_sha256") == r9.R8_AUDIT_SHA256
+        and manifest.get("r8_audit_items_sha256")
+        == r9.R8_AUDIT_ITEMS_SHA256
+        and manifest.get("corrections_sha256") == r9.R9_CORRECTIONS_SHA256
+        and manifest.get("correction_items_sha256")
+        == r9.R9_CORRECTION_ITEMS_SHA256
+        and manifest.get("selection_seed") == r9.R9_SELECTION_SEED
+        and manifest.get("selection_formula")
+        == 'SHA256(seed + ":" + domain + ":" + qid), qid'
+        and manifest.get("decision_count") == 192
+        and isinstance(decisions, list)
+        and len(decisions) == 192
+        and len(decision_qids) == 192
+        and manifest.get("decisions_sha256")
+        == _canonical_sha256(decisions)
+        and isinstance(manifest.get("r9_construction_commit"), str)
+    )
+    if not expected:
+        raise ValueError("R9 derivation identity is invalid")
+    _validate_git_commit(manifest["r9_construction_commit"])
+    try:
+        ancestry = subprocess.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                manifest["r9_construction_commit"],
+                screening_commit,
+            ],
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise ValueError("cannot verify R9 construction ancestry") from error
+    if ancestry.returncode != 0:
+        raise ValueError("R9 construction commit is not an execution ancestor")
+    exclusions_path = root / str(
+        manifest.get("confirmatory_exclusions_file", "")
+    )
+    corrections_path = root / "alias_corrections_v1.json"
+    if _sha256_file(corrections_path) != r9.R9_CORRECTIONS_SHA256:
+        raise ValueError("R9 correction manifest hash mismatch")
+    if (
+        _sha256_file(exclusions_path)
+        != manifest.get("confirmatory_exclusions_sha256")
+    ):
+        raise ValueError("R9 confirmatory exclusion hash mismatch")
+    exclusions = _read_array(exclusions_path)
+    excluded_qids = {
+        row.get("qid") for row in exclusions if isinstance(row, dict)
+    }
+    source_qids = {candidate.qid for candidate in source["candidates"]}
+    integrity = _read_json(root / _INTEGRITY_FILE)
+    selected_splits = {}
+    for split in DEVELOPMENT_SPLITS:
+        candidate_path = root / integrity["materialized_files"][split][
+            "candidate_manifest"
+        ]
+        for row in _read_array(candidate_path):
+            selected_splits[row["qid"]] = split
+    included_splits = {
+        row["qid"]: row.get("split")
+        for row in decisions
+        if row.get("decision") == "included"
+    }
+    if (
+        len(exclusions) != manifest.get("future_excluded_qid_count")
+        or None in excluded_qids
+        or not source_qids.issubset(excluded_qids)
+        or included_splits != selected_splits
+    ):
+        raise ValueError("R9 exclusions or decision lineage are incomplete")
+    return _sha256_file(path)
+
+
+def _verify_r9_structural_audit(
+    path: Path,
+    *,
+    source_integrity_sha256: str,
+    derivation_sha256: str,
+) -> str:
+    audit = _read_json(path)
+    expected = (
+        isinstance(audit, dict)
+        and audit.get("schema_version") == 1
+        and audit.get("kind")
+        == "fa_source_v6_r9_structural_provenance_audit"
+        and audit.get("source_revision") == "fa-development-source-v6-r9"
+        and audit.get("source_integrity_sha256")
+        == source_integrity_sha256
+        and audit.get("derivation_sha256") == derivation_sha256
+        and audit.get("status") == "passed"
+        and audit.get("blocker_count") == 0
+        and audit.get("candidate_count") == 96
+        and audit.get("question_count") == 288
+        and audit.get("decision_count") == 192
+        and audit.get("independent_code_path") is True
+        and isinstance(audit.get("auditor_id"), str)
+        and bool(audit["auditor_id"].strip())
+        and audit.get("audit_code_sha256")
+        == _sha256_file(Path("tools/audit_fa_development_r9.py"))
+    )
+    if not expected:
+        raise ValueError("R9 structural audit identity is invalid")
+    return _sha256_file(path)
+
+
 def _load_verified_source(root: Path, selected_split: str) -> dict[str, Any]:
     integrity_path = root / _INTEGRITY_FILE
     integrity = _read_json(integrity_path)
@@ -1280,6 +1459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--freeze-manifest", type=Path)
     parser.add_argument("--success-criteria", type=Path)
     parser.add_argument("--pre-model-semantic-audit", type=Path)
+    parser.add_argument("--pre-model-structural-audit", type=Path)
     parser.add_argument(
         "--checkpoint-root",
         type=Path,
@@ -1308,6 +1488,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         freeze_manifest=args.freeze_manifest,
         success_criteria=success_criteria,
         pre_model_semantic_audit=args.pre_model_semantic_audit,
+        pre_model_structural_audit=args.pre_model_structural_audit,
         checkpoint_root=args.checkpoint_root,
         git_commit=resolved_commit,
     )

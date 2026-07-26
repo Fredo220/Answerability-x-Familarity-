@@ -5,9 +5,11 @@ import inspect
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import trajectory_extractor.fa_development_r9 as development_r9
 import trajectory_extractor.fa_development_screening as development_screening
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_confirmatory_source import REGISTERED_DOMAINS, SourceRecord
@@ -194,6 +196,158 @@ def _record(domain: str, index: int) -> SourceRecord:
             ("P3", (f"answer-{domain}-{index}-3",)),
         ),
     )
+
+
+def test_r9_derivation_gate_binds_config_and_complete_exclusions(tmp_path):
+    config = _config()
+    exclusions_path = tmp_path / "confirmatory_excluded_candidates_v1.json"
+    exclusions_path.write_text(
+        json.dumps([{"qid": "Q1"}, {"qid": "Q2"}]),
+        encoding="utf-8",
+    )
+    source = {
+        "integrity_sha256": "a" * 64,
+        "candidates": (SimpleNamespace(qid="Q1"),),
+    }
+    instrument_path = tmp_path / "candidate_entities_instrument_development_v1.json"
+    validation_path = tmp_path / "candidate_entities_construction_validation_v1.json"
+    instrument_path.write_text(json.dumps([{"qid": "Q1"}]), encoding="utf-8")
+    validation_path.write_text(json.dumps([{"qid": "Q2"}]), encoding="utf-8")
+    (tmp_path / "source_integrity_v1.json").write_text(
+        json.dumps(
+            {
+                "materialized_files": {
+                    "instrument_development": {
+                        "candidate_manifest": instrument_path.name
+                    },
+                    "construction_validation": {
+                        "candidate_manifest": validation_path.name
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    shutil.copy(
+        "data/fa/development_source_v6_r9/alias_corrections_v1.json",
+        tmp_path / "alias_corrections_v1.json",
+    )
+    decisions = [
+        {
+            "qid": f"Q{index}",
+            "decision": (
+                "included" if index in {1, 2} else "eligible_reserve"
+            ),
+            **(
+                {
+                    "split": (
+                        "instrument_development"
+                        if index == 1
+                        else "construction_validation"
+                    )
+                }
+                if index in {1, 2}
+                else {}
+            ),
+        }
+        for index in range(1, 193)
+    ]
+    current_commit = development_screening._current_git_commit()
+    manifest = {
+        "schema_version": 1,
+        "kind": "fa_source_v6_r9_derivation",
+        "source_revision": "fa-development-source-v6-r9",
+        "claim_scope": "instrument_development_only",
+        "source_integrity_sha256": source["integrity_sha256"],
+        "config_sha256": config.config_hash,
+        "model_id": config.model_id,
+        "model_revision": config.model_revision,
+        "tokenizer_revision": config.tokenizer_revision,
+        "chat_template_sha256": config.chat_template_sha256,
+        "implementation_sha256s": development_r9._implementation_sha256s(),
+        "amendment_sha256": development_screening._sha256_file(
+            development_r9.R9_AMENDMENT_PATH
+        ),
+        "r8_construction_commit": development_r9.R8_CONSTRUCTION_COMMIT,
+        "r8_frame_sha256": development_r9.R8_FRAME_SHA256,
+        "r8_integrity_sha256": development_r9.R8_INTEGRITY_SHA256,
+        "r8_audit_sha256": development_r9.R8_AUDIT_SHA256,
+        "r8_audit_items_sha256": development_r9.R8_AUDIT_ITEMS_SHA256,
+        "corrections_sha256": development_r9.R9_CORRECTIONS_SHA256,
+        "correction_items_sha256": (
+            development_r9.R9_CORRECTION_ITEMS_SHA256
+        ),
+        "selection_seed": development_r9.R9_SELECTION_SEED,
+        "selection_formula": 'SHA256(seed + ":" + domain + ":" + qid), qid',
+        "decision_count": 192,
+        "decisions_sha256": development_screening._canonical_sha256(decisions),
+        "decisions": decisions,
+        "r9_construction_commit": current_commit,
+        "confirmatory_exclusions_file": exclusions_path.name,
+        "confirmatory_exclusions_sha256": hashlib.sha256(
+            exclusions_path.read_bytes()
+        ).hexdigest(),
+        "future_excluded_qid_count": 2,
+    }
+    derivation_path = tmp_path / "r9_derivation_manifest_v1.json"
+    derivation_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    observed = development_screening._verify_r9_derivation(
+        tmp_path,
+        source=source,
+        config=config,
+        screening_commit=current_commit,
+    )
+
+    assert observed == hashlib.sha256(derivation_path.read_bytes()).hexdigest()
+
+    manifest["future_excluded_qid_count"] = 1
+    derivation_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="lineage are incomplete"):
+        development_screening._verify_r9_derivation(
+            tmp_path,
+            source=source,
+            config=config,
+            screening_commit=current_commit,
+        )
+
+
+def test_r9_structural_audit_is_a_required_bound_artifact(tmp_path):
+    audit_path = tmp_path / "structural_provenance_audit_v1.json"
+    audit = {
+        "schema_version": 1,
+        "kind": "fa_source_v6_r9_structural_provenance_audit",
+        "source_revision": "fa-development-source-v6-r9",
+        "source_integrity_sha256": "a" * 64,
+        "derivation_sha256": "b" * 64,
+        "status": "passed",
+        "blocker_count": 0,
+        "candidate_count": 96,
+        "question_count": 288,
+        "decision_count": 192,
+        "independent_code_path": True,
+        "auditor_id": "independent-structural-test",
+        "audit_code_sha256": development_screening._sha256_file(
+            Path("tools/audit_fa_development_r9.py")
+        ),
+    }
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    observed = development_screening._verify_r9_structural_audit(
+        audit_path,
+        source_integrity_sha256="a" * 64,
+        derivation_sha256="b" * 64,
+    )
+
+    assert observed == hashlib.sha256(audit_path.read_bytes()).hexdigest()
+    audit["independent_code_path"] = False
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+    with pytest.raises(ValueError, match="structural audit identity"):
+        development_screening._verify_r9_structural_audit(
+            audit_path,
+            source_integrity_sha256="a" * 64,
+            derivation_sha256="b" * 64,
+        )
 
 
 def _source(

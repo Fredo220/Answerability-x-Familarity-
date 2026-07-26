@@ -745,6 +745,7 @@ def write_development_source(
     *,
     design: DevelopmentSourceDesign,
     excluded_qids: Set[str] = frozenset(),
+    future_excluded_qids: Set[str] | None = None,
     source_frame_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Persist immutable Source-v6 manifests and their integrity lineage."""
@@ -754,8 +755,13 @@ def write_development_source(
         excluded_qids=excluded_qids,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    source_v6_qids = sorted(
+    selected_qids = {
         candidate.qid for split in design.splits for candidate in manifests[split][0]
+    }
+    source_v6_qids = sorted(
+        selected_qids
+        if future_excluded_qids is None
+        else set(future_excluded_qids) | selected_qids
     )
     exclusions_path = output_dir / "source_v7_exclusions_v1.json"
     _write_json_immutable(

@@ -5,19 +5,21 @@ import pytest
 from trajectory_extractor.fa_confirmatory_source import (
     REGISTERED_DOMAINS,
     REGISTERED_SPLIT_COUNTS,
-    RankedSource,
     SCREENING_POOL_MULTIPLIER,
+    RankedSource,
     SourceRecord,
     _fetch_entities,
+    _load_development_excluded_qids,
     _sha256_file,
     _write_json,
-    audit_materialized_source,
     assign_split_pools,
+    audit_materialized_source,
     build_domain_query,
-    build_source_records_from_ranked_values,
     build_source_records,
+    build_source_records_from_ranked_values,
     exclude_cross_domain_source_collisions,
     filter_matchable_source_records,
+    main,
     materialize_manifests,
     parse_qlever_candidates,
     source_matching_policy_sha256,
@@ -603,3 +605,56 @@ def test_source_writer_resumes_identically_and_refuses_overwrite(tmp_path):
     assert _sha256_file(path) == (
         "b3e94f06083e92373724ff153d1c5b022fbbd041a40daa18458a65e8419b0951"
     )
+
+
+def test_confirmatory_cli_requires_an_exclusion_manifest(tmp_path):
+    with pytest.raises(SystemExit, match="2"):
+        main(
+            [
+                "--output-dir",
+                str(tmp_path / "output"),
+                "--config",
+                "configs/familiarity_answerability_gemma2_2b.json",
+            ]
+        )
+
+
+def test_confirmatory_development_exclusions_are_strict(tmp_path):
+    path = tmp_path / "source_v7_exclusions_v1.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "source_v7_exclusions",
+                "source_revision": "fa-development-source-v6-r9",
+                "excluded_qids": ["Q1", "Q2"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    derivation_path = tmp_path / "r9_derivation_manifest_v1.json"
+    derivation_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "fa_source_v6_r9_derivation",
+                "source_revision": "fa-development-source-v6-r9",
+                "source_v7_exclusions_file": path.name,
+                "source_v7_exclusions_sha256": _sha256_file(path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _load_development_excluded_qids(
+        path,
+        derivation_path,
+    ) == frozenset({"Q1", "Q2"})
+
+    payload = json.loads(path.read_text())
+    payload["excluded_qids"] = []
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="QIDs are invalid"):
+        derivation = json.loads(derivation_path.read_text())
+        derivation["source_v7_exclusions_sha256"] = _sha256_file(path)
+        derivation_path.write_text(json.dumps(derivation), encoding="utf-8")
+        _load_development_excluded_qids(path, derivation_path)
