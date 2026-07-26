@@ -4,6 +4,11 @@ R9 is an audit-qualified development corpus. It can establish instrument
 readiness only. It cannot confirm Familiarity-by-Answerability, and every R8
 and R9 QID remains excluded from future confirmatory corpora.
 
+The model-blind R9.1 alias-completeness amendment preserves all candidates,
+splits, prompts, values, thresholds, and selection rules. The blocked first
+semantic audit remains archived under
+`data/fa/development_source_v6_r9_blocked_attempt1/`.
+
 ## 1. Git-bind derivation rules
 
 Commit the R9 amendment, structured correction manifest, selection code,

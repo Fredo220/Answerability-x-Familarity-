@@ -31,13 +31,13 @@ R8_AUDIT_ITEMS_SHA256 = (
     "fd1cf8f6099c3f224d2a8f2e124f00594703f9c56040cb95389f44a36f9325c8"
 )
 R9_CORRECTIONS_SHA256 = (
-    "20feb70c4042301aa733472faf5b5863f5e6fe7f2098a01f3b77342ee9a47409"
+    "5106684d3ab9171a0c70149475528cdf93b6e788380975692cdd53cc502875d9"
 )
 R9_CORRECTION_ITEMS_SHA256 = (
-    "29323754adfed2487dd47e8d1efe8fd5f054a604eeeffb5968b60ac9169fe891"
+    "51d38bbf4e7e20c1a548b4aaac445f94722c5dec0e89dc640bc602c15c2066b3"
 )
 R9_AMENDMENT_PATH = Path(
-    "docs/amendments/2026-07-25-fa-source-v6-r9-audit-qualified-development.md"
+    "docs/amendments/2026-07-26-fa-source-v6-r9-1-alias-completeness.md"
 )
 R9_SOURCE_REVISION = "fa-development-source-v6-r9"
 R9_SELECTION_SEED = 20260725
