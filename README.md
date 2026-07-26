@@ -65,8 +65,9 @@ The Colab workflow is in
 Scientific logic remains in tested Python modules; notebooks only orchestrate
 resumable CLI transactions.
 
-The currently registered R10 execution is pinned to commit
-`e2968387167350913b624393b4e4b28ed86d491d`. Add `HF_TOKEN` through Colab
+The R10 registration was introduced at commit
+`e2968387167350913b624393b4e4b28ed86d491d`. The run must record the exact
+clean descendant commit checked out in Colab. Add `HF_TOKEN` through Colab
 Secrets; never paste or commit access tokens.
 
 ## Integrity Boundary
