@@ -268,6 +268,32 @@ def test_matchability_rejects_both_sides_of_candidate_answer_collisions():
     assert place[0].qid not in selected_qids
 
 
+def test_matchability_rejects_all_same_domain_normalized_name_collisions():
+    tokenizer = _WordTokenizer()
+    records = _records(count=4)
+    person = list(records["person"])
+    duplicate = person[0].label.swapcase()
+    person[1] = SourceRecord(
+        qid=person[1].qid,
+        label=duplicate,
+        domain=person[1].domain,
+        sitelinks=person[1].sitelinks,
+        source_rank=person[1].source_rank,
+        property_values=person[1].property_values,
+    )
+    records["person"] = tuple(person)
+
+    selected, _audit = filter_development_matchable_records(
+        records,
+        tokenizer,
+        required_per_domain=2,
+    )
+
+    selected_qids = {record.qid for record in selected["person"]}
+    assert person[0].qid not in selected_qids
+    assert person[1].qid not in selected_qids
+
+
 def test_matchability_rejects_pseudonym_equal_to_current_answer(monkeypatch):
     tokenizer = _WordTokenizer()
     records = _records(count=3)

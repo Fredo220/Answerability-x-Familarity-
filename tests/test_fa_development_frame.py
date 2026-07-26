@@ -127,14 +127,9 @@ def test_place_query_replaces_timezone_with_single_continent_current_facts():
     assert "FILTER(?raw_2 != ?raw_1)" in query
     assert "rdfs:label ?itemLabel" in query
     assert "PREFIX rdfs:" in query
-    assert "?other rdfs:label ?otherLabel" in query
-    assert "?other wdt:P31/wdt:P279* wd:Q515" not in query
-    assert "FILTER(?other != ?item)" in query
-    assert "FILTER NOT EXISTS" in query
-    assert "?other skos:altLabel ?otherAlias" in query
-    assert "LCASE(STR(?otherLabel)) = LCASE(STR(?itemLabel))" in query
-    assert "?raw_1 rdfs:label ?raw_1Label" in query
-    assert "?otherAnswer skos:altLabel ?raw_1Alias" in query
+    assert "?other rdfs:label" not in query
+    assert "?otherAnswer" not in query
+    assert "LCASE(" not in query
     assert "LIMIT 17" in query
 
 
@@ -165,9 +160,8 @@ def test_creative_work_query_excludes_duplicate_english_titles():
     query = build_development_domain_query("creative_work", limit=17)
 
     assert "rdfs:label ?itemLabel" in query
-    assert "?other rdfs:label ?otherLabel" in query
-    assert "?other skos:altLabel ?otherAlias" in query
-    assert "FILTER(?other != ?item)" in query
+    assert "?other rdfs:label" not in query
+    assert "?otherAnswer" not in query
     assert "HAVING(COUNT(DISTINCT ?field1) = 1)" in query
     assert "HAVING(COUNT(DISTINCT ?field2) = 1)" in query
     assert "HAVING(COUNT(DISTINCT ?field3) = 1)" in query
@@ -181,6 +175,7 @@ def test_person_query_requires_one_value_for_every_registered_relation():
     assert "?item p:P106 ?field2Statement" in query
     assert "?item p:P19 ?field3Statement" in query
     assert query.count("HAVING(COUNT(DISTINCT ?field") == 3
+    assert "FILTER(LCASE" not in query
 
 
 def test_builds_bounded_frame_with_exclusions_collisions_and_provenance(
@@ -219,11 +214,11 @@ def test_builds_bounded_frame_with_exclusions_collisions_and_provenance(
     )
 
 
-def test_r7_rejects_seed_entity_caches_before_network_access(tmp_path):
+def test_r8_rejects_seed_entity_caches_before_network_access(tmp_path):
     seed = tmp_path / "seed.json"
     seed.write_text("{}")
 
-    with pytest.raises(ValueError, match="R7 forbids seed entity caches"):
+    with pytest.raises(ValueError, match="R8 forbids seed entity caches"):
         build_development_frame(
             output_dir=tmp_path / "frame",
             tokenizer=_WordTokenizer(),

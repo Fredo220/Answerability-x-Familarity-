@@ -37,7 +37,7 @@ DEVELOPMENT_SPLITS = (
     "instrument_development",
     "construction_validation",
 )
-DEFAULT_SOURCE_REVISION = "fa-development-source-v6-r7"
+DEFAULT_SOURCE_REVISION = "fa-development-source-v6-r8"
 _FRAME_TO_SOURCE_REVISION = {
     "fa-development-source-frame-v6-r2": "fa-development-source-v6-r2",
     "fa-development-source-frame-v6-r3": "fa-development-source-v6-r3",
@@ -45,6 +45,7 @@ _FRAME_TO_SOURCE_REVISION = {
     "fa-development-source-frame-v6-r5": "fa-development-source-v6-r5",
     "fa-development-source-frame-v6-r6": "fa-development-source-v6-r6",
     "fa-development-source-frame-v6-r7": "fa-development-source-v6-r7",
+    "fa-development-source-frame-v6-r8": "fa-development-source-v6-r8",
 }
 DEVELOPMENT_DOMAIN_FIELDS = {
     **DOMAIN_FIELDS,
@@ -130,7 +131,6 @@ def build_development_source_records_from_ranked_values(
     if domain not in DEVELOPMENT_DOMAIN_FIELDS:
         raise ValueError(f"unregistered domain: {domain}")
     records = []
-    labels_seen = set()
     for source_rank, ranked in enumerate(ranked_qids, start=1):
         if ranked.qid in excluded_qids:
             continue
@@ -138,7 +138,7 @@ def build_development_source_records_from_ranked_values(
         if not isinstance(entity, Mapping):
             continue
         label = _english_label(entity)
-        if not _eligible_label(label) or label.casefold() in labels_seen:
+        if not _eligible_label(label):
             continue
         property_values = []
         for field, raw_value in zip(
@@ -172,7 +172,6 @@ def build_development_source_records_from_ranked_values(
                 property_values=tuple(property_values),
             )
         )
-        labels_seen.add(label.casefold())
     return tuple(records)
 
 

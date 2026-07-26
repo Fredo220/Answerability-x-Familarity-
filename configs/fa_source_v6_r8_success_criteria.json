@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "source_revision": "fa-development-source-v6-r8",
+  "claim_scope": "instrument_readiness_only",
+  "development_gate": {
+    "candidate_count": 96,
+    "prompt_count": 288,
+    "qualification_threshold": 2,
+    "minimum_qualified_per_domain": 16,
+    "minimum_success_by_domain_relation": {
+      "creative_work": {"P57": 16, "P577": 16, "P495": 16},
+      "organization": {"P17": 16, "P159": 16, "P571": 16},
+      "person": {"P19": 16, "P27": 16, "P106": 16},
+      "place": {"P17": 18, "P30": 18, "P131": 16}
+    }
+  },
+  "human_audit": {
+    "adjudicator_required_on_disagreement": true,
+    "disallowed_error_labels": [
+      "ambiguous_ground_truth",
+      "incomplete_alias_set",
+      "wrong_granularity",
+      "parser_failure",
+      "source_error",
+      "other"
+    ],
+    "independent_initial_raters": 2,
+    "maximum_disallowed_count": 0,
+    "required_before_construction_validation": true,
+    "sample_per_domain": 4,
+    "success_sample_per_domain": 2,
+    "maximum_scoring_disagreement_count": 0,
+    "seed": 20260725
+  },
+  "pre_model_semantic_audit": {
+    "blocker_count": 0,
+    "candidate_count": 192,
+    "coverage_mode": "all_registered_questions",
+    "question_count": 576,
+    "required_before_model_run": true,
+    "status": "passed"
+  }
+}

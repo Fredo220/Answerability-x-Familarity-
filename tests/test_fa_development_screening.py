@@ -67,7 +67,7 @@ def _criteria(
 ) -> dict[str, object]:
     criteria: dict[str, object] = {
         "schema_version": 2,
-        "source_revision": "fa-development-source-v6-r7",
+        "source_revision": "fa-development-source-v6-r8",
         "development_gate": {
             "candidate_count": candidate_count,
             "prompt_count": candidate_count * 3,
@@ -107,6 +107,46 @@ def _criteria(
 def _semantic_audit(tmp_path: Path, source: Path) -> Path:
     integrity_path = source / "source_integrity_v1.json"
     integrity = json.loads(integrity_path.read_text(encoding="utf-8"))
+    audited_splits = (
+        ("instrument_development", "construction_validation")
+        if integrity["source_revision"] == "fa-development-source-v6-r8"
+        else ("instrument_development",)
+    )
+    candidates = [
+        candidate
+        for split in audited_splits
+        for candidate in json.loads(
+            (
+                source / f"candidate_entities_{split}_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+    ]
+    questions = [
+        question
+        for split in audited_splits
+        for question in json.loads(
+            (
+                source / f"screening_questions_{split}_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+    ]
+    items_path = tmp_path / "semantic_audit_items.jsonl"
+    items_path.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "question_id": question["question_id"],
+                    "qid": question["qid"],
+                    "status": "passed",
+                    "blocker_ids": [],
+                },
+                sort_keys=True,
+            )
+            + "\n"
+            for question in questions
+        ),
+        encoding="utf-8",
+    )
     path = tmp_path / "semantic_audit.json"
     path.write_text(
         json.dumps(
@@ -120,6 +160,18 @@ def _semantic_audit(tmp_path: Path, source: Path) -> Path:
                 "auditor_id": "independent-test-auditor",
                 "status": "passed",
                 "blocker_count": 0,
+                "items_file": items_path.name,
+                "items_sha256": hashlib.sha256(items_path.read_bytes()).hexdigest(),
+                "coverage": {
+                    "candidate_count": len(candidates),
+                    "question_count": len(questions),
+                    "candidate_qids_sha256": development_screening._canonical_sha256(
+                        sorted(candidate["qid"] for candidate in candidates)
+                    ),
+                    "question_ids_sha256": development_screening._canonical_sha256(
+                        sorted(question["question_id"] for question in questions)
+                    ),
+                },
             },
             sort_keys=True,
         ),
@@ -239,7 +291,7 @@ def _manual_audit(
     manifest = {
         "schema_version": 1,
         "kind": "fa_source_v6_manual_error_audit",
-        "source_revision": "fa-development-source-v6-r7",
+        "source_revision": "fa-development-source-v6-r8",
         "development_execution_identity_sha256": development[
             "execution_identity_sha256"
         ],
@@ -444,25 +496,28 @@ def test_runner_rejects_tampered_source_before_model_call(tmp_path):
     assert runner.calls == 0
 
 
-def test_instrument_screening_does_not_open_validation_manifest(tmp_path):
+def test_r8_instrument_screening_verifies_validation_manifest_before_model(tmp_path):
     source, answers = _source(tmp_path)
+    semantic_audit = _semantic_audit(tmp_path, source)
     validation_path = (
         source / "candidate_entities_construction_validation_v1.json"
     )
     validation_path.write_text("not opened during development", encoding="utf-8")
+    runner = FakeRunner(answers)
 
-    result = run_development_screening(
-        _config(),
-        source,
-        "instrument_development",
-        tmp_path / "output",
-        runner=FakeRunner(answers),
-        success_criteria=_criteria(),
-        pre_model_semantic_audit=_semantic_audit(tmp_path, source),
-        git_commit="a" * 40,
-    )
+    with pytest.raises(ValueError, match="hash"):
+        run_development_screening(
+            _config(),
+            source,
+            "instrument_development",
+            tmp_path / "output",
+            runner=runner,
+            success_criteria=_criteria(),
+            pre_model_semantic_audit=semantic_audit,
+            git_commit="a" * 40,
+        )
 
-    assert result["status"] == "completed"
+    assert runner.calls == 0
 
 
 def test_ordered_prompts_rejects_orphan_questions():
@@ -930,6 +985,32 @@ def test_r5_screening_requires_passing_pre_model_semantic_audit(tmp_path):
             tmp_path / "output",
             runner=runner,
             success_criteria=_criteria(),
+            git_commit="a" * 40,
+        )
+
+    assert runner.calls == 0
+
+
+def test_r8_semantic_audit_requires_every_registered_question(tmp_path):
+    source, answers = _source(tmp_path)
+    audit = _semantic_audit(tmp_path, source)
+    manifest = json.loads(audit.read_text(encoding="utf-8"))
+    items_path = audit.parent / manifest["items_file"]
+    rows = items_path.read_text(encoding="utf-8").splitlines()
+    items_path.write_text("\n".join(rows[:-1]) + "\n", encoding="utf-8")
+    manifest["items_sha256"] = hashlib.sha256(items_path.read_bytes()).hexdigest()
+    audit.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+    runner = FakeRunner(answers)
+
+    with pytest.raises(ValueError, match="coverage mismatch"):
+        run_development_screening(
+            _config(),
+            source,
+            "instrument_development",
+            tmp_path / "output",
+            runner=runner,
+            success_criteria=_criteria(),
+            pre_model_semantic_audit=audit,
             git_commit="a" * 40,
         )
 

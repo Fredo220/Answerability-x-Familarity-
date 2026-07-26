@@ -28,12 +28,12 @@ from trajectory_extractor.fa_development_source import (
 )
 from trajectory_extractor.fa_runtime import load_pinned_tokenizer
 
-SOURCE_FRAME_REVISION = "fa-development-source-frame-v6-r7"
+SOURCE_FRAME_REVISION = "fa-development-source-frame-v6-r8"
 _ENTITY_URI = re.compile(r"^http://www\.wikidata\.org/entity/(Q[1-9][0-9]*)$")
 
 
 def build_development_domain_query(domain: str, *, limit: int) -> str:
-    """Build the exact-value, globally disambiguated R7 development query."""
+    """Build the exact-value R8 development query."""
     if domain not in DEVELOPMENT_DOMAIN_FIELDS:
         raise ValueError(f"unregistered domain: {domain}")
     if type(limit) is not int or limit <= 0:
@@ -45,7 +45,6 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
         "creative_work": "wdt:P31/wdt:P279* wd:Q11424",
     }[domain]
     field_subqueries = []
-    answer_entity_indexes = []
     if domain == "place":
         for index, property_id, variable in (
             (1, "P17", "country"),
@@ -59,7 +58,6 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
                     require_unended=True,
                 )
             )
-            answer_entity_indexes.append(index)
         field_subqueries.append(
             "  {\n"
             "    SELECT ?raw_1 (SAMPLE(?continent) AS ?raw_3)\n"
@@ -73,7 +71,6 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
             "    HAVING(COUNT(DISTINCT ?continent) = 1)\n"
             "  }\n"
         )
-        answer_entity_indexes.append(3)
     else:
         for index, field in enumerate(
             DEVELOPMENT_DOMAIN_FIELDS[domain],
@@ -91,8 +88,6 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
                     require_unended=require_unended,
                 )
             )
-            if field.value_kind == "entity":
-                answer_entity_indexes.append(index)
     extra_filters = []
     if domain == "place":
         extra_filters.extend(
@@ -110,16 +105,12 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
                 "  ?raw_2 wdt:P31/wdt:P279* wd:Q486972.\n",
             )
         )
-    answer_label_filters = "".join(
-        _unique_answer_label_filters(index) for index in answer_entity_indexes
-    )
     return (
         f"{_PREFIXES}\n"
         "PREFIX p: <http://www.wikidata.org/prop/>\n"
         "PREFIX ps: <http://www.wikidata.org/prop/statement/>\n"
         "PREFIX pq: <http://www.wikidata.org/prop/qualifier/>\n"
         "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
-        "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n"
         "SELECT ?item ?sitelinks\n"
         "       (STR(?raw_1) AS ?value_1)\n"
         "       (STR(?raw_2) AS ?value_2)\n"
@@ -129,20 +120,7 @@ def build_development_domain_query(domain: str, *, limit: int) -> str:
         "        wikibase:sitelinks ?sitelinks;\n"
         "        rdfs:label ?itemLabel.\n"
         '  FILTER(LANG(?itemLabel) = "en")\n'
-        "  FILTER NOT EXISTS {\n"
-        "    ?other rdfs:label ?otherLabel.\n"
-        '    FILTER(LANG(?otherLabel) = "en")\n'
-        "    FILTER(LCASE(STR(?otherLabel)) = LCASE(STR(?itemLabel)))\n"
-        "    FILTER(?other != ?item)\n"
-        "  }\n"
-        "  FILTER NOT EXISTS {\n"
-        "    ?other skos:altLabel ?otherAlias.\n"
-        '    FILTER(LANG(?otherAlias) = "en")\n'
-        "    FILTER(LCASE(STR(?otherAlias)) = LCASE(STR(?itemLabel)))\n"
-        "    FILTER(?other != ?item)\n"
-        "  }\n"
         f"{''.join(field_subqueries)}"
-        f"{answer_label_filters}"
         f"{''.join(extra_filters)}"
         "  FILTER(?sitelinks >= 10)\n"
         "}\n"
@@ -181,31 +159,6 @@ def _exact_item_value_subquery(
     )
 
 
-def _unique_answer_label_filters(index: int) -> str:
-    return (
-        f"  ?raw_{index} rdfs:label ?raw_{index}Label.\n"
-        f'  FILTER(LANG(?raw_{index}Label) = "en")\n'
-        "  FILTER NOT EXISTS {\n"
-        f"    ?otherAnswer rdfs:label ?raw_{index}OtherLabel.\n"
-        f'    FILTER(LANG(?raw_{index}OtherLabel) = "en")\n'
-        "    FILTER("
-        f"LCASE(STR(?raw_{index}OtherLabel)) = "
-        f"LCASE(STR(?raw_{index}Label))"
-        ")\n"
-        f"    FILTER(?otherAnswer != ?raw_{index})\n"
-        "  }\n"
-        "  FILTER NOT EXISTS {\n"
-        f"    ?otherAnswer skos:altLabel ?raw_{index}Alias.\n"
-        f'    FILTER(LANG(?raw_{index}Alias) = "en")\n'
-        "    FILTER("
-        f"LCASE(STR(?raw_{index}Alias)) = "
-        f"LCASE(STR(?raw_{index}Label))"
-        ")\n"
-        f"    FILTER(?otherAnswer != ?raw_{index})\n"
-        "  }\n"
-    )
-
-
 def build_development_frame(
     *,
     output_dir: Path,
@@ -222,7 +175,7 @@ def build_development_frame(
 ) -> dict[str, Any]:
     """Build or replay one immutable, bounded, development-only source frame."""
     if seed_entity_cache is not None:
-        raise ValueError("R7 forbids seed entity caches")
+        raise ValueError("R8 forbids seed entity caches")
     _validate_design(
         tokenizer_revision=tokenizer_revision,
         query_limit=query_limit,

@@ -50,6 +50,7 @@ _ALLOWED_SOURCE_REVISIONS = frozenset(
         "fa-development-source-v6-r5",
         "fa-development-source-v6-r6",
         "fa-development-source-v6-r7",
+        "fa-development-source-v6-r8",
     }
 )
 _INTEGRITY_FILE = "source_integrity_v1.json"
@@ -100,15 +101,41 @@ def run_development_screening(
             "fa-development-source-v6-r5",
             "fa-development-source-v6-r6",
             "fa-development-source-v6-r7",
+            "fa-development-source-v6-r8",
         }:
             if pre_model_semantic_audit is None:
                 raise ValueError(
                     "this source revision requires a passing pre-model semantic audit"
                 )
+            audit_candidates = source["candidates"]
+            audit_questions = source["questions"]
+            if source["source_revision"] == "fa-development-source-v6-r8":
+                validation_source = _load_verified_source(
+                    Path(source_root),
+                    "construction_validation",
+                )
+                if (
+                    validation_source["source_revision"] != source["source_revision"]
+                    or validation_source["integrity_sha256"]
+                    != source["integrity_sha256"]
+                ):
+                    raise ValueError(
+                        "development and validation source identities differ"
+                    )
+                audit_candidates = (
+                    *audit_candidates,
+                    *validation_source["candidates"],
+                )
+                audit_questions = (
+                    *audit_questions,
+                    *validation_source["questions"],
+                )
             semantic_audit_sha256 = _verify_pre_model_semantic_audit(
                 Path(pre_model_semantic_audit),
                 source_revision=source["source_revision"],
                 source_integrity_sha256=source["integrity_sha256"],
+                candidates=audit_candidates,
+                questions=audit_questions,
             )
     if split == "construction_validation":
         if freeze_manifest is None:
@@ -787,6 +814,8 @@ def _verify_pre_model_semantic_audit(
     *,
     source_revision: str,
     source_integrity_sha256: str,
+    candidates: Sequence[CandidateEntity],
+    questions: Sequence[ScreeningQuestion],
 ) -> str:
     manifest = _read_json(path)
     expected = {
@@ -805,6 +834,41 @@ def _verify_pre_model_semantic_audit(
         "auditor_id"
     ].strip():
         raise ValueError("pre-model semantic audit lacks an auditor identity")
+    items_file = manifest.get("items_file")
+    if (
+        not isinstance(items_file, str)
+        or Path(items_file).name != items_file
+        or not items_file.endswith(".jsonl")
+    ):
+        raise ValueError("pre-model semantic audit items file is invalid")
+    items_path = path.parent / items_file
+    if manifest.get("items_sha256") != _sha256_file(items_path):
+        raise ValueError("pre-model semantic audit items hash mismatch")
+    expected = {question.question_id: question.qid for question in questions}
+    rows = _read_jsonl(items_path)
+    observed = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("pre-model semantic audit item must be an object")
+        question_id = row.get("question_id")
+        if not isinstance(question_id, str) or question_id in observed:
+            raise ValueError("pre-model semantic audit question IDs are invalid")
+        if row.get("status") != "passed" or row.get("blocker_ids") != []:
+            raise ValueError("pre-model semantic audit contains a blocked item")
+        observed[question_id] = row.get("qid")
+    if observed != expected:
+        raise ValueError("pre-model semantic audit coverage mismatch")
+    coverage = manifest.get("coverage")
+    expected_coverage = {
+        "candidate_count": len(candidates),
+        "question_count": len(questions),
+        "candidate_qids_sha256": _canonical_sha256(
+            sorted(candidate.qid for candidate in candidates)
+        ),
+        "question_ids_sha256": _canonical_sha256(sorted(expected)),
+    }
+    if coverage != expected_coverage:
+        raise ValueError("pre-model semantic audit coverage identity mismatch")
     return _sha256_file(path)
 
 
@@ -1167,6 +1231,14 @@ def _read_array(path: Path) -> list[dict[str, Any]]:
 def _read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read verified artifact {path}") from error
+
+
+def _read_jsonl(path: Path) -> list[Any]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        return [json.loads(line) for line in lines if line.strip()]
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot read verified artifact {path}") from error
 
