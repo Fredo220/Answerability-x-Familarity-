@@ -15,8 +15,8 @@ from trajectory_extractor.fa_confirmatory_source import (
     _PREFIXES,
     REGISTERED_DOMAINS,
     ScreeningField,
+    _claim_datavalue,
     _claim_entity_qids,
-    _claim_value_aliases,
     _eligible_label,
     _english_label,
     _fetch_entities,
@@ -24,6 +24,8 @@ from trajectory_extractor.fa_confirmatory_source import (
 )
 
 _ENTITY_URI = re.compile(r"^http://www\.wikidata\.org/entity/(Q[1-9][0-9]*)$")
+_CURRENT_RELATIONS = frozenset({"P17", "P159", "P36", "P37", "P38", "P452"})
+_NON_ANSWER_LABELS = frozenset({"statelessness"})
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,8 @@ R11_RELATION_FIELDS = {
     "person": (
         ScreeningField(
             "P27",
-            "Which country was {name} a citizen of? Answer with only the country name.",
+            "Which state or country was {name} a citizen of? "
+            "Answer with only the state or country name.",
         ),
         ScreeningField(
             "P106",
@@ -64,8 +67,8 @@ R11_RELATION_FIELDS = {
         ),
         ScreeningField(
             "P30",
-            "On which continent is {name} located? "
-            "Answer with only the continent name.",
+            "Name one continent where {name} is located. "
+            "Answer with only one continent name.",
         ),
         ScreeningField(
             "P37",
@@ -77,9 +80,9 @@ R11_RELATION_FIELDS = {
             "What currency is used in {name}? Answer with only one currency.",
         ),
         ScreeningField(
-            "P47",
-            "Which country shares a land border with {name}? "
-            "Answer with only one country name.",
+            "P610",
+            "What is the highest natural point in {name}? "
+            "Answer with only the place name.",
         ),
     ),
     "organization": (
@@ -142,12 +145,12 @@ def build_r11_domain_query(domain: str, *, limit: int) -> str:
     type_pattern = {
         "person": "wdt:P31 wd:Q5",
         "place": "wdt:P31 wd:Q6256",
-        "organization": "wdt:P31/wdt:P279* wd:Q43229",
+        "organization": "wdt:P31/wdt:P279* wd:Q4830453",
         "creative_work": "wdt:P31/wdt:P279* wd:Q11424",
     }[domain]
     return (
         f"{_PREFIXES}\n"
-        "SELECT ?item ?sitelinks\n"
+        "SELECT DISTINCT ?item ?sitelinks\n"
         "WHERE {\n"
         f"  ?item {type_pattern};\n"
         "        wikibase:sitelinks ?sitelinks.\n"
@@ -245,7 +248,7 @@ def materialize_r11_rows(
                 continue
             facts = []
             for field in R11_RELATION_FIELDS[domain]:
-                aliases = _claim_value_aliases(field, entity, entities)
+                aliases = _r11_claim_value_aliases(field, entity, entities)
                 if aliases:
                     facts.append((field, aliases))
             if len(facts) == len(R11_RELATION_FIELDS[domain]):
@@ -307,6 +310,80 @@ def materialize_r11_rows(
             ),
         )
     )
+
+
+def _r11_claim_rows(
+    entity: Mapping[str, Any],
+    property_id: str,
+) -> tuple[Mapping[str, Any], ...]:
+    claims = entity.get("claims")
+    raw_rows = claims.get(property_id) if isinstance(claims, Mapping) else None
+    if not isinstance(raw_rows, list):
+        return ()
+    rows = tuple(
+        row
+        for row in raw_rows
+        if isinstance(row, Mapping) and row.get("rank") != "deprecated"
+    )
+    preferred = tuple(row for row in rows if row.get("rank") == "preferred")
+    if preferred:
+        rows = preferred
+    if property_id in _CURRENT_RELATIONS:
+        current = tuple(
+            row
+            for row in rows
+            if not (
+                isinstance(row.get("qualifiers"), Mapping)
+                and "P582" in row["qualifiers"]
+            )
+        )
+        if current:
+            rows = current
+    return rows
+
+
+def _r11_claim_value_aliases(
+    field: ScreeningField,
+    entity: Mapping[str, Any],
+    entities: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    rows = _r11_claim_rows(entity, field.property_id)
+    if field.value_kind == "year":
+        years = []
+        for row in rows:
+            raw_value = _claim_datavalue(row)
+            time_value = (
+                raw_value.get("time")
+                if isinstance(raw_value, Mapping)
+                else raw_value
+            )
+            match = re.match(r"^\+?([0-9]{1,6})-", str(time_value or ""))
+            if match is not None:
+                year = match.group(1).lstrip("0") or "0"
+                if year != "0":
+                    years.append(int(year))
+        if not years:
+            return ()
+        earliest = str(min(years))
+        return (earliest, f"{earliest}.")
+
+    aliases = []
+    for row in rows:
+        raw_value = _claim_datavalue(row)
+        qid = raw_value.get("id") if isinstance(raw_value, Mapping) else raw_value
+        linked = entities.get(str(qid))
+        if not isinstance(linked, Mapping):
+            continue
+        label = _english_label(linked)
+        if (
+            label
+            and _eligible_label(label)
+            and label.casefold() not in _NON_ANSWER_LABELS
+        ):
+            aliases.append(label)
+            if not label.endswith("."):
+                aliases.append(f"{label}.")
+    return tuple(dict.fromkeys(aliases))
 
 
 def build_r11_source(

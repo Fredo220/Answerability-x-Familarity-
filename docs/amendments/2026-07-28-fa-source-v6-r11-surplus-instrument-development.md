@@ -40,9 +40,23 @@ that a candidate instrument is feasible.
 The R11 `place` stratum is restricted to countries. R10 demonstrated that the
 city-specific direct-administrative-parent question was not a functioning
 exact-answer instrument. Countries provide five stable, source-auditable
-relations: capital, continent, official language, currency, and land border.
-This scope change is registered before R11 outputs and must be reported as a
-limitation; it is not generalized back to all places.
+relations: capital, continent, official language, currency, and highest
+natural point. This scope change is registered before R11 outputs and must be
+reported as a limitation; it is not generalized back to all places.
+
+The broad Wikidata `organization` superclass returned countries through its
+subclass graph and no complete five-relation candidates. Before any R11 model
+output was generated, the R11 organization sampling population was therefore
+narrowed to business enterprises (`Q4830453`) and the rank query was
+deduplicated. The resulting claim is limited to this registered organization
+subpopulation.
+
+The model-blind source audit also found that raw Wikidata aliases admitted
+codes and historical values, while `P47` did not consistently denote the land
+border asked by the prompt. Before model execution, R11 was repaired to use
+primary English labels, preferred or non-ended values for current relations,
+and `P610` instead of `P47`. Earlier generated source revisions remain failed
+development artifacts and are not screened.
 
 ## One broad development revision
 

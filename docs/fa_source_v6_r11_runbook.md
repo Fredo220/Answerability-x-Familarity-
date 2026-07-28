@@ -53,6 +53,12 @@ these fields:
 }
 ```
 
+For R11, `organization` is the registered business-enterprise subpopulation
+and `place` is the registered country subpopulation. Answer keys use primary
+English labels and prefer current, non-ended Wikidata statements. These
+restrictions were frozen after source-only feasibility and semantic audits,
+before any R11 model completion was generated.
+
 `is_correct` is added only by the unchanged exact-answer scorer after Gemma
 generation. Before generation, independently audit every candidate fact,
 accepted alias set, and prompt. Store the signed result as:

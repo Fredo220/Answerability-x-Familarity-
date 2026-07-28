@@ -1,6 +1,7 @@
 from trajectory_extractor.fa_r11_source import (
     R11_RELATION_FIELDS,
     RankedEntity,
+    _r11_claim_value_aliases,
     build_r11_domain_query,
     materialize_r11_rows,
 )
@@ -48,9 +49,56 @@ def _entity(label: str, domain: str, index: int) -> dict[str, object]:
 def test_domain_query_is_ranked_and_relation_blind() -> None:
     query = build_r11_domain_query("person", limit=200)
 
+    assert "SELECT DISTINCT ?item ?sitelinks" in query
     assert "wdt:P31 wd:Q5" in query
     assert "ORDER BY DESC(?sitelinks) ?item" in query
     assert "P569" not in query
+
+
+def test_organization_query_uses_registered_business_population() -> None:
+    query = build_r11_domain_query("organization", limit=200)
+
+    assert "wdt:P31/wdt:P279* wd:Q4830453" in query
+    assert "wd:Q43229" not in query
+    assert all(field.property_id not in query for field in R11_RELATION_FIELDS["organization"])
+
+
+def test_r11_aliases_use_current_primary_label_only() -> None:
+    field = next(
+        field
+        for field in R11_RELATION_FIELDS["place"]
+        if field.property_id == "P38"
+    )
+    entity = {
+        "claims": {
+            "P38": [
+                {
+                    "rank": "normal",
+                    "mainsnak": {"datavalue": {"value": {"id": "Qold"}}},
+                    "qualifiers": {"P582": [{"datavalue": {"value": "ended"}}]},
+                },
+                {
+                    "rank": "preferred",
+                    "mainsnak": {"datavalue": {"value": {"id": "Qcurrent"}}},
+                },
+            ]
+        }
+    }
+    entities = {
+        "Qold": {
+            "labels": {"en": {"value": "Old Currency"}},
+            "aliases": {"en": [{"value": "OLD"}]},
+        },
+        "Qcurrent": {
+            "labels": {"en": {"value": "Current Currency"}},
+            "aliases": {"en": [{"value": "CC"}]},
+        },
+    }
+
+    assert _r11_claim_value_aliases(field, entity, entities) == (
+        "Current Currency",
+        "Current Currency.",
+    )
 
 
 def test_materialize_rows_is_balanced_and_entity_disjoint() -> None:
