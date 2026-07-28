@@ -1,96 +1,159 @@
 # Familiarity vs. Answerability in Language Models
 
-Research infrastructure for a preregistered study of whether entity familiarity
-changes answer attempts when relation-specific evidence is present or absent.
-The confirmatory target is the pinned `google/gemma-2-2b-it` revision; the
-Qwen3-0.6B profile is engineering rehearsal only.
+Does a language model answer more readily when it recognizes an entity, even
+when the information needed to answer is missing?
 
-The frozen Source-v5 confirmatory corpus is `not_evaluable`: corrected pinned
-Gemma screening qualified 31 creative works, 25 organizations, 19 people, and
-4 places, while the registered construction gate required 20 per domain. No
-human packet or protected F1/F2A endpoint was opened. This is a failed
-prerequisite, not evidence for or against the research hypothesis.
+This project tests that question with a preregistered behavioral experiment
+and a small mechanistic-interpretability follow-up on
+`google/gemma-2-2b-it`.
 
-Source-v6 R9 subsequently passed its model-blind corpus audits but failed the
-registered development instrument-readiness gate. Its immutable result and
-screening rows are committed under [`docs/results`](docs/results). R10 is a
-registered, one-shot held-out instrument follow-up on the previously unopened
-`construction_validation` split. It changes only a narrowly specified
-occupation-answer normalization rule and does not change the research
-hypothesis, entity pool, protected endpoints, or confirmatory thresholds.
+## The Idea
 
-The reported R10 run failed its frozen readiness gate. R11 is the current open
-development track: it screens a registered five-relation bank on a surplus
-candidate pool, deterministically selects three relations per domain, and
-tests that frozen instrument once on fresh entity-disjoint validation. The
-two-of-three familiarity threshold is unchanged. R11 is instrument
-development, not a test of the research hypothesis.
+The experiment separates two factors:
 
-The planned Fellowship artifact had two stages:
+- **Familiarity:** Does the model recognize the target entity?
+- **Answerability:** Does the prompt contain the evidence required to answer?
 
-1. **F1, behavioral interaction:** test familiarity by answerability with
-   matched screened-real and synthetic entities.
-2. **F2A, mechanistic pilot:** test whether prompt-end internal activations add
-   held-out predictive information under reciprocal condition transfer and
-   registered nulls.
+For example, the model may see either a familiar name such as an established
+organization or a matched synthetic name. The prompt then either provides a
+fictional archive code for that entity or leaves the code unavailable.
 
-F2B activation interchange is gated and currently deferred. Attribution graphs
-are optional, exploratory, and cannot rescue a failed F1 or F2A result. The
-study makes no claim of a universal hallucination mechanism or generalization
-beyond the registered task.
+The primary question is:
 
-## Study Documents
+> Does familiarity selectively increase answer attempts when the required
+> evidence is absent?
 
-- [Preregistration](docs/familiarity_answerability_preregistration.md)
-- [Protocol amendment](docs/familiarity_answerability_protocol_amendment_2026-07-22.md)
-- [Confirmatory corpus reserve amendment](docs/amendments/2026-07-24-fa-confirmatory-corpus-reserves.md)
-- [Gemma double-BOS implementation correction](docs/amendments/2026-07-24-fa-gemma-double-bos-implementation-correction.md)
-- [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
-- [Current confirmatory execution status](docs/confirmatory_execution_status_2026-07-24.md)
-- [Execution plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
-- [Runbook](docs/familiarity_answerability_runbook.md)
-- [R10 Colab runbook](docs/fa_source_v6_r10_runbook.md)
-- [R10 preregistered amendment](docs/amendments/2026-07-26-fa-source-v6-r10-heldout-instrument-validation.md)
-- [R11 surplus-instrument amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
-- [R11 runbook](docs/fa_source_v6_r11_runbook.md)
-- [Claim ladder](docs/familiarity_answerability_claims.md)
+This distinction matters because confidently completing a pattern is not the
+same as having evidence for the requested answer.
 
-## Compute Boundary
+## Experiment
 
-- The 8 GB local machine runs tests, audits, probe analysis, reporting, and
-  release verification.
-- A resumable Google Colab GPU run performs confirmatory Gemma generation and
-  activation extraction.
-- The human naturalness audit remains a required external input.
+The planned Fellowship artifact has two gated stages:
 
-Use Python 3.12 from a fresh clone:
+1. **F1: behavioral interaction**
+   - Cross familiar and synthetic entities with answerable and unanswerable
+     prompts.
+   - Measure whether familiarity changes answer attempts specifically when
+     evidence is absent.
+2. **F2A: mechanistic pilot**
+   - Extract internal activations before the answer is produced.
+   - Test whether they add held-out predictive information beyond surface
+     features and output confidence.
+
+F2A runs only after a valid F1 corpus exists. Activation interchange and
+attribution graphs are optional follow-ups; they cannot rescue a failed
+behavioral result.
+
+## Current Status
+
+**Status as of 2026-07-28: instrument development, not hypothesis evidence.**
+
+- The original Source-v5 corpus was `not_evaluable` because too few entities
+  passed its frozen familiarity screen.
+- R9 and R10 also failed their registered instrument-readiness gates. Their
+  negative results remain preserved.
+- R11 is the current repair. It uses a larger candidate pool and five
+  preregistered relation questions per domain.
+- Development data select three relations deterministically. Those relations
+  are then evaluated once on fresh, entity-disjoint validation data.
+- The familiarity rule remains unchanged: an entity must be answered
+  correctly on at least two of three selected questions.
+
+The committed R11 source contains:
+
+| Split | Entities per domain | Relations per entity |
+|---|---:|---:|
+| Open instrument development | 32 | 5 |
+| Construction validation | 16 | 5 |
+
+The four registered domains are creative works, business enterprises, people,
+and countries. Development and validation share no entity IDs.
+
+The source has passed an AI-assisted development audit. An independent human
+audit is still required before confirmatory reporting.
+
+## What R11 Can Show
+
+A passing R11 gate shows only that the familiarity-screening instrument is
+feasible and stable on fresh entities.
+
+It does **not** show that:
+
+- familiarity causes hallucinations;
+- the main Familiarity-by-Answerability hypothesis is true;
+- Gemma represents human-like belief, knowledge, or intuition;
+- the result generalizes to other tasks or models.
+
+Only the later frozen F1 analysis can provide evidence for the behavioral
+interaction. Null and `not_evaluable` outcomes are valid reportable results.
+
+## Reproduce Locally
+
+Use Python 3.12:
 
 ```bash
+git clone https://github.com/Fredo220/Answerability-x-Familarity-.git
+cd Answerability-x-Familarity-
+
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements/fa-core.lock
 python -m pip install --no-deps -e .
-python -m pytest -q
+python -m pytest -q tests/test_fa_r11_*.py
 ```
 
-The current Colab entry point is the
-[`Source-v6 R10 runbook`](docs/fa_source_v6_r10_runbook.md). Notebook
-[`06_familiarity_answerability_colab.ipynb`](notebooks/06_familiarity_answerability_colab.ipynb)
-is retained only as the archived Source-v5 execution record and must not be
-used for R10. Scientific logic remains in tested Python modules; notebooks and
-runbooks only orchestrate CLI transactions.
+The 8 GB local machine is suitable for tests, audits, analysis, and reporting.
+The pinned Gemma generation requires a Colab GPU in the current setup.
 
-The R10 registration was introduced at commit
-`e2968387167350913b624393b4e4b28ed86d491d`. The run must record the exact
-clean descendant commit checked out in Colab. Add `HF_TOKEN` through Colab
-Secrets; never paste or commit access tokens.
+## Run the Current R11 Screen
 
-## Integrity Boundary
+Add `HF_TOKEN` through Colab Secrets, check out a clean repository revision,
+and run:
 
-`behavior_test`, `probe_test`, and `intervention_test` are separate one-use,
-hash-bound endpoints. F2A feature, layer, hyperparameter, and null selections
-are frozen on `mechanism_train` and `locked_validation` before `probe_test` is
-unlocked. Reports are regenerated from canonical closed endpoint evidence.
+```bash
+COMMIT="$(git rev-parse HEAD)"
+test -z "$(git status --porcelain --untracked-files=all)"
 
-Negative and `not_evaluable` outcomes are publishable results. Thresholds and
-claims must not be changed after protected outcomes are opened.
+PYTHONPATH=src python tools/run_fa_r11_screening.py \
+  --config configs/familiarity_answerability_gemma2_2b.json \
+  --source-root data/fa/development_source_v6_r11 \
+  --split instrument_development \
+  --output-root /content/fa-r11-artifacts \
+  --pre-model-semantic-audit \
+    data/fa/development_source_v6_r11/pre_model_semantic_audit_v1.json \
+  --batch-size 16 \
+  --git-commit "$COMMIT"
+```
+
+The command is resumable and verifies source, audit, model, tokenizer, parser,
+and commit identities before reusing completed batches. Continue with the
+[R11 runbook](docs/fa_source_v6_r11_runbook.md) to freeze the selected
+relations and perform the one-shot validation.
+
+## Research Integrity
+
+- The Gemma model, tokenizer, chat template, parser, seeds, and thresholds are
+  pinned and hash-bound.
+- Development, validation, and confirmatory entities are separated.
+- Protected endpoints open once and fail closed on incomplete evidence.
+- Instrument changes are documented before new model outputs are inspected.
+- Negative runs remain part of the public record.
+- No access token should ever be pasted into code or committed.
+
+## Key Documents
+
+Start here:
+
+- [R11 runbook](docs/fa_source_v6_r11_runbook.md)
+- [R11 instrument amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
+- [Preregistration](docs/familiarity_answerability_preregistration.md)
+- [Claim boundaries](docs/familiarity_answerability_claims.md)
+
+Supporting protocols:
+
+- [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
+- [Main execution runbook](docs/familiarity_answerability_runbook.md)
+- [Implementation plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
+
+Historical corrections and failed instrument attempts are retained under
+[`docs/amendments`](docs/amendments) and [`docs/results`](docs/results).
