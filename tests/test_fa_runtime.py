@@ -187,6 +187,7 @@ def test_hf_runner_uses_auto_placement_and_memory_bounded_microbatches(monkeypat
         "from_pretrained",
         load_model,
     )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
 
     runner = HFModelRunner(active_config)
     completions = runner.generate(("one", "two", "three"), {"max_new_tokens": 1})
@@ -237,6 +238,45 @@ def test_hf_runner_places_the_complete_model_on_mps_when_available(monkeypatch):
     HFModelRunner(active_config)
 
     assert load_kwargs["device_map"] == {"": "mps"}
+    assert load_kwargs["torch_dtype"] == "auto"
+
+
+def test_hf_runner_places_complete_model_on_cpu_without_accelerator(monkeypatch):
+    active_config = config()
+    load_kwargs = {}
+
+    class FakeTokenizer:
+        pad_token_id = 0
+
+    class FakeModel:
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_pinned_tokenizer",
+        lambda supplied: SimpleNamespace(
+            tokenizer=FakeTokenizer(),
+            chat_template_sha256="f" * 64,
+        ),
+    )
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    import transformers
+
+    def load_model(model_id, **kwargs):
+        load_kwargs.update({"model_id": model_id, **kwargs})
+        return FakeModel()
+
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        load_model,
+    )
+
+    HFModelRunner(active_config)
+
+    assert load_kwargs["device_map"] == {"": "cpu"}
     assert load_kwargs["torch_dtype"] == "auto"
 
 

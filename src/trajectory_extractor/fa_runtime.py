@@ -75,6 +75,8 @@ class HFModelRunner:
         device_map: str | dict[str, str] = "auto"
         if torch.backends.mps.is_available():
             device_map = {"": "mps"}
+        elif not torch.cuda.is_available():
+            device_map = {"": "cpu"}
         self.model = AutoModelForCausalLM.from_pretrained(
             config.model_id,
             revision=config.model_revision,
