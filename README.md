@@ -19,6 +19,13 @@ registered, one-shot held-out instrument follow-up on the previously unopened
 occupation-answer normalization rule and does not change the research
 hypothesis, entity pool, protected endpoints, or confirmatory thresholds.
 
+The reported R10 run failed its frozen readiness gate. R11 is the current open
+development track: it screens a registered five-relation bank on a surplus
+candidate pool, deterministically selects three relations per domain, and
+tests that frozen instrument once on fresh entity-disjoint validation. The
+two-of-three familiarity threshold is unchanged. R11 is instrument
+development, not a test of the research hypothesis.
+
 The planned Fellowship artifact had two stages:
 
 1. **F1, behavioral interaction:** test familiarity by answerability with
@@ -44,6 +51,8 @@ beyond the registered task.
 - [Runbook](docs/familiarity_answerability_runbook.md)
 - [R10 Colab runbook](docs/fa_source_v6_r10_runbook.md)
 - [R10 preregistered amendment](docs/amendments/2026-07-26-fa-source-v6-r10-heldout-instrument-validation.md)
+- [R11 surplus-instrument amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
+- [R11 runbook](docs/fa_source_v6_r11_runbook.md)
 - [Claim ladder](docs/familiarity_answerability_claims.md)
 
 ## Compute Boundary

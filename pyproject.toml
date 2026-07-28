@@ -47,4 +47,7 @@ include = [
     "src/trajectory_extractor/fa_development_source.py",
     "src/trajectory_extractor/fa_development_frame.py",
     "src/trajectory_extractor/fa_development_screening.py",
+    "src/trajectory_extractor/fa_r11_instrument.py",
+    "src/trajectory_extractor/fa_r11_screening.py",
+    "src/trajectory_extractor/fa_r11_source.py",
 ]

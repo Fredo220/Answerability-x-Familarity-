@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "revision": "fa-development-screening-r11",
+  "claim_scope": "open_instrument_development_only",
+  "split_seed": 20260728,
+  "qualification_threshold": 2,
+  "relations_per_instrument": 3,
+  "development_candidates_per_domain": 32,
+  "validation_candidates_per_domain": 16,
+  "minimum_qualified_per_domain_validation": 8,
+  "selection_rule": [
+    "maximum two-of-three qualified entities",
+    "maximum minimum per-relation success count",
+    "maximum total success count",
+    "lexicographically smallest relation-ID triplet"
+  ],
+  "relation_bank": {
+    "creative_work": ["P57", "P577", "P495", "P136", "P364"],
+    "organization": ["P17", "P159", "P571", "P452", "P112"],
+    "person": ["P27", "P106", "P19", "P569", "P570"],
+    "place": ["P36", "P30", "P37", "P38", "P47"]
+  }
+}
