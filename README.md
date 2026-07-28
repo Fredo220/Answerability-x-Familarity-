@@ -32,10 +32,11 @@ A model may confuse **recognizing an entity** with **having enough evidence to
 answer a question about it**. This distinction matters for hallucination
 detection, uncertainty calibration, and reliable abstention.
 
-We use Gemma-2-2B as a reproducible, low-compute mechanism test, not as
-evidence for all LLMs. If accepted into the Anthropic Fellows Program, the same
-controlled protocol could be scaled to larger models to test whether the
-effect generalizes across model sizes and architectures.
+This study is deliberately scoped so it can be completed reproducibly with
+limited compute. It serves as a concrete demonstration of controlled
+hypothesis testing, scientific integrity, and research execution. I plan to
+complete it independently; with Fellowship mentorship and compute, I would
+pursue a more ambitious research question aligned with Anthropic's priorities.
 
 ## Experiment
 
