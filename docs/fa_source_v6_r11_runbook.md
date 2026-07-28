@@ -83,17 +83,22 @@ missing coverage, failed rows, shared auditor IDs, or hash mismatches.
 
 ## 2. Screen and select on open development
 
+The audited open-development source is committed at
+`data/fa/development_source_v6_r11`. Its audit is AI-assisted and is sufficient
+for the exploratory screening run only. A human-independent audit remains
+required before confirmatory reporting.
+
 ```bash
 COMMIT="$(git rev-parse HEAD)"
 test -z "$(git status --porcelain --untracked-files=all)"
 
 PYTHONPATH=src python tools/run_fa_r11_screening.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root /content/fa-r11-source \
+  --source-root data/fa/development_source_v6_r11 \
   --split instrument_development \
   --output-root /content/fa-r11-artifacts \
   --pre-model-semantic-audit \
-    /content/fa-r11-source/pre_model_semantic_audit_v1.json \
+    data/fa/development_source_v6_r11/pre_model_semantic_audit_v1.json \
   --batch-size 16 \
   --git-commit "$COMMIT"
 ```
@@ -105,7 +110,7 @@ reused.
 PYTHONPATH=src python tools/select_fa_r11_instrument.py select \
   --items /content/fa-r11-artifacts/instrument_development/<execution-identity-sha256>/screening_items.jsonl \
   --config configs/fa_source_v6_r11_development.json \
-  --source-manifest /content/fa-r11-source/source_manifest_v1.json \
+  --source-manifest data/fa/development_source_v6_r11/source_manifest_v1.json \
   --execution-identity \
     /content/fa-r11-artifacts/instrument_development/<execution-identity-sha256>/execution_identity.json \
   --git-commit "$COMMIT" \
@@ -126,11 +131,11 @@ model/config hashes, development item hash, and selection hash.
 ```bash
 PYTHONPATH=src python tools/run_fa_r11_screening.py \
   --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root /content/fa-r11-source \
+  --source-root data/fa/development_source_v6_r11 \
   --split construction_validation \
   --output-root /content/fa-r11-artifacts \
   --pre-model-semantic-audit \
-    /content/fa-r11-source/pre_model_semantic_audit_v1.json \
+    data/fa/development_source_v6_r11/pre_model_semantic_audit_v1.json \
   --selection /content/fa-r11-freeze/relation_selection_v1.json \
   --batch-size 16 \
   --git-commit "$COMMIT"

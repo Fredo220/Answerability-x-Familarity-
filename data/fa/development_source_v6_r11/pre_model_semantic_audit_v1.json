@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "fa_r11_pre_model_semantic_audit",
+  "status": "passed",
+  "blocker_count": 0,
+  "rows_sha256": "1b321c93af624604cde685be53b46c07bb9569070792073b0a23c9918c453a3b",
+  "items_file": "pre_model_semantic_audit_items_v1.jsonl",
+  "items_sha256": "eb49d599c170ed0e320fa8d6cd9e82ca1c4d3cfc1b0276ed4ecccf44ba1a3cf9",
+  "item_count": 960,
+  "audit_scope": "ai_assisted_open_instrument_development_only",
+  "confirmatory_human_independence": false
+}

@@ -1,0 +1,58 @@
+{
+  "claim_scope": "open_instrument_development_only",
+  "development_candidates_per_domain": 32,
+  "excluded_qid_count": 1357,
+  "excluded_qids_sha256": "7f9065512f153227ece96637d2503d05b3682f1de33dfdcffdcbcf9ec585667f",
+  "exclusion_manifest_sha256": "83489a389336612ccc5b1e84ed27e1efe73dea7aee18c5a072bc75bc421fe255",
+  "exclusion_parent_sha256s": [
+    "8c799c936c170ea01c02f65bacec22cfb3abbd7a037046bc326af3162ed08015",
+    "943d355c23605315be06987f85c0a133a494b1104d14cf3d8db4b70d63fcef56",
+    "dcfdf0abde94dd9a4e444b5e5e161cf636919ee6ecce2f804d07a685d4ba3a5d"
+  ],
+  "kind": "fa_r11_source_manifest",
+  "query_limit": 1000,
+  "query_sha256s": {
+    "creative_work": "1c90a1ece0c5eaa1fd3680ea46bc3705d180c2a1d1d69d199282d6c8747fee10",
+    "organization": "3bda8297c81bb477e3d43e3972ecaea84b97eadbea0110a26520b73b99ea3018",
+    "person": "84f9d54a3e9f886a60509d077e3e44851fcb816963916aa83402a3c7315ac8c0",
+    "place": "4675a8cd517ba9d705925280db2e919a9dd3476e3f5e7f1d896a9d9d6db581a9"
+  },
+  "relation_bank": {
+    "creative_work": [
+      "P57",
+      "P577",
+      "P495",
+      "P136",
+      "P364"
+    ],
+    "organization": [
+      "P17",
+      "P159",
+      "P571",
+      "P452",
+      "P112"
+    ],
+    "person": [
+      "P27",
+      "P106",
+      "P19",
+      "P569",
+      "P570"
+    ],
+    "place": [
+      "P36",
+      "P30",
+      "P37",
+      "P38",
+      "P610"
+    ]
+  },
+  "retrieval_date": "2026-07-28",
+  "row_count": 960,
+  "rows_file": "screening_prompts_v1.jsonl",
+  "rows_sha256": "1b321c93af624604cde685be53b46c07bb9569070792073b0a23c9918c453a3b",
+  "schema_version": 1,
+  "source_revision": "fa-development-source-v6-r11",
+  "split_seed": 20260728,
+  "validation_candidates_per_domain": 16
+}
