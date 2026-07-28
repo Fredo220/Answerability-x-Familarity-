@@ -40,25 +40,25 @@ pursue a more ambitious research question aligned with Anthropic's priorities.
 
 ## Research Approach
 
-1. **Controlled behavioral test — Our contribution**
+1. **Controlled behavioral test — (Our contribution**)
    We use a 2×2 design that independently varies entity familiarity and
    answerability. Matched prompts and synthetic facts test whether familiarity
    increases answer attempts when the required evidence is absent.
 
-2. **Population-level validation — Our contribution**
+2. **Population-level validation — (Our contribution**)
    We evaluate the interaction across multiple entities and domains rather
    than drawing conclusions from individual prompts.
 
-3. **Internal activation analysis — Combined approach**
+3. **Internal activation analysis — (Combined approach**)
    We test whether model activations predict the behavioral effect before the
    answer is generated.
 
-4. **Circuit tracing — Anthropic methodology**
+4. **Circuit tracing — (Anthropic methodology**)
    For preregistered representative cases, we use Anthropic-style Replacement
    Models, Cross-Layer Transcoders, and Attribution Graphs to generate
    hypotheses about the internal mechanism.
 
-5. **Causal validation — Combined contribution**
+5. **Causal validation — (Combined contribution**)
    We validate graph hypotheses through fidelity checks, controlled
    interventions, and appropriate null controls in the original model.
 
