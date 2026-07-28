@@ -38,6 +38,34 @@ hypothesis testing, scientific integrity, and research execution. I plan to
 complete it independently; with Fellowship mentorship and compute, I would
 pursue a more ambitious research question aligned with Anthropic's priorities.
 
+## Research Approach
+
+1. **Controlled behavioral test — Our contribution**
+   We use a 2×2 design that independently varies entity familiarity and
+   answerability. Matched prompts and synthetic facts test whether familiarity
+   increases answer attempts when the required evidence is absent.
+
+2. **Population-level validation — Our contribution**
+   We evaluate the interaction across multiple entities and domains rather
+   than drawing conclusions from individual prompts.
+
+3. **Internal activation analysis — Combined approach**
+   We test whether model activations predict the behavioral effect before the
+   answer is generated.
+
+4. **Circuit tracing — Anthropic methodology**
+   For preregistered representative cases, we use Anthropic-style Replacement
+   Models, Cross-Layer Transcoders, and Attribution Graphs to generate
+   hypotheses about the internal mechanism.
+
+5. **Causal validation — Combined contribution**
+   We validate graph hypotheses through fidelity checks, controlled
+   interventions, and appropriate null controls in the original model.
+
+Our primary contribution is the controlled Familiarity × Answerability
+experiment and its systematic dataset. Anthropic's tools provide the
+mechanistic framework used to investigate why the measured behavior occurs.
+
 ## Experiment
 
 The planned Fellowship artifact has two gated stages:
