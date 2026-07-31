@@ -64,7 +64,10 @@ from trajectory_extractor.fa_scoring import (
     SameStringSealEvidence,
     behavioral_gate,
     crossed_bootstrap,
+    estimate_same_string_behavior,
     estimate_behavior,
+    evaluate_same_string_primary,
+    same_string_crossed_bootstrap,
     score_response,
 )
 from trajectory_extractor.fa_report import (
@@ -200,6 +203,9 @@ _ACTIVATION_RUNNER_FACTORY = HFSelectedPositionRunner
 _ACTIVATION_SHARD_WRITER = write_activation_shard
 _BEHAVIOR_BOOTSTRAP = crossed_bootstrap
 _BEHAVIOR_GATE = behavioral_gate
+_SAME_STRING_ESTIMATOR = estimate_same_string_behavior
+_SAME_STRING_BOOTSTRAP = same_string_crossed_bootstrap
+_SAME_STRING_PRIMARY_EVALUATOR = evaluate_same_string_primary
 _PROBE_SELECTOR = fit_selection
 _PROBE_NULL_SELECTOR = run_full_selection_nulls
 _PROBE_BUNDLE_EVALUATOR = evaluate_probe_bundle_once
@@ -224,6 +230,17 @@ class VerifiedPromptManifest:
     generation: dict[str, Any]
     shard_manifest_path: Path
     shard_sha256: str
+
+
+@dataclass(frozen=True)
+class _BehaviorEvaluationSource:
+    prompt: VerifiedPromptManifest
+    same_string_seal: SameStringSealEvidence | None = None
+    same_string_index_sha256: str | None = None
+
+    @property
+    def is_same_string_primary(self) -> bool:
+        return self.same_string_index_sha256 is not None
 
 
 @dataclass(frozen=True)
@@ -2540,6 +2557,132 @@ def _load_same_string_confirmatory_index_for_audit(
     return ordered_examples, matches
 
 
+def _resolve_behavior_evaluation_source(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+) -> _BehaviorEvaluationSource:
+    """Resolve a legacy prompt capability or a fully verified Same-String index."""
+    supplied = store.verify_shard(path)
+    if supplied.record_kind != "same_string_confirmatory_index":
+        return _BehaviorEvaluationSource(prompt=_load_manifest(store, path, config))
+
+    examples, _matches = _load_same_string_confirmatory_index_for_audit(
+        store, path, config
+    )
+    records = _read_json_rows(supplied.data_path)
+    if len(records) != 1:
+        raise ValueError("same-string confirmatory index has an invalid schema")
+    row = records[0]
+    capabilities = row.get("capabilities")
+    behavior = (
+        capabilities.get("behavior_test")
+        if isinstance(capabilities, dict)
+        else None
+    )
+    if not isinstance(behavior, dict) or set(behavior) != {"manifest_path", "sha256"}:
+        raise ValueError("same-string behavior capability has an invalid schema")
+    prompt_path = _artifact_path_from_record(
+        store, behavior.get("manifest_path"), "same-string behavior capability"
+    )
+    prompt = _load_manifest(store, prompt_path, config)
+    seal = SameStringSealEvidence.from_record(row.get("same_string_seal"))
+    expected_ids = tuple(
+        sorted(
+            example.example_id
+            for example in examples
+            if example.split == "behavior_test"
+        )
+    )
+    if (
+        prompt.namespace != "behavior_test"
+        or prompt.shard_sha256 != behavior.get("sha256")
+        or seal.example_ids != expected_ids
+        or seal.example_ids
+        != tuple(sorted(example.example_id for example in prompt.examples))
+    ):
+        raise ValueError("same-string behavior capability or seal does not verify")
+    return _BehaviorEvaluationSource(
+        prompt=prompt,
+        same_string_seal=seal,
+        same_string_index_sha256=supplied.sha256,
+    )
+
+
+def _verify_same_string_behavior_selection(
+    store: FAArtifactStore,
+    config: FAConfig,
+    source: _BehaviorEvaluationSource,
+) -> str:
+    """Verify that sealing registered this exact Same-String index and seal."""
+    if not source.is_same_string_primary or source.same_string_seal is None:
+        raise ValueError("same-string behavior selection requires typed source evidence")
+    selection_path = (
+        store.root
+        / "runs"
+        / "familiarity_answerability"
+        / config.run_id
+        / "shards"
+        / "locked_validation"
+        / f"behavior-selection-{source.prompt.shard_sha256[:16]}.jsonl.manifest.json"
+    )
+    shard = _require_verified_shard_kind(
+        store,
+        selection_path,
+        "behavior_selection_manifest",
+        "verified same-string behavior selection",
+    )
+    rows = _read_json_rows(shard.data_path)
+    if len(rows) != 1:
+        raise ValueError("same-string behavior selection has an invalid schema")
+    row = rows[0]
+    expected = _behavior_selection_record(config, source)
+    if row != expected:
+        raise ValueError("same-string behavior selection does not bind this source")
+    selection_sha256 = _sha256_json(expected)
+    expected_lineage = {
+        "config_sha256": config.config_hash,
+        "prompt_manifest_sha256": source.prompt.shard_sha256,
+        "preregistration_sha256": expected["preregistration_sha256"],
+        "selection_sha256": selection_sha256,
+    }
+    sidecar = _read_json_object(shard.manifest_path)
+    if sidecar.get("lineage") != expected_lineage:
+        raise ValueError("same-string behavior selection lineage does not verify")
+    return selection_sha256
+
+
+def _behavior_selection_record(
+    config: FAConfig,
+    source: _BehaviorEvaluationSource,
+) -> dict[str, Any]:
+    preregistration_path = (
+        _SAME_STRING_AMENDMENT_PATH
+        if source.is_same_string_primary
+        else _PREREGISTRATION_PATH
+    )
+    record = {
+        "kind": "behavior_selection_manifest",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "prompt_manifest_sha256": source.prompt.shard_sha256,
+        "full_manifest_sha256": source.prompt.full_manifest_sha256,
+        "preregistration_sha256": hashlib.sha256(
+            preregistration_path.read_bytes()
+        ).hexdigest(),
+        "bootstrap_seed": config.bootstrap_seed,
+        "bootstrap_replicates": config.bootstrap_replicates,
+        "thresholds": dict(config.thresholds),
+        "selection_frozen_before_endpoint_open": True,
+    }
+    if source.is_same_string_primary:
+        if source.same_string_seal is None:
+            raise ValueError("same-string behavior source is missing its typed seal")
+        record["same_string_index_sha256"] = source.same_string_index_sha256
+        record["same_string_seal_sha256"] = source.same_string_seal.sha256
+    return record
+
+
 def _require_same_string_full_manifest_hash(
     config: FAConfig,
     examples: Sequence[FAExample],
@@ -3333,9 +3476,10 @@ def _seal_behavior_test(
     config: FAConfig, root: Path, args: argparse.Namespace
 ) -> dict[str, Any]:
     store = FAArtifactStore(root)
-    manifest = _load_manifest(
+    source = _resolve_behavior_evaluation_source(
         store, args.behavior_test_manifest, config
     )
+    manifest = source.prompt
     if manifest.namespace != "behavior_test":
         raise ValueError("behavior sealing requires a behavior_test prompt manifest")
     try:
@@ -3348,21 +3492,8 @@ def _seal_behavior_test(
     else:
         raise ValueError("behavior_test is already sealed")
 
-    preregistration_sha256 = hashlib.sha256(
-        _PREREGISTRATION_PATH.read_bytes()
-    ).hexdigest()
-    selection_record = {
-        "kind": "behavior_selection_manifest",
-        "schema_version": 1,
-        "config_sha256": config.config_hash,
-        "prompt_manifest_sha256": manifest.shard_sha256,
-        "full_manifest_sha256": manifest.full_manifest_sha256,
-        "preregistration_sha256": preregistration_sha256,
-        "bootstrap_seed": config.bootstrap_seed,
-        "bootstrap_replicates": config.bootstrap_replicates,
-        "thresholds": dict(config.thresholds),
-        "selection_frozen_before_endpoint_open": True,
-    }
+    selection_record = _behavior_selection_record(config, source)
+    preregistration_sha256 = selection_record["preregistration_sha256"]
     selection_sha256 = _sha256_json(selection_record)
     selection_shard = _write_or_resume_single_record(
         store,
@@ -3959,18 +4090,47 @@ def _evaluate_behavior_test(
     config: FAConfig, root: Path, args: argparse.Namespace
 ) -> dict[str, Any]:
     store = FAArtifactStore(root)
-    manifest = _load_manifest(store, args.manifest, config)
+    source = _resolve_behavior_evaluation_source(store, args.manifest, config)
+    manifest = source.prompt
     if manifest.namespace != "behavior_test":
         raise ValueError("behavior evaluation requires the protected behavior_test manifest")
+    same_string_selection_sha256 = (
+        _verify_same_string_behavior_selection(store, config, source)
+        if source.is_same_string_primary
+        else None
+    )
     state = store.endpoint_state("behavior_test", manifest.shard_manifest_path)
     if state == "closed":
         raise ValueError("behavior_test is already closed")
     if state == "evaluated":
+        if same_string_selection_sha256 is not None:
+            if source.same_string_seal is None:
+                raise ValueError("same-string recovery is missing typed seal evidence")
+            evaluated = store.read_evaluated_metrics(
+                "behavior_test", manifest.shard_manifest_path
+            )
+            lineage = _read_json_object(evaluated.manifest_path).get("lineage")
+            if not isinstance(lineage, dict) or (
+                lineage.get("behavior_selection_sha256")
+                != same_string_selection_sha256
+                or lineage.get("same_string_index_sha256")
+                != source.same_string_index_sha256
+                or lineage.get("same_string_seal_sha256")
+                != source.same_string_seal.sha256
+            ):
+                raise ValueError(
+                    "evaluated behavior result does not bind this same-string selection"
+                )
         store.close_endpoint("behavior_test")
         return {"status": "recovered", "endpoint_state": "closed"}
     receipt = store.unlock_or_resume_endpoint(
         "behavior_test", manifest.shard_manifest_path
     )
+    if (
+        same_string_selection_sha256 is not None
+        and receipt.selection_manifest_hash != same_string_selection_sha256
+    ):
+        raise ValueError("active behavior endpoint does not bind this same-string index")
     runner = HFModelRunner(config)
     validate_runner_binding(
         runner,
@@ -3995,34 +4155,50 @@ def _evaluate_behavior_test(
             "generation_manifest": str(generation.manifest_path),
         }
     scored = _score_rows(records, manifest)
-    metrics = estimate_behavior(scored)
-    bootstrap = _BEHAVIOR_BOOTSTRAP(
-        scored,
-        replicates=config.bootstrap_replicates,
-        seed=config.bootstrap_seed,
-    )
-    gate = _BEHAVIOR_GATE(
-        metrics,
-        bootstrap,
-        thresholds=config.thresholds,
-        same_string_sealed=any(
-            row.block == "same_string" for row in manifest.examples
-        ),
-        config_hash=config.config_hash,
-        manifest_hash=manifest.full_manifest_sha256,
-        same_string_seal=(
-            SameStringSealEvidence.from_registered_block(
-                source_manifest_sha256=manifest.full_manifest_sha256,
-                example_ids=tuple(
-                    row.example_id
-                    for row in manifest.examples
-                    if row.block == "same_string"
-                ),
-            )
-            if any(row.block == "same_string" for row in manifest.examples)
-            else None
-        ),
-    )
+    if source.is_same_string_primary:
+        metrics = _SAME_STRING_ESTIMATOR(scored)
+        bootstrap = _SAME_STRING_BOOTSTRAP(
+            scored,
+            replicates=config.bootstrap_replicates,
+            seed=config.bootstrap_seed,
+        )
+        gate = _SAME_STRING_PRIMARY_EVALUATOR(
+            metrics,
+            bootstrap,
+            thresholds=config.thresholds,
+            config_hash=config.config_hash,
+            manifest_hash=manifest.full_manifest_sha256,
+            same_string_seal=source.same_string_seal,
+        )
+    else:
+        metrics = estimate_behavior(scored)
+        bootstrap = _BEHAVIOR_BOOTSTRAP(
+            scored,
+            replicates=config.bootstrap_replicates,
+            seed=config.bootstrap_seed,
+        )
+        gate = _BEHAVIOR_GATE(
+            metrics,
+            bootstrap,
+            thresholds=config.thresholds,
+            same_string_sealed=any(
+                row.block == "same_string" for row in manifest.examples
+            ),
+            config_hash=config.config_hash,
+            manifest_hash=manifest.full_manifest_sha256,
+            same_string_seal=(
+                SameStringSealEvidence.from_registered_block(
+                    source_manifest_sha256=manifest.full_manifest_sha256,
+                    example_ids=tuple(
+                        row.example_id
+                        for row in manifest.examples
+                        if row.block == "same_string"
+                    ),
+                )
+                if any(row.block == "same_string" for row in manifest.examples)
+                else None
+            ),
+        )
     evidence = {
         "metrics": _json_safe(metrics.to_record()),
         "bootstrap": _json_safe(bootstrap.to_record()),
@@ -4031,10 +4207,12 @@ def _evaluate_behavior_test(
     }
     row = {
         "kind": "metrics",
-        "phase": "F1",
+        "phase": "same_string_primary" if source.is_same_string_primary else "F1",
         **evidence,
         "evidence_sha256": _sha256_json(evidence),
     }
+    if source.is_same_string_primary:
+        row["metric_type"] = "same_string_behavior_result"
     lineage = {
         "config_sha256": config.config_hash,
         "preregistration_sha256": receipt.preregistration_hash,
@@ -4043,14 +4221,27 @@ def _evaluate_behavior_test(
         "generation_manifest_sha256": generation.sha256,
         "evidence_sha256": row["evidence_sha256"],
     }
-    metrics_shard = _write_or_resume_metrics(
-        store,
-        config.run_id,
-        "behavior_test",
-        f"behavior-metrics-{receipt.lease_id}",
-        row,
-        lineage,
-    )
+    if source.is_same_string_primary:
+        lineage["same_string_index_sha256"] = source.same_string_index_sha256
+        lineage["same_string_seal_sha256"] = source.same_string_seal.sha256
+        lineage["behavior_selection_sha256"] = receipt.selection_manifest_hash
+        metrics_shard = _write_or_resume_metrics(
+            store,
+            config.run_id,
+            "behavior_test",
+            f"same-string-behavior-result-{receipt.lease_id}",
+            row,
+            lineage,
+        )
+    else:
+        metrics_shard = _write_or_resume_metrics(
+            store,
+            config.run_id,
+            "behavior_test",
+            f"behavior-metrics-{receipt.lease_id}",
+            row,
+            lineage,
+        )
     store.mark_evaluated(receipt, metrics_shard.data_path)
     store.close_endpoint("behavior_test")
     return {

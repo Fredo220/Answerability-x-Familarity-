@@ -24,6 +24,7 @@ from trajectory_extractor.fa_config import CONFIRMATORY_THRESHOLDS
 
 
 Cell = tuple[str, str, str]
+SameStringCell = tuple[str, str]
 _PRIMARY_TARGETS = ("screened_real", "matched_synthetic")
 _PRIMARY_ANSWERABILITY = ("target_bound", "distractor_bound", "code_absent")
 _H2B_EXPOSURES = ("high_exposure", "low_exposure")
@@ -291,6 +292,176 @@ class BootstrapDistribution:
 
 
 @dataclass(frozen=True)
+class SameStringBehaviorMetrics:
+    status: str
+    reasons: tuple[str, ...]
+    attempt_rate_by_cell: Mapping[SameStringCell, float]
+    abstention_rate_by_cell: Mapping[SameStringCell, float]
+    format_validity_by_cell: Mapping[SameStringCell, float]
+    exact_target_rate_by_cell: Mapping[SameStringCell, float]
+    completion_by_cell: Mapping[SameStringCell, float]
+    denominators: Mapping[SameStringCell, int]
+    invalid_format_counts: Mapping[SameStringCell, int]
+    complete_unit_count: int
+    interaction: float | None
+    capability_difference: float | None
+    example_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.status not in {"evaluable", "not_evaluable"}:
+            raise ValueError("same-string metrics status is invalid")
+        if type(self.complete_unit_count) is not int or self.complete_unit_count < 0:
+            raise ValueError("complete_unit_count must be nonnegative")
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        for name in (
+            "attempt_rate_by_cell",
+            "abstention_rate_by_cell",
+            "format_validity_by_cell",
+            "exact_target_rate_by_cell",
+            "completion_by_cell",
+            "denominators",
+            "invalid_format_counts",
+        ):
+            object.__setattr__(
+                self, name, _freeze_same_string_cells(getattr(self, name))
+            )
+        ids = tuple(self.example_ids)
+        if ids != tuple(sorted(set(ids))):
+            raise ValueError("same-string metric example IDs must be unique and canonical")
+        object.__setattr__(self, "example_ids", ids)
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reasons": list(self.reasons),
+            "attempt_rate_by_cell": _same_string_cell_record(
+                self.attempt_rate_by_cell
+            ),
+            "abstention_rate_by_cell": _same_string_cell_record(
+                self.abstention_rate_by_cell
+            ),
+            "format_validity_by_cell": _same_string_cell_record(
+                self.format_validity_by_cell
+            ),
+            "exact_target_rate_by_cell": _same_string_cell_record(
+                self.exact_target_rate_by_cell
+            ),
+            "completion_by_cell": _same_string_cell_record(self.completion_by_cell),
+            "denominators": _same_string_cell_record(self.denominators),
+            "invalid_format_counts": _same_string_cell_record(self.invalid_format_counts),
+            "complete_unit_count": self.complete_unit_count,
+            "interaction": self.interaction,
+            "capability_difference": self.capability_difference,
+            "example_ids": list(self.example_ids),
+        }
+
+
+@dataclass(frozen=True)
+class SameStringBootstrapDistribution:
+    interaction_samples: tuple[float, ...]
+    capability_difference_samples: tuple[float, ...]
+    interaction_interval: PercentileInterval | None
+    capability_difference_interval: PercentileInterval | None
+    weighted_denominators: tuple[int, ...]
+    complete_unit_counts: tuple[int, ...]
+    seed: int
+    requested_draws: int
+    valid_draws: int
+    discarded_draws: int
+    resampling_unit: tuple[str, ...] = ("entity_unit_id", "template_family")
+    alpha: float = 0.05
+
+    def __post_init__(self) -> None:
+        for name in (
+            "interaction_samples",
+            "capability_difference_samples",
+            "weighted_denominators",
+            "complete_unit_counts",
+        ):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+        if type(self.seed) is not int:
+            raise ValueError("seed must be an integer")
+        if (
+            type(self.requested_draws) is not int
+            or type(self.valid_draws) is not int
+            or type(self.discarded_draws) is not int
+            or self.requested_draws <= 0
+            or self.valid_draws < 0
+            or self.discarded_draws < 0
+            or self.valid_draws + self.discarded_draws != self.requested_draws
+        ):
+            raise ValueError("same-string bootstrap draw accounting is invalid")
+        if any(
+            len(values) != self.valid_draws
+            for values in (
+                self.interaction_samples,
+                self.capability_difference_samples,
+                self.weighted_denominators,
+                self.complete_unit_counts,
+            )
+        ):
+            raise ValueError("same-string bootstrap sample counts must equal valid_draws")
+        if any(value <= 0 for value in self.weighted_denominators):
+            raise ValueError("weighted denominators must be positive")
+        if any(value <= 0 for value in self.complete_unit_counts):
+            raise ValueError("complete unit counts must be positive")
+        if any(
+            not np.isfinite(value)
+            for values in (
+                self.interaction_samples,
+                self.capability_difference_samples,
+            )
+            for value in values
+        ):
+            raise ValueError("same-string bootstrap samples must be finite")
+        if self.valid_draws == 0 and (
+            self.interaction_interval is not None
+            or self.capability_difference_interval is not None
+        ):
+            raise ValueError("empty bootstrap cannot have intervals")
+        if self.valid_draws > 0 and (
+            self.interaction_interval is None
+            or self.capability_difference_interval is None
+        ):
+            raise ValueError("nonempty bootstrap requires both intervals")
+        unit = tuple(self.resampling_unit)
+        if unit != ("entity_unit_id", "template_family"):
+            raise ValueError("bootstrap resampling unit is not registered")
+        if (
+            type(self.alpha) not in {int, float}
+            or not np.isfinite(self.alpha)
+            or not 0.0 < float(self.alpha) < 1.0
+        ):
+            raise ValueError("bootstrap alpha must be finite and in (0, 1)")
+        object.__setattr__(self, "resampling_unit", unit)
+        object.__setattr__(self, "alpha", float(self.alpha))
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "interaction_samples": list(self.interaction_samples),
+            "capability_difference_samples": list(self.capability_difference_samples),
+            "interaction_interval": (
+                None
+                if self.interaction_interval is None
+                else self.interaction_interval.to_record()
+            ),
+            "capability_difference_interval": (
+                None
+                if self.capability_difference_interval is None
+                else self.capability_difference_interval.to_record()
+            ),
+            "weighted_denominators": list(self.weighted_denominators),
+            "complete_unit_counts": list(self.complete_unit_counts),
+            "seed": self.seed,
+            "requested_draws": self.requested_draws,
+            "valid_draws": self.valid_draws,
+            "discarded_draws": self.discarded_draws,
+            "resampling_unit": list(self.resampling_unit),
+            "alpha": self.alpha,
+        }
+
+
+@dataclass(frozen=True)
 class GateDecision:
     status: str
     reasons: tuple[str, ...]
@@ -403,6 +574,45 @@ class SameStringSealEvidence:
     @property
     def sha256(self) -> str:
         return _sha256_record(self.to_record())
+
+
+@dataclass(frozen=True)
+class SameStringPrimaryDecision:
+    status: str
+    reasons: tuple[str, ...]
+    thresholds: Mapping[str, float]
+    config_hash: str
+    manifest_hash: str
+    same_string_seal: SameStringSealEvidence | None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"supported", "not_supported", "not_evaluable"}:
+            raise ValueError("same-string primary status is invalid")
+        if dict(self.thresholds) != CONFIRMATORY_THRESHOLDS:
+            raise ValueError("thresholds must match registered thresholds")
+        _lowercase_sha256(self.config_hash, "config_hash")
+        _lowercase_sha256(self.manifest_hash, "manifest_hash")
+        if self.same_string_seal is not None and not isinstance(
+            self.same_string_seal, SameStringSealEvidence
+        ):
+            raise ValueError("same_string_seal must be typed evidence")
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        object.__setattr__(self, "thresholds", MappingProxyType(dict(self.thresholds)))
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reasons": list(self.reasons),
+            "thresholds": dict(self.thresholds),
+            "config_hash": self.config_hash,
+            "manifest_hash": self.manifest_hash,
+            "same_string_seal": (
+                None if self.same_string_seal is None else self.same_string_seal.to_record()
+            ),
+            "same_string_seal_sha256": (
+                None if self.same_string_seal is None else self.same_string_seal.sha256
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -584,6 +794,242 @@ def cross_resample(rows: Sequence[ScoredResponse], rng: np.random.Generator) -> 
         if multiplicity:
             sampled.append(replace(row, sampling_weight=row.sampling_weight * multiplicity))
     return tuple(sampled)
+
+
+def estimate_same_string_behavior(
+    rows: Sequence[ScoredResponse],
+) -> SameStringBehaviorMetrics:
+    """Estimate the registered four-cell Same-String primary design."""
+    source = _scored_rows(rows)
+    if any(row.block != "same_string" for row in source):
+        raise ValueError("same-string estimation accepts only same_string rows")
+    cells = tuple(
+        (exposure, answerability)
+        for exposure in _H2B_EXPOSURES
+        for answerability in _H2B_ANSWERABILITY
+    )
+    totals = defaultdict(int)
+    attempts = defaultdict(int)
+    abstentions = defaultdict(int)
+    formats = defaultdict(int)
+    exact_targets = defaultdict(int)
+    completions = defaultdict(int)
+    invalid = defaultdict(int)
+    by_unit: dict[str, list[ScoredResponse]] = defaultdict(list)
+    for row in source:
+        by_unit[row.entity_unit_id].append(row)
+        cell = (row.exposure, row.answerability)
+        if cell not in cells:
+            continue
+        weight = row.sampling_weight
+        totals[cell] += weight
+        attempts[cell] += weight * row.answer_attempt
+        abstentions[cell] += weight * int(row.outcome is OutcomeClass.ABSTENTION)
+        formats[cell] += weight * int(row.valid_format)
+        exact_targets[cell] += weight * int(row.outcome is OutcomeClass.EXACT_TARGET_CODE)
+        completions[cell] += weight * int(row.completed)
+        invalid[cell] += weight * int(row.outcome is OutcomeClass.INVALID_FORMAT)
+
+    expected = Counter(cells)
+    incomplete_units = tuple(
+        sorted(
+            unit_id
+            for unit_id, unit_rows in by_unit.items()
+            if Counter((row.exposure, row.answerability) for row in unit_rows) != expected
+            or len({row.template_family for row in unit_rows}) != 1
+        )
+    )
+    reasons = [f"incomplete_unit:{unit_id}" for unit_id in incomplete_units]
+    missing = tuple(cell for cell in cells if totals[cell] == 0)
+    reasons.extend(f"missing_cell:{cell[0]}:{cell[1]}" for cell in missing)
+    reasons.extend(
+        f"completion<1.0:{cell[0]}:{cell[1]}"
+        for cell in cells
+        if totals[cell] and completions[cell] / totals[cell] < 1.0
+    )
+    example_ids = tuple(sorted(row.example_id for row in source))
+    if len(set(example_ids)) != len(example_ids):
+        reasons.append("duplicate_example_ids")
+
+    def rates(numerators: Mapping[SameStringCell, int]) -> dict[SameStringCell, float]:
+        return {
+            cell: numerators[cell] / totals[cell] if totals[cell] else float("nan")
+            for cell in cells
+        }
+
+    attempt_rates = rates(attempts)
+    exact_rates = rates(exact_targets)
+    interaction = None
+    capability = None
+    if not missing:
+        interaction = (
+            attempt_rates[("high_exposure", "code_absent")]
+            - attempt_rates[("low_exposure", "code_absent")]
+        ) - (
+            attempt_rates[("high_exposure", "target_bound")]
+            - attempt_rates[("low_exposure", "target_bound")]
+        )
+        capability = (
+            exact_rates[("high_exposure", "target_bound")]
+            - exact_rates[("low_exposure", "target_bound")]
+        )
+    return SameStringBehaviorMetrics(
+        status="not_evaluable" if reasons else "evaluable",
+        reasons=tuple(reasons),
+        attempt_rate_by_cell=attempt_rates,
+        abstention_rate_by_cell=rates(abstentions),
+        format_validity_by_cell=rates(formats),
+        exact_target_rate_by_cell=exact_rates,
+        completion_by_cell=rates(completions),
+        denominators={cell: totals[cell] for cell in cells},
+        invalid_format_counts={cell: invalid[cell] for cell in cells},
+        complete_unit_count=len(by_unit) - len(incomplete_units),
+        interaction=interaction,
+        capability_difference=capability,
+        example_ids=example_ids,
+    )
+
+
+def same_string_crossed_bootstrap(
+    rows: Sequence[ScoredResponse], replicates: int, seed: int
+) -> SameStringBootstrapDistribution:
+    """Cross-resample complete Same-String units without factorial dependencies."""
+    source = _scored_rows(rows)
+    if any(row.block != "same_string" for row in source):
+        raise ValueError("same-string bootstrap accepts only same_string rows")
+    if type(replicates) is not int or replicates <= 0:
+        raise ValueError("replicates must be a positive integer")
+    if type(seed) is not int:
+        raise ValueError("seed must be an integer")
+    observed = estimate_same_string_behavior(source)
+    if observed.status != "evaluable":
+        return SameStringBootstrapDistribution(
+            interaction_samples=(),
+            capability_difference_samples=(),
+            interaction_interval=None,
+            capability_difference_interval=None,
+            weighted_denominators=(),
+            complete_unit_counts=(),
+            seed=seed,
+            requested_draws=replicates,
+            valid_draws=0,
+            discarded_draws=replicates,
+        )
+    rng = np.random.default_rng(seed)
+    interactions: list[float] = []
+    capabilities: list[float] = []
+    denominators: list[int] = []
+    unit_counts: list[int] = []
+    discarded = 0
+    for _ in range(replicates):
+        sampled = cross_resample(source, rng)
+        if not sampled:
+            discarded += 1
+            continue
+        metrics = estimate_same_string_behavior(sampled)
+        if (
+            metrics.status != "evaluable"
+            or metrics.interaction is None
+            or metrics.capability_difference is None
+        ):
+            discarded += 1
+            continue
+        interactions.append(metrics.interaction)
+        capabilities.append(metrics.capability_difference)
+        denominators.append(sum(metrics.denominators.values()))
+        unit_counts.append(metrics.complete_unit_count)
+    valid = len(interactions)
+    return SameStringBootstrapDistribution(
+        interaction_samples=tuple(interactions),
+        capability_difference_samples=tuple(capabilities),
+        interaction_interval=(
+            _interval(interactions, observed.interaction)
+            if interactions and observed.interaction is not None
+            else None
+        ),
+        capability_difference_interval=(
+            _interval(capabilities, observed.capability_difference)
+            if capabilities and observed.capability_difference is not None
+            else None
+        ),
+        weighted_denominators=tuple(denominators),
+        complete_unit_counts=tuple(unit_counts),
+        seed=seed,
+        requested_draws=replicates,
+        valid_draws=valid,
+        discarded_draws=discarded,
+    )
+
+
+def evaluate_same_string_primary(
+    metrics: SameStringBehaviorMetrics,
+    bootstrap: SameStringBootstrapDistribution,
+    *,
+    thresholds: Mapping[str, float],
+    config_hash: str,
+    manifest_hash: str,
+    same_string_seal: SameStringSealEvidence | None,
+) -> SameStringPrimaryDecision:
+    """Apply the preregistered Same-String support rule with exact provenance."""
+    if not isinstance(metrics, SameStringBehaviorMetrics):
+        raise ValueError("metrics must be SameStringBehaviorMetrics")
+    if not isinstance(bootstrap, SameStringBootstrapDistribution):
+        raise ValueError("bootstrap must be SameStringBootstrapDistribution")
+    if not isinstance(thresholds, Mapping) or dict(thresholds) != CONFIRMATORY_THRESHOLDS:
+        raise ValueError("thresholds must match registered thresholds")
+    _lowercase_sha256(config_hash, "config_hash")
+    _lowercase_sha256(manifest_hash, "manifest_hash")
+    seal_valid = (
+        isinstance(same_string_seal, SameStringSealEvidence)
+        and same_string_seal.source_manifest_sha256 == manifest_hash
+        and same_string_seal.example_ids == metrics.example_ids
+    )
+    not_evaluable = []
+    if not seal_valid:
+        not_evaluable.append("invalid_or_missing_same_string_seal")
+    if metrics.status != "evaluable":
+        not_evaluable.extend(metrics.reasons)
+    if bootstrap.valid_draws == 0:
+        not_evaluable.append("no_valid_bootstrap_draws")
+    if (
+        metrics.interaction is None
+        or metrics.capability_difference is None
+        or bootstrap.interaction_interval is None
+        or bootstrap.capability_difference_interval is None
+    ):
+        not_evaluable.append("missing_same_string_estimate_or_interval")
+    if not_evaluable:
+        return SameStringPrimaryDecision(
+            status="not_evaluable",
+            reasons=tuple(dict.fromkeys(not_evaluable)),
+            thresholds=thresholds,
+            config_hash=config_hash,
+            manifest_hash=manifest_hash,
+            same_string_seal=same_string_seal if seal_valid else None,
+        )
+
+    reasons = []
+    if metrics.interaction < _threshold(thresholds, "h1_min_interaction"):
+        reasons.append("interaction_point_estimate_below_minimum")
+    if bootstrap.interaction_interval.lower <= 0.0:
+        reasons.append("interaction_interval_not_positive")
+    if any(
+        value < _threshold(thresholds, "format_validity_min")
+        for value in metrics.format_validity_by_cell.values()
+    ):
+        reasons.append("format_validity_below_minimum")
+    if bootstrap.capability_difference_interval.lower <= -_threshold(
+        thresholds, "h2_noninferiority_margin"
+    ):
+        reasons.append("capability_noninferiority_lower_bound")
+    return SameStringPrimaryDecision(
+        status="supported" if not reasons else "not_supported",
+        reasons=tuple(reasons),
+        thresholds=thresholds,
+        config_hash=config_hash,
+        manifest_hash=manifest_hash,
+        same_string_seal=same_string_seal,
+    )
 
 
 def behavioral_gate(
@@ -931,8 +1377,30 @@ def _freeze_cells(values: Mapping[Cell, Any]) -> Mapping[Cell, Any]:
     return MappingProxyType(frozen)
 
 
+def _freeze_same_string_cells(
+    values: Mapping[SameStringCell, Any],
+) -> Mapping[SameStringCell, Any]:
+    frozen = {}
+    for cell, value in values.items():
+        if (
+            not isinstance(cell, tuple)
+            or len(cell) != 2
+            or not all(isinstance(item, str) for item in cell)
+        ):
+            raise ValueError("same-string cell keys must be two text labels")
+        frozen[cell] = value
+    return MappingProxyType(frozen)
+
+
 def _cell_record(values: Mapping[Cell, Any]) -> dict[str, Any]:
     return {
         f"{target}:{distractor}:{answerability}": value
         for (target, distractor, answerability), value in sorted(values.items())
+    }
+
+
+def _same_string_cell_record(values: Mapping[SameStringCell, Any]) -> dict[str, Any]:
+    return {
+        f"{exposure}:{answerability}": value
+        for (exposure, answerability), value in sorted(values.items())
     }

@@ -14,7 +14,10 @@ from trajectory_extractor.fa_scoring import (
     SameStringSealEvidence,
     behavioral_gate,
     crossed_bootstrap,
+    estimate_same_string_behavior,
     estimate_behavior,
+    evaluate_same_string_primary,
+    same_string_crossed_bootstrap,
     score_response,
 )
 
@@ -104,7 +107,10 @@ def example(
     exposure: str | None = None,
 ) -> Example:
     return Example(
-        example_id=f"example-{index}-{target_familiarity}-{distractor_familiarity}-{answerability}",
+        example_id=(
+            f"example-{index}-{target_familiarity}-{distractor_familiarity}-{answerability}"
+            + (f"-{exposure}" if exposure is not None else "")
+        ),
         entity_unit_id=f"unit-{index}",
         template_family=template_family,
         target_familiarity=target_familiarity,
@@ -376,6 +382,161 @@ def same_string_rows():
                 )
                 rows.append(score(row, output))
     return tuple(rows)
+
+
+def same_string_primary_result(rows=None, *, seal=True):
+    rows = same_string_rows() if rows is None else tuple(rows)
+    metrics = estimate_same_string_behavior(rows)
+    bootstrap = same_string_crossed_bootstrap(rows, replicates=101, seed=42)
+    typed_seal = (
+        SameStringSealEvidence.from_registered_block(
+            source_manifest_sha256="b" * 64,
+            example_ids=tuple(row.example_id for row in rows),
+        )
+        if seal
+        else None
+    )
+    decision = evaluate_same_string_primary(
+        metrics,
+        bootstrap,
+        thresholds=CONFIRMATORY_THRESHOLDS,
+        config_hash="a" * 64,
+        manifest_hash="b" * 64,
+        same_string_seal=typed_seal,
+    )
+    return metrics, bootstrap, decision
+
+
+def test_same_string_primary_estimator_reports_registered_cells_and_effects():
+    metrics, bootstrap, decision = same_string_primary_result()
+
+    assert metrics.status == "evaluable"
+    assert metrics.complete_unit_count == 2
+    assert metrics.interaction == pytest.approx(1.0)
+    assert metrics.capability_difference == pytest.approx(0.0)
+    assert metrics.attempt_rate_by_cell[("high_exposure", "code_absent")] == 1.0
+    assert metrics.abstention_rate_by_cell[("low_exposure", "code_absent")] == 1.0
+    assert metrics.exact_target_rate_by_cell[("high_exposure", "target_bound")] == 1.0
+    assert bootstrap.interaction_interval.lower > 0.0
+    assert bootstrap.capability_difference_interval.lower > -0.05
+    assert decision.status == "supported"
+    assert decision.to_record()["same_string_seal_sha256"] is not None
+
+
+@pytest.mark.parametrize(
+    ("high_absent", "low_absent", "expected_reason"),
+    [
+        ("UNKNOWN", "UNKNOWN", "interaction_point_estimate_below_minimum"),
+        ("UNKNOWN", "K8N3R", "interaction_interval_not_positive"),
+    ],
+)
+def test_same_string_primary_rejects_null_and_wrong_direction(
+    high_absent, low_absent, expected_reason
+):
+    rows = []
+    for row in same_string_rows():
+        if row.answerability == "code_absent":
+            output = high_absent if row.exposure == "high_exposure" else low_absent
+            rows.append(score(example(
+                int(row.entity_unit_id.rsplit("-", 1)[1]),
+                answerability="code_absent",
+                template_family=row.template_family,
+                block="same_string",
+                exposure=row.exposure,
+            ), output))
+        else:
+            rows.append(row)
+
+    _metrics, _bootstrap, decision = same_string_primary_result(rows)
+
+    assert decision.status == "not_supported"
+    assert expected_reason in decision.reasons
+
+
+def test_same_string_primary_is_not_evaluable_for_incomplete_cells_or_missing_seal():
+    incomplete = same_string_rows()[:-1]
+    metrics = estimate_same_string_behavior(incomplete)
+    bootstrap = same_string_crossed_bootstrap(incomplete, replicates=17, seed=42)
+    decision = evaluate_same_string_primary(
+        metrics,
+        bootstrap,
+        thresholds=CONFIRMATORY_THRESHOLDS,
+        config_hash="a" * 64,
+        manifest_hash="b" * 64,
+        same_string_seal=None,
+    )
+
+    assert metrics.status == "not_evaluable"
+    assert bootstrap.valid_draws == 0
+    assert decision.status == "not_evaluable"
+    assert "invalid_or_missing_same_string_seal" in decision.reasons
+    assert any(reason.startswith("incomplete_unit:") for reason in decision.reasons)
+
+
+def test_same_string_primary_requires_format_validity_and_capability_preservation():
+    low_format = list(same_string_rows())
+    source = next(
+        row for row in low_format
+        if row.exposure == "high_exposure" and row.answerability == "code_absent"
+    )
+    replacement = score(
+        example(
+            int(source.entity_unit_id.rsplit("-", 1)[1]),
+            answerability=source.answerability,
+            template_family=source.template_family,
+            block="same_string",
+            exposure=source.exposure,
+        ),
+        "",
+    )
+    low_format[low_format.index(source)] = replacement
+    _metrics, _bootstrap, format_decision = same_string_primary_result(low_format)
+    assert format_decision.status == "not_supported"
+    assert "format_validity_below_minimum" in format_decision.reasons
+
+    impaired = []
+    for row in same_string_rows():
+        if row.answerability == "target_bound":
+            output = "UNKNOWN" if row.exposure == "high_exposure" else "K7M2Q"
+            impaired.append(score(
+                example(
+                    int(row.entity_unit_id.rsplit("-", 1)[1]),
+                    answerability="target_bound",
+                    template_family=row.template_family,
+                    block="same_string",
+                    exposure=row.exposure,
+                ),
+                output,
+            ))
+        else:
+            impaired.append(row)
+    _metrics, _bootstrap, capability_decision = same_string_primary_result(impaired)
+    assert capability_decision.status == "not_supported"
+    assert "capability_noninferiority_lower_bound" in capability_decision.reasons
+
+
+def test_same_string_primary_rejects_non_same_string_rows_and_mismatched_seal():
+    with pytest.raises(ValueError, match="only same_string"):
+        estimate_same_string_behavior((*same_string_rows(), complete_factorial_rows()[0]))
+
+    rows = same_string_rows()
+    metrics = estimate_same_string_behavior(rows)
+    bootstrap = same_string_crossed_bootstrap(rows, replicates=17, seed=42)
+    wrong_seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256="b" * 64,
+        example_ids=("another-example",),
+    )
+    decision = evaluate_same_string_primary(
+        metrics,
+        bootstrap,
+        thresholds=CONFIRMATORY_THRESHOLDS,
+        config_hash="a" * 64,
+        manifest_hash="b" * 64,
+        same_string_seal=wrong_seal,
+    )
+
+    assert decision.status == "not_evaluable"
+    assert "invalid_or_missing_same_string_seal" in decision.reasons
 
 
 def test_gate_reports_h1_h2_and_h2b_separately_and_h2b_cannot_rescue_h1():

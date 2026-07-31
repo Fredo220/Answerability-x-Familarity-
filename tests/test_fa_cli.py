@@ -45,6 +45,7 @@ from trajectory_extractor.fa_naturalness import (
     submission_record,
 )
 from trajectory_extractor.fa_runtime import run_generation_shard
+from trajectory_extractor.fa_scoring import SameStringSealEvidence
 from trajectory_extractor.fa_probes import (
     OUTPUT_CONTROL_SCHEMA_SHA256,
     ProbeRow,
@@ -2969,6 +2970,253 @@ def test_behavior_test_command_closes_one_use_endpoint_with_canonical_metrics(
     metrics = store.verify_shard(payload["metrics_manifest"])
     assert metrics.record_kind == "metrics"
     assert metrics.namespace == "behavior_test"
+
+
+def test_same_string_behavior_index_tampering_fails_before_model_initialization(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    index = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "tampered-same-string-index",
+        ({"kind": "same_string_confirmatory_index"},),
+        {"config_sha256": config.config_hash},
+        record_kind="same_string_confirmatory_index",
+    )
+
+    class MustNotInitialize:
+        def __init__(self, _config):
+            raise AssertionError("model must not initialize before index verification")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotInitialize)
+    with pytest.raises(ValueError, match="invalid schema"):
+        fa_cli._evaluate_behavior_test(
+            config,
+            tmp_path,
+            SimpleNamespace(manifest=index.manifest_path, shard_id="must-not-run"),
+        )
+
+
+def test_same_string_behavior_index_uses_primary_evaluator_and_result_kind(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _rows, prompt_shard = prompt_capability(tmp_path, config, "behavior_test")
+    prompt = fa_cli._load_manifest(
+        FAArtifactStore(tmp_path), prompt_shard.manifest_path, config
+    )
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256=prompt.full_manifest_sha256,
+        example_ids=tuple(row.example_id for row in prompt.examples),
+    )
+    source = fa_cli._BehaviorEvaluationSource(
+        prompt=prompt,
+        same_string_seal=seal,
+        same_string_index_sha256="e" * 64,
+    )
+    store = FAArtifactStore(tmp_path)
+    store.seal_endpoint(
+        "behavior_test",
+        (store.verify_shard(prompt.shard_manifest_path),),
+        {"preregistration": "c" * 64, "selection_manifest": "d" * 64},
+    )
+
+    class CanonicalRecord:
+        def __init__(self, value):
+            self.value = value
+
+        def to_record(self):
+            return dict(self.value)
+
+    calls = []
+    monkeypatch.setattr(
+        fa_cli,
+        "_resolve_behavior_evaluation_source",
+        lambda *_args: source,
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_verify_same_string_behavior_selection",
+        lambda *_args: "d" * 64,
+    )
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeRunner)
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_ESTIMATOR",
+        lambda rows: calls.append(("estimate", len(rows))) or CanonicalRecord(
+            {"status": "evaluable"}
+        ),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_BOOTSTRAP",
+        lambda rows, replicates, seed: calls.append(
+            ("bootstrap", len(rows), replicates, seed)
+        )
+        or CanonicalRecord({"valid_draws": replicates}),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_PRIMARY_EVALUATOR",
+        lambda metrics, bootstrap, **kwargs: calls.append(
+            ("gate", kwargs["same_string_seal"].sha256)
+        )
+        or CanonicalRecord({"status": "not_supported"}),
+    )
+
+    payload = fa_cli._evaluate_behavior_test(
+        config,
+        tmp_path,
+        SimpleNamespace(manifest="verified-index.json", shard_id="same-string-primary"),
+    )
+
+    assert payload["status"] == "evaluated"
+    assert payload["endpoint_state"] == "closed"
+    result = store.verify_shard(payload["metrics_manifest"])
+    assert result.record_kind == "metrics"
+    row = fa_cli._read_json_rows(result.data_path)[0]
+    assert row["kind"] == "metrics"
+    assert row["metric_type"] == "same_string_behavior_result"
+    assert row["phase"] == "same_string_primary"
+    assert [call[0] for call in calls] == ["estimate", "bootstrap", "gate"]
+
+
+@pytest.mark.parametrize(
+    ("tamper", "message"),
+    (
+        ("threshold", "does not bind this source"),
+        ("lineage", "lineage does not verify"),
+    ),
+)
+def test_same_string_behavior_selection_rejects_threshold_and_lineage_tampering(
+    tmp_path, tamper, message
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _rows, prompt_shard = prompt_capability(tmp_path, config, "behavior_test")
+    store = FAArtifactStore(tmp_path)
+    prompt = fa_cli._load_manifest(store, prompt_shard.manifest_path, config)
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256=prompt.full_manifest_sha256,
+        example_ids=tuple(row.example_id for row in prompt.examples),
+    )
+    source = fa_cli._BehaviorEvaluationSource(
+        prompt=prompt,
+        same_string_seal=seal,
+        same_string_index_sha256="e" * 64,
+    )
+    record = fa_cli._behavior_selection_record(config, source)
+    if tamper == "threshold":
+        record["thresholds"] = {
+            **record["thresholds"],
+            "h1_min_interaction": 0.0,
+        }
+    selection_sha256 = fa_cli._sha256_json(record)
+    lineage = {
+        "config_sha256": config.config_hash,
+        "prompt_manifest_sha256": prompt.shard_sha256,
+        "preregistration_sha256": record["preregistration_sha256"],
+        "selection_sha256": selection_sha256,
+    }
+    if tamper == "lineage":
+        lineage["unexpected"] = "self-consistent-but-unregistered"
+    store.write_completed_shard(
+        config.run_id,
+        "locked_validation",
+        f"behavior-selection-{prompt.shard_sha256[:16]}",
+        (record,),
+        lineage,
+        record_kind="behavior_selection_manifest",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fa_cli._verify_same_string_behavior_selection(store, config, source)
+
+
+def test_same_string_behavior_recovery_rechecks_selection_binding(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(CONFIG_PATH)
+    _rows, prompt_shard = prompt_capability(tmp_path, config, "behavior_test")
+    store = FAArtifactStore(tmp_path)
+    prompt = fa_cli._load_manifest(store, prompt_shard.manifest_path, config)
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256=prompt.full_manifest_sha256,
+        example_ids=tuple(row.example_id for row in prompt.examples),
+    )
+    source = fa_cli._BehaviorEvaluationSource(
+        prompt=prompt,
+        same_string_seal=seal,
+        same_string_index_sha256="e" * 64,
+    )
+
+    class CanonicalRecord:
+        def __init__(self, value):
+            self.value = value
+
+        def to_record(self):
+            return dict(self.value)
+
+    monkeypatch.setattr(
+        fa_cli, "_resolve_behavior_evaluation_source", lambda *_args: source
+    )
+    fa_cli._seal_behavior_test(
+        config,
+        tmp_path,
+        SimpleNamespace(behavior_test_manifest="verified-index.json"),
+    )
+    monkeypatch.setattr(fa_cli, "HFModelRunner", FakeRunner)
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_ESTIMATOR",
+        lambda rows: CanonicalRecord({"status": "evaluable"}),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_BOOTSTRAP",
+        lambda rows, replicates, seed: CanonicalRecord({"valid_draws": replicates}),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_SAME_STRING_PRIMARY_EVALUATOR",
+        lambda metrics, bootstrap, **kwargs: CanonicalRecord(
+            {"status": "not_supported"}
+        ),
+    )
+    original_close = FAArtifactStore.close_endpoint
+    monkeypatch.setattr(
+        FAArtifactStore,
+        "close_endpoint",
+        lambda self, endpoint: (_ for _ in ()).throw(RuntimeError("crash before close")),
+    )
+    with pytest.raises(RuntimeError, match="crash before close"):
+        fa_cli._evaluate_behavior_test(
+            config,
+            tmp_path,
+            SimpleNamespace(manifest="verified-index.json", shard_id="recovery"),
+        )
+    assert store.endpoint_state("behavior_test", prompt.shard_manifest_path) == "evaluated"
+
+    monkeypatch.setattr(FAArtifactStore, "close_endpoint", original_close)
+    monkeypatch.setattr(
+        fa_cli,
+        "_verify_same_string_behavior_selection",
+        lambda *_args: "f" * 64,
+    )
+
+    class MustNotInitialize:
+        def __init__(self, _config):
+            raise AssertionError("recovery must not initialize the model")
+
+    monkeypatch.setattr(fa_cli, "HFModelRunner", MustNotInitialize)
+    with pytest.raises(ValueError, match="does not bind this same-string selection"):
+        fa_cli._evaluate_behavior_test(
+            config,
+            tmp_path,
+            SimpleNamespace(manifest="verified-index.json", shard_id="recovery"),
+        )
+    assert store.endpoint_state("behavior_test", prompt.shard_manifest_path) == "evaluated"
 
 
 def test_fa_dispatch_is_isolated_and_cli_routes_fa_commands(tmp_path, capsys, monkeypatch):
