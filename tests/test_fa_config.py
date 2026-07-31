@@ -75,6 +75,17 @@ def test_confirmatory_config_is_canonical_and_pinned():
     ).encode("utf-8")
 
 
+def test_same_string_confirmatory_config_reuses_registered_model_and_counts():
+    config = FAConfig.from_json(
+        "configs/familiarity_answerability_same_string_gemma2_2b.json"
+    )
+    assert config.study_id == "familiarity-answerability-same-string-gemma2-2b-v1"
+    assert config.run_id == "same-string-primary-v1"
+    assert config.model_revision == "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+    assert config.split_counts["behavior_test"] == 48
+    assert config.thresholds["h1_min_interaction"] == 0.05
+
+
 def test_config_rejects_mutable_revision_and_unknown_split(tmp_path):
     payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
     payload["model_revision"] = "main"
