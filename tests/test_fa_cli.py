@@ -55,6 +55,11 @@ CONFIG_PATH = (
     / "configs"
     / "familiarity_answerability_qwen06b_smoke.json"
 )
+SAME_STRING_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "configs"
+    / "familiarity_answerability_same_string_gemma2_2b.json"
+)
 
 MATCH = {
     "pair_id": "Q1--syn-1",
@@ -230,6 +235,199 @@ def install_fake_tokenizer(monkeypatch):
         "_TOKENIZER_LOADER",
         lambda model_id, *, revision: FakeTokenizer(),
     )
+
+
+def same_string_source_manifests(tmp_path, config, *, surplus_per_domain=1):
+    """Write complete direct-match inputs with one deterministic reserve per cell."""
+    paths = []
+    domains = ("person", "place", "organization", "creative_work")
+    index = 1
+    for split, split_count in config.split_counts.items():
+        candidates = []
+        synthetic = []
+        for domain in domains:
+            for _ in range(split_count // len(domains) + surplus_per_domain):
+                real_name = f"Old Name {index}"
+                synthetic_name = f"New Name {index}"
+                candidates.append(
+                    {
+                        "entity_id": f"entity-{index}",
+                        "qid": f"Q{index}",
+                        "name": real_name,
+                        "coarse_type": domain,
+                        "split": split,
+                        "source_query": "same-string-source-v1",
+                        "source_provenance": "CC0-1.0",
+                        "screening_aliases": [["alpha"], ["beta"], ["gamma"]],
+                    }
+                )
+                synthetic.append(
+                    {
+                        "candidate_id": f"synthetic-{index}",
+                        "name": synthetic_name,
+                        "coarse_type": domain,
+                        "split": split,
+                        "generator_revision": "same-string-names-v1",
+                    }
+                )
+                index += 1
+        candidate_path = tmp_path / f"candidates-{split}.json"
+        synthetic_path = tmp_path / f"synthetic-{split}.json"
+        candidate_path.write_text(json.dumps(candidates), encoding="utf-8")
+        synthetic_path.write_text(json.dumps(synthetic), encoding="utf-8")
+        paths.append((candidate_path, synthetic_path))
+    return tuple(paths)
+
+
+def same_string_command_args(tmp_path, sources, *, shard_id="same-string-matches-v1"):
+    args = [
+        "fa-prepare-same-string-matches",
+        "--config",
+        str(SAME_STRING_CONFIG_PATH),
+        "--root",
+        str(tmp_path),
+    ]
+    for candidate, _ in sources:
+        args.extend(("--candidate-manifest", str(candidate)))
+    for _, synthetic in sources:
+        args.extend(("--synthetic-manifest", str(synthetic)))
+    return [*args, "--shard-id", shard_id]
+
+
+def test_same_string_matches_prepare_direct_collection_without_screening(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    tokenizer = FakeTokenizer()
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=tokenizer),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_screening_completions",
+        lambda *args, **kwargs: pytest.fail("direct same-string preparation loaded screening"),
+    )
+
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "prepared"
+    assert payload["split_counts"] == dict(config.split_counts)
+    collection = fa_cli._load_verified_same_string_match_collection(
+        FAArtifactStore(tmp_path), payload["manifest"], config
+    )
+    assert Counter(row.split for row in collection) == Counter(config.split_counts)
+    for split, count in config.split_counts.items():
+        assert Counter(
+            row.coarse_type for row in collection if row.split == split
+        ) == Counter({"person": count // 4, "place": count // 4, "organization": count // 4, "creative_work": count // 4})
+    assert collection == tuple(
+        sorted(
+            collection,
+            key=lambda row: (
+                row.split,
+                hashlib.sha256(row.pair_id.encode("utf-8")).hexdigest(),
+                row.pair_id,
+            ),
+        )
+    )
+
+
+def test_same_string_matches_loader_rejects_altered_source_and_wrong_identity(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    manifest = json.loads(capsys.readouterr().out)["manifest"]
+    sources[0][0].write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source hash"):
+        fa_cli._load_verified_same_string_match_collection(
+            FAArtifactStore(tmp_path), manifest, config
+        )
+    with pytest.raises(ValueError, match="registered smoke run"):
+        fa_cli._load_verified_same_string_match_collection(
+            FAArtifactStore(tmp_path), manifest, replace(config, run_id="other-run")
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing_split", "cover every registered split"),
+        ("duplicate_pair", "duplicate pair IDs"),
+        ("duplicate_qid", "duplicate real QIDs"),
+        ("duplicate_name", "synthetic name families"),
+    ],
+)
+def test_same_string_matches_loader_fails_closed_on_collection_leakage(
+    tmp_path, capsys, monkeypatch, mutation, message
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    manifest = Path(json.loads(capsys.readouterr().out)["manifest"])
+    store = FAArtifactStore(tmp_path)
+    shard = store.verify_shard(manifest)
+    rows = list(fa_cli._read_json_rows(shard.data_path))
+    lineage = json.loads(manifest.read_text(encoding="utf-8"))["lineage"]
+    if mutation == "missing_split":
+        removed = next(iter(config.split_counts))
+        rows = [row for row in rows if row["split"] != removed]
+        lineage["selected_pair_ids"] = [row["pair_id"] for row in rows]
+        lineage["split_counts"] = {
+            split: count for split, count in config.split_counts.items() if split != removed
+        }
+    elif mutation == "duplicate_pair":
+        rows.append(dict(rows[0]))
+        lineage["selected_pair_ids"] = [row["pair_id"] for row in rows]
+    else:
+        other = next(row for row in rows if row["split"] != rows[0]["split"])
+        if mutation == "duplicate_qid":
+            other["real_qid"] = rows[0]["real_qid"]
+        else:
+            other["synthetic_name"] = rows[0]["synthetic_name"]
+            other["synthetic_character_count"] = rows[0]["synthetic_character_count"]
+            other["synthetic_token_count"] = rows[0]["synthetic_token_count"]
+            other["synthetic_word_count"] = rows[0]["synthetic_word_count"]
+            other["character_length_delta"] = (
+                other["synthetic_character_count"] - other["real_character_count"]
+            )
+        lineage["matches_sha256"] = naturalness_matches_sha256(
+            tuple(
+                EntityMatch(
+                    **{key: value for key, value in row.items() if key not in {"kind", "schema_version"}}
+                )
+                for row in rows
+            )
+        )
+    corrupt = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"corrupt-{mutation}",
+        rows,
+        lineage,
+        record_kind="same_string_match_collection",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fa_cli._load_verified_same_string_match_collection(
+            store, corrupt.manifest_path, config
+        )
 
 
 def confirmatory_reserve_matches(config, *, reserve_per_cell=1):

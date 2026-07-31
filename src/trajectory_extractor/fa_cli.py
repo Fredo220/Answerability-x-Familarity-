@@ -108,7 +108,7 @@ from trajectory_extractor.fa_naturalness import (
 
 
 FA_COMMANDS = (
-    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
@@ -119,6 +119,7 @@ _IMPLEMENTED = frozenset(
         "fa-run-screening",
         "fa-screen-entities",
         "fa-assemble-screened-matches",
+        "fa-prepare-same-string-matches",
         "fa-prepare-naturalness-ratings",
         "fa-compile-naturalness-ratings",
         "fa-finalize-naturalness-adjudication",
@@ -267,6 +268,10 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
         required=True,
     )
     assemble.add_argument("--shard-id", required=True)
+    same_string = parsers["fa-prepare-same-string-matches"]
+    same_string.add_argument("--candidate-manifest", action="append", required=True)
+    same_string.add_argument("--synthetic-manifest", action="append", required=True)
+    same_string.add_argument("--shard-id", required=True)
     for command in (
         "fa-prepare-naturalness-ratings",
         "fa-compile-naturalness-ratings",
@@ -382,6 +387,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _screen_entities(config, root, args)
         elif command == "fa-assemble-screened-matches":
             payload = _assemble_screened_matches(config, root, args)
+        elif command == "fa-prepare-same-string-matches":
+            payload = _prepare_same_string_matches(config, root, args)
         elif command == "fa-prepare-naturalness-ratings":
             payload = _prepare_naturalness_ratings(config, root, args)
         elif command == "fa-compile-naturalness-ratings":
@@ -785,6 +792,161 @@ def _assemble_screened_matches(
         "manifest": str(shard.manifest_path),
         "count": len(ordered),
         "matches_sha256": lineage["matches_sha256"],
+    }
+
+
+def _prepare_same_string_matches(
+    config: FAConfig,
+    root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Create contextual-familiarization matches without model screening."""
+    if config.profile != "confirmatory":
+        raise ValueError("same-string match preparation requires confirmatory config")
+    candidate_paths = tuple(Path(value) for value in args.candidate_manifest)
+    synthetic_paths = tuple(Path(value) for value in args.synthetic_manifest)
+    if len(candidate_paths) != len(config.split_counts) or len(synthetic_paths) != len(
+        config.split_counts
+    ):
+        raise ValueError(
+            "same-string match preparation requires one candidate and synthetic "
+            "manifest per registered split"
+        )
+
+    store = FAArtifactStore(root)
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
+    candidates_by_split: dict[str, tuple[CandidateEntity, ...]] = {}
+    synthetic_by_split: dict[str, tuple[SyntheticCandidate, ...]] = {}
+    sources: list[dict[str, str]] = []
+
+    for path in candidate_paths:
+        candidates = tuple(
+            CandidateEntity(**_without_schema(row)) for row in _read_json_rows(path)
+        )
+        splits = {row.split for row in candidates}
+        if not candidates or len(splits) != 1:
+            raise ValueError("candidate manifest must contain exactly one registered split")
+        split = next(iter(splits))
+        if split not in config.split_counts or split in candidates_by_split:
+            raise ValueError("candidate manifests must cover every registered split once")
+        candidates_by_split[split] = candidates
+        sources.append(_same_string_source_record(store, path, split, "candidate"))
+
+    for path in synthetic_paths:
+        synthetic = tuple(
+            SyntheticCandidate(**_without_schema(row))
+            for row in _read_json_rows(path)
+        )
+        splits = {row.split for row in synthetic}
+        if not synthetic or len(splits) != 1:
+            raise ValueError("synthetic manifest must contain exactly one registered split")
+        split = next(iter(splits))
+        if split not in config.split_counts or split in synthetic_by_split:
+            raise ValueError("synthetic manifests must cover every registered split once")
+        synthetic_by_split[split] = synthetic
+        sources.append(_same_string_source_record(store, path, split, "synthetic"))
+
+    if set(candidates_by_split) != set(config.split_counts) or set(
+        synthetic_by_split
+    ) != set(config.split_counts):
+        raise ValueError("same-string source manifests must cover every registered split")
+
+    all_candidates = tuple(
+        row for rows in candidates_by_split.values() for row in rows
+    )
+    for label, values in (
+        ("entity IDs", (row.entity_id for row in all_candidates)),
+        ("QIDs", (row.qid for row in all_candidates)),
+    ):
+        items = tuple(values)
+        if len(items) != len(set(items)):
+            raise ValueError(f"same-string candidates contain duplicate {label}")
+
+    selected_matches: list[EntityMatch] = []
+    for split in sorted(config.split_counts):
+        matchable = _matchable_screening_candidates(
+            candidates_by_split[split],
+            synthetic_by_split[split],
+            prepared.tokenizer,
+        )
+        ordered_matchable = tuple(
+            sorted(
+                matchable,
+                key=lambda row: (
+                    hashlib.sha256(
+                        f"{split}\0{row.coarse_type}\0{row.entity_id}\0{row.qid}".encode(
+                            "utf-8"
+                        )
+                    ).hexdigest(),
+                    row.entity_id,
+                ),
+            )
+        )
+        selected = _select_domain_balanced_candidates(
+            ordered_matchable,
+            required_count=config.split_counts[split],
+        )
+        selected_matches.extend(
+            match_synthetic_entities(
+                selected,
+                synthetic_by_split[split],
+                prepared.tokenizer,
+            )
+        )
+
+    ordered = tuple(
+        sorted(
+            selected_matches,
+            key=lambda row: (
+                row.split,
+                hashlib.sha256(row.pair_id.encode("utf-8")).hexdigest(),
+                row.pair_id,
+            ),
+        )
+    )
+    _audit_same_string_match_collection(config, ordered)
+    lineage = {
+        "config_sha256": config.config_hash,
+        "matching_policy_sha256": _same_string_matching_policy_sha256(),
+        "sources": sorted(sources, key=lambda row: (row["split"], row["kind"])),
+        "selected_pair_ids": [row.pair_id for row in ordered],
+        "split_counts": dict(config.split_counts),
+        "matches_sha256": naturalness_matches_sha256(ordered),
+    }
+    shard = _write_or_verify_screening_shard(
+        store,
+        config.run_id,
+        "mechanism_train",
+        _safe_cli_id(args.shard_id, "same-string match collection shard-id"),
+        [{"kind": "same_string_match_collection", **asdict(row)} for row in ordered],
+        lineage,
+        record_kind="same_string_match_collection",
+    )
+    return {
+        "status": "prepared",
+        "manifest": str(shard.manifest_path),
+        "count": len(ordered),
+        "split_counts": dict(config.split_counts),
+        "matches_sha256": lineage["matches_sha256"],
+    }
+
+
+def _same_string_source_record(
+    store: FAArtifactStore,
+    path: Path,
+    split: str,
+    kind: str,
+) -> dict[str, str]:
+    resolved = path.resolve()
+    try:
+        relative = resolved.relative_to(store.root.resolve())
+    except ValueError as error:
+        raise ValueError("same-string source manifest must be inside artifact root") from error
+    return {
+        "kind": kind,
+        "split": split,
+        "path": relative.as_posix(),
+        "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
     }
 
 
@@ -1693,6 +1855,20 @@ def _matching_policy_sha256() -> str:
                     fa_entities._same_string_token_count
                 ),
             },
+        }
+    )
+
+
+def _same_string_matching_policy_sha256() -> str:
+    return _sha256_json(
+        {
+            "revision": "fa-same-string-direct-matching-v1",
+            "domains": tuple(REGISTERED_ENTITY_DOMAINS),
+            "matchable": inspect.getsource(_matchable_screening_candidates),
+            "domain_selection": inspect.getsource(_select_domain_balanced_candidates),
+            "match": inspect.getsource(fa_entities.match_synthetic_entities),
+            "assignment": inspect.getsource(fa_entities._deterministic_assignment),
+            "surface": inspect.getsource(fa_entities._surface_compatible),
         }
     )
 
@@ -4910,6 +5086,140 @@ def _audit_confirmatory_match_pool(
             raise ValueError(
                 f"confirmatory screened-match pool is not balanced for {split}"
             )
+
+
+def _audit_same_string_match_collection(
+    config: FAConfig,
+    matches: Sequence[EntityMatch],
+) -> None:
+    rows = tuple(matches)
+    for label, values in (
+        ("pair IDs", (row.pair_id for row in rows)),
+        ("real entity IDs", (row.real_entity_id for row in rows)),
+        ("real QIDs", (row.real_qid for row in rows)),
+        (
+            "synthetic candidate IDs",
+            (row.synthetic_candidate_id for row in rows),
+        ),
+        ("synthetic name families", (row.synthetic_name.casefold() for row in rows)),
+    ):
+        items = tuple(values)
+        if len(items) != len(set(items)):
+            raise ValueError(f"same-string collection contains duplicate {label}")
+    if {row.split for row in rows} != set(config.split_counts):
+        raise ValueError("same-string collection must cover every registered split")
+    if len(rows) != sum(config.split_counts.values()):
+        raise ValueError("same-string collection has the wrong total pair count")
+    for split, count in config.split_counts.items():
+        split_rows = tuple(row for row in rows if row.split == split)
+        if len(split_rows) != count:
+            raise ValueError("same-string collection has an invalid split count")
+        quota = count // len(REGISTERED_ENTITY_DOMAINS)
+        if Counter(row.coarse_type for row in split_rows) != Counter(
+            {domain: quota for domain in REGISTERED_ENTITY_DOMAINS}
+        ):
+            raise ValueError("same-string collection is not exactly domain balanced")
+
+
+def _load_verified_same_string_match_collection(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    config: FAConfig,
+) -> tuple[EntityMatch, ...]:
+    if config.profile != "confirmatory":
+        raise ValueError("same-string collection requires confirmatory config")
+    shard = _require_verified_shard_kind(
+        store,
+        manifest_path,
+        "same_string_match_collection",
+        "verified same-string match collection manifest",
+    )
+    if shard.namespace != "mechanism_train":
+        raise ValueError("same-string match collection must use mechanism_train")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "matching_policy_sha256": _same_string_matching_policy_sha256(),
+        },
+    )
+    lineage = _read_json_object(shard.manifest_path).get("lineage")
+    if not isinstance(lineage, Mapping):
+        raise ValueError("same-string collection lineage is missing")
+    sources = lineage.get("sources")
+    if not isinstance(sources, list) or len(sources) != 2 * len(config.split_counts):
+        raise ValueError("same-string collection source lineage is invalid")
+    source_keys = set()
+    for source in sources:
+        if not isinstance(source, Mapping) or set(source) != {
+            "kind",
+            "split",
+            "path",
+            "sha256",
+        }:
+            raise ValueError("same-string collection source has invalid schema")
+        key = (source.get("split"), source.get("kind"))
+        if (
+            key in source_keys
+            or key[0] not in config.split_counts
+            or key[1] not in {"candidate", "synthetic"}
+        ):
+            raise ValueError("same-string collection source coverage is invalid")
+        source_keys.add(key)
+        path = _artifact_path_from_record(
+            store, source.get("path"), "same-string source manifest"
+        )
+        if (
+            not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != source.get("sha256")
+        ):
+            raise ValueError("same-string source hash does not verify")
+    expected_source_keys = {
+        (split, kind)
+        for split in config.split_counts
+        for kind in ("candidate", "synthetic")
+    }
+    if source_keys != expected_source_keys:
+        raise ValueError("same-string collection source coverage is invalid")
+
+    rows = _read_json_rows(shard.data_path)
+    try:
+        matches = tuple(
+            EntityMatch(
+                **{
+                    key: value
+                    for key, value in _without_schema(row).items()
+                    if key != "kind"
+                }
+            )
+            for row in rows
+            if row.get("kind") == "same_string_match_collection"
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("same-string collection rows are invalid") from error
+    if len(matches) != len(rows):
+        raise ValueError("same-string collection row has invalid record kind")
+    _audit_same_string_match_collection(config, matches)
+    expected_order = tuple(
+        sorted(
+            matches,
+            key=lambda row: (
+                row.split,
+                hashlib.sha256(row.pair_id.encode("utf-8")).hexdigest(),
+                row.pair_id,
+            ),
+        )
+    )
+    if matches != expected_order:
+        raise ValueError("same-string collection rows are not in deterministic order")
+    if lineage.get("selected_pair_ids") != [row.pair_id for row in matches]:
+        raise ValueError("same-string collection selected pair IDs changed")
+    if lineage.get("split_counts") != dict(config.split_counts):
+        raise ValueError("same-string collection split counts changed")
+    if lineage.get("matches_sha256") != naturalness_matches_sha256(matches):
+        raise ValueError("same-string collection hash does not verify")
+    return matches
 
 
 def _load_verified_screened_match_collection(
