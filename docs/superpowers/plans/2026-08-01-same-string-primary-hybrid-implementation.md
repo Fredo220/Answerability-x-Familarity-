@@ -141,7 +141,7 @@ git commit -m "feat: prepare direct same-string match collection"
 
 **Interfaces:**
 - Consumes: verified `same_string_match_collection`, verified naturalness ratings, `build_same_string_examples(...)`, tokenizer pinning, artifact capabilities.
-- Produces: CLI `fa-build-same-string-confirmatory`, one four-cell-only manifest, namespace capabilities, typed Same-String seal, tokenizer/probe metadata, and a `same_string_confirmatory_index`.
+- Produces: `audit_same_string_dataset(rows, *, tokenizer) -> DatasetAudit`, CLI `fa-build-same-string-confirmatory`, one four-cell-only manifest, namespace capabilities, typed Same-String seal, tokenizer/probe metadata, and a `same_string_confirmatory_index`.
 
 - [ ] **Step 1: Write failing data tests**
 
@@ -160,7 +160,7 @@ Run: `"/Users/friedrichreichelt/Documents/Machanistic Interpretability/.venv/bin
 
 - [ ] **Step 3: Implement the data helper**
 
-Reuse `audit_dataset((), rows, tokenizer=...)` and the existing canonical manifest serialization. Do not run the factorial power audit and do not weaken `build_manifest(...)` used by the original study.
+Implement `audit_same_string_dataset(rows, *, tokenizer)` as a dedicated preflight. Reuse the existing Same-String-specific and shared checks for four-cell completeness, target-string identity, code vocabulary, template/entity isolation, rendered-token length, special tokens, and Same-String token budget. Add explicit checks for relation/code leakage and deterministic cell identity. Do not call factorial-only checks, run the factorial power audit, or weaken `audit_dataset(...)`/`build_manifest(...)` used by the original study.
 
 - [ ] **Step 4: Write failing CLI construction tests**
 
@@ -193,31 +193,35 @@ git commit -m "feat: build sealed same-string confirmatory manifest"
 - Modify: `tests/test_fa_cli.py`
 
 **Interfaces:**
-- Consumes: the existing `estimate_behavior`, crossed bootstrap, `SameStringSealEvidence`, and protected generation transaction.
-- Produces: a `same_string_behavior_result` artifact with primary status `supported`, `not_supported`, `invalid`, or `infrastructure_failure`; factorial H1/H2 fields remain secondary/not-evaluable rather than silently treated as primary.
+- Consumes: scored Same-String rows, `cross_resample(...)`, `SameStringSealEvidence`, registered thresholds, and the protected generation transaction.
+- Produces: `estimate_same_string_behavior(rows) -> SameStringBehaviorMetrics`, `same_string_crossed_bootstrap(rows, replicates, seed) -> SameStringBootstrapDistribution`, `evaluate_same_string_primary(...) -> SameStringPrimaryDecision`, and a `same_string_behavior_result` artifact with primary status `supported`, `not_supported`, `not_evaluable`, or `infrastructure_failure`.
 
 - [ ] **Step 1: Write failing gate tests**
 
-Cover supported, null, wrong-direction, incomplete-cell, low-format-validity, and capability-impairment cases. Assert that support requires all registered conditions and a verified typed seal.
+Cover supported, null, wrong-direction, incomplete-cell, low-format-validity, and capability-impairment cases. Assert that support requires all registered conditions and a verified typed seal. The capability-preservation statistic is the high-minus-low exact-target-code rate on `target_bound` rows. Its lower 95% bootstrap bound must exceed the registered noninferiority margin `-0.05`.
 
 - [ ] **Step 2: Run focused scoring tests**
 
 Run: `"/Users/friedrichreichelt/Documents/Machanistic Interpretability/.venv/bin/python" -m pytest tests/test_fa_scoring.py -q -k "same_string"`
 
-- [ ] **Step 3: Add a narrow primary-result serializer**
+- [ ] **Step 3: Implement Same-String-only estimation and bootstrap**
 
-Expose the existing H2b estimate, interval, cell counts, format validity, abstention rates, exact-answer rates, and gate reasons under explicit Same-String names. Do not change the estimator or thresholds after output inspection.
+`estimate_same_string_behavior(...)` must reject non-Same-String rows and report the registered difference-in-differences, per-cell attempt/abstention/format/exact-answer rates, complete-unit count, and target-bound capability difference. `same_string_crossed_bootstrap(...)` must call `cross_resample(...)`, retain only complete four-cell draws, and return intervals for both the primary interaction and capability difference. It must not require factorial H1/H2 cells.
 
-- [ ] **Step 4: Bind protected evaluation to the new index**
+- [ ] **Step 4: Implement the complete primary gate**
+
+`evaluate_same_string_primary(...)` returns `not_evaluable` for a missing/invalid typed seal, incomplete registered cells, or no valid bootstrap draws. It returns `not_supported` unless the interaction is at least `0.05`, its lower 95% bound is above zero, every cell has format validity at least `0.95`, and the capability lower bound is greater than `-0.05`. Serialize every estimate, interval, count, rate, and reason; never infer support from H2b alone.
+
+- [ ] **Step 5: Bind protected evaluation to the new index**
 
 Extend `fa-evaluate-behavior-test` only as needed to recognize a verified `same_string_confirmatory_index`. Preserve atomic endpoint unlock/generation/evaluation/close behavior and recovery semantics.
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **Step 6: Run focused tests**
 
 Run: `"/Users/friedrichreichelt/Documents/Machanistic Interpretability/.venv/bin/python" -m pytest tests/test_fa_scoring.py tests/test_fa_cli.py -q -k "same_string or behavior_test"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/trajectory_extractor/fa_scoring.py src/trajectory_extractor/fa_cli.py tests/test_fa_scoring.py tests/test_fa_cli.py
@@ -371,11 +375,11 @@ Run: `"/Users/friedrichreichelt/Documents/Machanistic Interpretability/.venv/bin
 
 - [ ] **Step 3: Implement static readouts first**
 
-Train on `mechanism_train`, select layer/regularization on `locked_validation`, seal selection, and evaluate once on `probe_test`. Report exposure, answerability, and unsupported-attempt prediction against surface-only and output-margin baselines.
+Train on `mechanism_train`, select layer/regularization on `locked_validation`, seal selection, and evaluate once on `probe_test`. Report exposure, answerability, and unsupported-attempt prediction against surface-only and output-margin baselines. Require reciprocal transfer: train each readout within one level of the other factor and evaluate it on the opposite level, then reverse the direction.
 
 - [ ] **Step 4: Add dynamics only as a nested ablation**
 
-Dynamics supports a claim only if it improves held-out log loss over static features. Include random-label, layer-order, random-direction, and final-layer-excluded controls.
+Dynamics supports a claim only if it improves held-out log loss over static features. Include random-label, layer-order, random-direction, norm-matched random-direction, and final-layer-excluded controls.
 
 - [ ] **Step 5: Run focused and broad tests**
 
