@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "fa_r11_human_audit_design",
+  "revision": "fa-r11-existing-two-rater-audit",
+  "sample_per_domain": 4,
+  "success_sample_per_domain": 2,
+  "seed": 20260726,
+  "independent_initial_raters": 2,
+  "adjudicator_required_on_disagreement": true,
+  "disallowed_error_labels": [
+    "ambiguous_ground_truth",
+    "incomplete_alias_set",
+    "wrong_granularity",
+    "parser_failure",
+    "source_error",
+    "other"
+  ],
+  "maximum_disallowed_count": 0,
+  "maximum_scoring_disagreement_count": 0
+}

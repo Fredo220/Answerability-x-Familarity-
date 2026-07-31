@@ -2,6 +2,8 @@ import pytest
 
 from trajectory_extractor.fa_r11_instrument import (
     assess_frozen_validation,
+    compile_r11_human_audit,
+    prepare_r11_human_audit_packet,
     select_relation_triplets,
 )
 
@@ -55,6 +57,19 @@ def _rows(split: str, *, entity_offset: int = 0) -> list[dict[str, object]]:
                         "is_correct": is_correct,
                     }
                 )
+    return rows
+
+
+def _auditable_rows() -> list[dict[str, object]]:
+    rows = _rows("instrument_development")
+    for row in rows:
+        row.update(
+            {
+                "prompt": f"Question for {row['entity_id']}?",
+                "completion": "answer",
+                "accepted_aliases": ["answer"],
+            }
+        )
     return rows
 
 
@@ -207,3 +222,140 @@ def test_validation_rejects_tampered_selection() -> None:
             selection=selection,
             **VALIDATION_BINDINGS,
         )
+
+
+def test_r11_human_audit_packet_is_deterministic_and_blinded() -> None:
+    rows = _auditable_rows()
+    selection = select_relation_triplets(
+        rows,
+        relation_bank=RELATIONS,
+        qualification_threshold=2,
+        expected_candidates_per_domain=4,
+        minimum_qualified_per_domain_validation=3,
+        **BINDINGS,
+    )
+
+    packet = prepare_r11_human_audit_packet(
+        rows,
+        selection=selection,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+    replay = prepare_r11_human_audit_packet(
+        list(reversed(rows)),
+        selection=selection,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+
+    assert packet == replay
+    assert len(packet) == 12
+    assert all("is_correct" not in row for row in packet)
+    assert all(
+        row["relation_id"] in selection["selected_relations"][row["domain"]]
+        for row in packet
+    )
+
+
+def test_r11_human_audit_requires_two_independent_raters() -> None:
+    rows = _auditable_rows()
+    selection = select_relation_triplets(
+        rows,
+        relation_bank=RELATIONS,
+        qualification_threshold=2,
+        expected_candidates_per_domain=4,
+        minimum_qualified_per_domain_validation=3,
+        **BINDINGS,
+    )
+    packet = prepare_r11_human_audit_packet(
+        rows,
+        selection=selection,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+    scored = {
+        f"{row['split']}:{row['domain']}:{row['qid']}:{row['relation_id']}": row[
+            "is_correct"
+        ]
+        for row in rows
+    }
+    ratings = [
+        {
+            "audit_id": row["audit_id"],
+            "rater_id": rater,
+            "round": 1,
+            "error_label": (
+                "no_error" if scored[row["question_id"]] else "relation_unknown"
+            ),
+        }
+        for row in packet
+        for rater in ("rater-a", "rater-b")
+    ]
+
+    result = compile_r11_human_audit(
+        rows,
+        selection=selection,
+        ratings=ratings,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+    assert result["gate_passed"] is True
+    assert result["compiled"]["decision_counts"] == {
+        "no_error": 4,
+        "relation_unknown": 8,
+    }
+
+    with pytest.raises(ValueError, match="two independent"):
+        compile_r11_human_audit(
+            rows,
+            selection=selection,
+            ratings=ratings[::2],
+            sample_per_domain=2,
+            success_sample_per_domain=1,
+            seed=20260726,
+        )
+
+
+def test_r11_human_audit_fails_on_scoring_or_instrument_errors() -> None:
+    rows = _auditable_rows()
+    selection = select_relation_triplets(
+        rows,
+        relation_bank=RELATIONS,
+        qualification_threshold=2,
+        expected_candidates_per_domain=4,
+        minimum_qualified_per_domain_validation=3,
+        **BINDINGS,
+    )
+    packet = prepare_r11_human_audit_packet(
+        rows,
+        selection=selection,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+    ratings = [
+        {
+            "audit_id": row["audit_id"],
+            "rater_id": rater,
+            "round": 1,
+            "error_label": "incomplete_alias_set",
+        }
+        for row in packet
+        for rater in ("rater-a", "rater-b")
+    ]
+
+    result = compile_r11_human_audit(
+        rows,
+        selection=selection,
+        ratings=ratings,
+        sample_per_domain=2,
+        success_sample_per_domain=1,
+        seed=20260726,
+    )
+
+    assert result["gate_passed"] is False
+    assert result["disallowed_count"] == len(packet)

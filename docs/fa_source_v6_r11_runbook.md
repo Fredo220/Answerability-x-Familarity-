@@ -122,9 +122,42 @@ artifact is sealed.
 
 ## 3. Human audit and freeze
 
-Run the existing two-rater packet and independent adjudication process on the
-development output. Freeze the selected relations, prompts, aliases, parser,
-model/config hashes, development item hash, and selection hash.
+Generate the registered blinded packet from the selected development
+relations:
+
+```bash
+PYTHONPATH=src python tools/select_fa_r11_instrument.py audit-packet \
+  --items /content/fa-r11-artifacts/instrument_development/<execution-identity-sha256>/screening_items.jsonl \
+  --selection /content/fa-r11-freeze/relation_selection_v1.json \
+  --design configs/fa_source_v6_r11_human_audit.json \
+  --output /content/fa-r11-freeze/human_audit_packet_v1.json
+```
+
+Two independent human raters review every packet row without seeing the model
+score. Each submits JSONL rows with `audit_id`, a distinct stable `rater_id`,
+`round: 1`, and one registered `error_label`. Use `no_error` only when the
+completion should pass the exact-answer scorer. Use `entity_unknown`,
+`relation_unknown`, or `model_format_failure` for genuine model failures. Use
+the remaining labels for an instrument, source, alias, ambiguity, granularity,
+or parser problem.
+
+If the initial raters disagree, a third independent human rates only those
+registered disagreements with `round: 2`. Compile all submissions:
+
+```bash
+PYTHONPATH=src python tools/select_fa_r11_instrument.py audit-compile \
+  --items /content/fa-r11-artifacts/instrument_development/<execution-identity-sha256>/screening_items.jsonl \
+  --selection /content/fa-r11-freeze/relation_selection_v1.json \
+  --design configs/fa_source_v6_r11_human_audit.json \
+  --ratings /content/fa-r11-audit/rater-a-ratings.jsonl \
+  --ratings /content/fa-r11-audit/rater-b-ratings.jsonl \
+  --output /content/fa-r11-freeze/human_scoring_audit_v1.json
+```
+
+Add a third `--ratings` argument only when adjudication is required. Stop if
+`gate_passed` is false. A passing audit freezes the selected relations,
+prompts, aliases, parser, model/config hashes, development item hash, and
+selection hash.
 
 ## 4. Screen and validate once
 
@@ -147,6 +180,7 @@ Then apply the frozen gate:
 PYTHONPATH=src python tools/select_fa_r11_instrument.py validate \
   --items /content/fa-r11-artifacts/construction_validation/<execution-identity-sha256>/screening_items.jsonl \
   --selection /content/fa-r11-freeze/relation_selection_v1.json \
+  --human-audit /content/fa-r11-freeze/human_scoring_audit_v1.json \
   --output /content/fa-r11-freeze/construction_validation_gate_v1.json
 ```
 

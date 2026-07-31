@@ -12,9 +12,131 @@ from pathlib import Path
 from typing import Any
 
 from trajectory_extractor.fa_confirmatory_source import REGISTERED_DOMAINS
+from trajectory_extractor.fa_development_source import (
+    ERROR_TAXONOMY,
+    build_manual_error_audit_packet,
+    compile_manual_error_audit,
+)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def prepare_r11_human_audit_packet(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    selection: Mapping[str, Any],
+    sample_per_domain: int,
+    success_sample_per_domain: int,
+    seed: int,
+) -> tuple[dict[str, Any], ...]:
+    """Build the registered blinded audit packet for frozen R11 relations."""
+    selected = _verified_selected_relations(selection)
+    auditable = []
+    for row in rows:
+        domain = str(row.get("domain", ""))
+        relation_id = str(row.get("relation_id", ""))
+        if domain not in selected or relation_id not in selected[domain]:
+            continue
+        enriched = dict(row)
+        enriched["question_id"] = _r11_question_id(row)
+        auditable.append(enriched)
+    packet = build_manual_error_audit_packet(
+        auditable,
+        sample_per_domain=sample_per_domain,
+        success_sample_per_domain=success_sample_per_domain,
+        seed=seed,
+    )
+    relation_by_question = {
+        _r11_question_id(row): str(row["relation_id"]) for row in auditable
+    }
+    return tuple(
+        {
+            **row,
+            "relation_id": relation_by_question[str(row["question_id"])],
+        }
+        for row in packet
+    )
+
+
+def compile_r11_human_audit(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    selection: Mapping[str, Any],
+    ratings: Sequence[Mapping[str, Any]],
+    sample_per_domain: int,
+    success_sample_per_domain: int,
+    seed: int,
+    disallowed_error_labels: Sequence[str] = (
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "source_error",
+        "other",
+    ),
+    maximum_disallowed_count: int = 0,
+    maximum_scoring_disagreement_count: int = 0,
+) -> dict[str, Any]:
+    """Compile independent ratings and apply the frozen R11 audit gate."""
+    packet = prepare_r11_human_audit_packet(
+        rows,
+        selection=selection,
+        sample_per_domain=sample_per_domain,
+        success_sample_per_domain=success_sample_per_domain,
+        seed=seed,
+    )
+    compiled = compile_manual_error_audit(packet, ratings)
+    disallowed = tuple(str(label) for label in disallowed_error_labels)
+    if (
+        not disallowed
+        or any(label not in ERROR_TAXONOMY for label in disallowed)
+        or type(maximum_disallowed_count) is not int
+        or maximum_disallowed_count < 0
+        or type(maximum_scoring_disagreement_count) is not int
+        or maximum_scoring_disagreement_count < 0
+    ):
+        raise ValueError("R11 human audit gate configuration is invalid")
+    scored_by_question = {
+        _r11_question_id(row): bool(row["is_correct"])
+        for row in rows
+        if str(row.get("domain", "")) in selection["selected_relations"]
+        and str(row.get("relation_id", ""))
+        in selection["selected_relations"][str(row.get("domain", ""))]
+    }
+    model_score_by_audit_id = {
+        row["audit_id"]: scored_by_question[row["question_id"]] for row in packet
+    }
+    scoring_disagreement_count = sum(
+        (compiled["decisions"][audit_id] == "no_error")
+        != model_score_by_audit_id[audit_id]
+        for audit_id in compiled["decisions"]
+    )
+    disallowed_count = sum(
+        compiled["decision_counts"].get(label, 0) for label in disallowed
+    )
+    gate_passed = (
+        disallowed_count <= maximum_disallowed_count
+        and scoring_disagreement_count <= maximum_scoring_disagreement_count
+    )
+    return {
+        "schema_version": 1,
+        "kind": "fa_r11_human_scoring_audit",
+        "gate_passed": gate_passed,
+        "sample_per_domain": sample_per_domain,
+        "success_sample_per_domain": success_sample_per_domain,
+        "seed": seed,
+        "packet": list(packet),
+        "ratings": [dict(row) for row in ratings],
+        "compiled": compiled,
+        "disallowed_error_labels": list(disallowed),
+        "maximum_disallowed_count": maximum_disallowed_count,
+        "disallowed_count": disallowed_count,
+        "maximum_scoring_disagreement_count": (
+            maximum_scoring_disagreement_count
+        ),
+        "scoring_disagreement_count": scoring_disagreement_count,
+    }
 
 
 def select_relation_triplets(
@@ -296,6 +418,46 @@ def assess_frozen_validation(
     return {**result, "validation_sha256": _canonical_sha256(result)}
 
 
+def _verified_selected_relations(
+    selection: Mapping[str, Any],
+) -> dict[str, tuple[str, ...]]:
+    frozen = dict(selection)
+    selection_sha256 = frozen.pop("selection_sha256", None)
+    if selection_sha256 != _canonical_sha256(frozen):
+        raise ValueError("R11 selection hash mismatch")
+    selected = _validate_relation_bank(selection.get("selected_relations", {}))
+    if any(len(relations) != 3 for relations in selected.values()):
+        raise ValueError("R11 human audit requires three frozen relations")
+    return selected
+
+
+def _r11_question_id(row: Mapping[str, Any]) -> str:
+    required = ("split", "domain", "qid", "relation_id")
+    values = tuple(str(row.get(field, "")) for field in required)
+    if any(not value for value in values):
+        raise ValueError("R11 human audit row identity is incomplete")
+    return ":".join(values)
+
+
+def _audit_design_kwargs(design: Mapping[str, Any]) -> dict[str, Any]:
+    if (
+        design.get("schema_version") != 1
+        or design.get("kind") != "fa_r11_human_audit_design"
+    ):
+        raise ValueError("R11 human audit design identity is invalid")
+    required = (
+        "sample_per_domain",
+        "success_sample_per_domain",
+        "seed",
+        "disallowed_error_labels",
+        "maximum_disallowed_count",
+        "maximum_scoring_disagreement_count",
+    )
+    if any(key not in design for key in required):
+        raise ValueError("R11 human audit design is incomplete")
+    return {key: design[key] for key in required}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Select on open development or evaluate one frozen validation run."""
     parser = argparse.ArgumentParser()
@@ -312,7 +474,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--items", type=Path, required=True)
     validate_parser.add_argument("--selection", type=Path, required=True)
+    validate_parser.add_argument("--human-audit", type=Path, required=True)
     validate_parser.add_argument("--output", type=Path, required=True)
+
+    audit_packet_parser = subparsers.add_parser("audit-packet")
+    audit_packet_parser.add_argument("--items", type=Path, required=True)
+    audit_packet_parser.add_argument("--selection", type=Path, required=True)
+    audit_packet_parser.add_argument("--design", type=Path, required=True)
+    audit_packet_parser.add_argument("--output", type=Path, required=True)
+
+    audit_compile_parser = subparsers.add_parser("audit-compile")
+    audit_compile_parser.add_argument("--items", type=Path, required=True)
+    audit_compile_parser.add_argument("--selection", type=Path, required=True)
+    audit_compile_parser.add_argument("--design", type=Path, required=True)
+    audit_compile_parser.add_argument(
+        "--ratings", type=Path, action="append", required=True
+    )
+    audit_compile_parser.add_argument("--output", type=Path, required=True)
 
     args = parser.parse_args(argv)
     if args.command == "select":
@@ -359,11 +537,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             screening_identity=screening_identity,
         )
-    else:
+    elif args.command == "validate":
         items_path = args.items
         execution_identity_path = items_path.parent / "execution_identity.json"
         execution_identity = _read_json(execution_identity_path)
         selection = _read_json(args.selection)
+        human_audit = _read_json(args.human_audit)
         if (
             execution_identity.get("split") != "construction_validation"
             or execution_identity.get("selection_sha256")
@@ -373,6 +552,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             or execution_identity.get("git_commit") != selection.get("git_commit")
         ):
             raise ValueError("R11 validation execution identity mismatch")
+        if (
+            human_audit.get("kind") != "fa_r11_human_scoring_audit"
+            or human_audit.get("gate_passed") is not True
+            or human_audit.get("selection_sha256")
+            != selection.get("selection_sha256")
+            or human_audit.get("development_items_sha256")
+            != selection.get("development_items_sha256")
+        ):
+            raise ValueError("R11 validation requires a passing bound human audit")
         result = assess_frozen_validation(
             _read_jsonl(items_path),
             selection=selection,
@@ -381,6 +569,68 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             validation_items_sha256=_sha256_file(items_path),
         )
+        result_without_hash = dict(result)
+        result_without_hash.pop("validation_sha256")
+        result_without_hash["human_audit_sha256"] = _sha256_file(
+            args.human_audit
+        )
+        result = {
+            **result_without_hash,
+            "validation_sha256": _canonical_sha256(result_without_hash),
+        }
+    else:
+        items = _read_jsonl(args.items)
+        selection = _read_json(args.selection)
+        design = _read_json(args.design)
+        audit_kwargs = _audit_design_kwargs(design)
+        packet = prepare_r11_human_audit_packet(
+            items,
+            selection=selection,
+            sample_per_domain=audit_kwargs["sample_per_domain"],
+            success_sample_per_domain=audit_kwargs[
+                "success_sample_per_domain"
+            ],
+            seed=audit_kwargs["seed"],
+        )
+        if args.command == "audit-packet":
+            result = {
+                "schema_version": 1,
+                "kind": "fa_r11_human_audit_packet",
+                "selection_sha256": selection["selection_sha256"],
+                "development_items_sha256": selection[
+                    "development_items_sha256"
+                ],
+                "items_file_sha256": _sha256_file(args.items),
+                "design_sha256": _sha256_file(args.design),
+                "packet": list(packet),
+                "packet_sha256": _canonical_sha256(list(packet)),
+            }
+        else:
+            ratings = [
+                row
+                for ratings_path in args.ratings
+                for row in _read_jsonl(ratings_path)
+            ]
+            result = compile_r11_human_audit(
+                items,
+                selection=selection,
+                ratings=ratings,
+                **audit_kwargs,
+            )
+            result.update(
+                {
+                    "selection_sha256": selection["selection_sha256"],
+                    "development_items_sha256": selection[
+                        "development_items_sha256"
+                    ],
+                    "items_file_sha256": _sha256_file(args.items),
+                    "design_sha256": _sha256_file(args.design),
+                    "packet_sha256": _canonical_sha256(list(packet)),
+                    "rating_files_sha256": [
+                        _sha256_file(path) for path in args.ratings
+                    ],
+                }
+            )
     _write_json_immutable(args.output, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
