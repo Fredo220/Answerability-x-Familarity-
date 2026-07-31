@@ -8,7 +8,7 @@ import math
 import re
 import stat
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -815,94 +815,17 @@ def _prepare_same_string_matches(
 
     store = FAArtifactStore(root)
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
-    candidates_by_split: dict[str, tuple[CandidateEntity, ...]] = {}
-    synthetic_by_split: dict[str, tuple[SyntheticCandidate, ...]] = {}
-    sources: list[dict[str, str]] = []
-
-    for path in candidate_paths:
-        candidates = tuple(
-            CandidateEntity(**_without_schema(row)) for row in _read_json_rows(path)
-        )
-        splits = {row.split for row in candidates}
-        if not candidates or len(splits) != 1:
-            raise ValueError("candidate manifest must contain exactly one registered split")
-        split = next(iter(splits))
-        if split not in config.split_counts or split in candidates_by_split:
-            raise ValueError("candidate manifests must cover every registered split once")
-        candidates_by_split[split] = candidates
-        sources.append(_same_string_source_record(store, path, split, "candidate"))
-
-    for path in synthetic_paths:
-        synthetic = tuple(
-            SyntheticCandidate(**_without_schema(row))
-            for row in _read_json_rows(path)
-        )
-        splits = {row.split for row in synthetic}
-        if not synthetic or len(splits) != 1:
-            raise ValueError("synthetic manifest must contain exactly one registered split")
-        split = next(iter(splits))
-        if split not in config.split_counts or split in synthetic_by_split:
-            raise ValueError("synthetic manifests must cover every registered split once")
-        synthetic_by_split[split] = synthetic
-        sources.append(_same_string_source_record(store, path, split, "synthetic"))
-
-    if set(candidates_by_split) != set(config.split_counts) or set(
-        synthetic_by_split
-    ) != set(config.split_counts):
-        raise ValueError("same-string source manifests must cover every registered split")
-
-    all_candidates = tuple(
-        row for rows in candidates_by_split.values() for row in rows
+    candidates_by_split, synthetic_by_split, sources = _load_same_string_sources(
+        store,
+        config,
+        candidate_paths,
+        synthetic_paths,
     )
-    for label, values in (
-        ("entity IDs", (row.entity_id for row in all_candidates)),
-        ("QIDs", (row.qid for row in all_candidates)),
-    ):
-        items = tuple(values)
-        if len(items) != len(set(items)):
-            raise ValueError(f"same-string candidates contain duplicate {label}")
-
-    selected_matches: list[EntityMatch] = []
-    for split in sorted(config.split_counts):
-        matchable = _matchable_screening_candidates(
-            candidates_by_split[split],
-            synthetic_by_split[split],
-            prepared.tokenizer,
-        )
-        ordered_matchable = tuple(
-            sorted(
-                matchable,
-                key=lambda row: (
-                    hashlib.sha256(
-                        f"{split}\0{row.coarse_type}\0{row.entity_id}\0{row.qid}".encode(
-                            "utf-8"
-                        )
-                    ).hexdigest(),
-                    row.entity_id,
-                ),
-            )
-        )
-        selected = _select_domain_balanced_candidates(
-            ordered_matchable,
-            required_count=config.split_counts[split],
-        )
-        selected_matches.extend(
-            match_synthetic_entities(
-                selected,
-                synthetic_by_split[split],
-                prepared.tokenizer,
-            )
-        )
-
-    ordered = tuple(
-        sorted(
-            selected_matches,
-            key=lambda row: (
-                row.split,
-                hashlib.sha256(row.pair_id.encode("utf-8")).hexdigest(),
-                row.pair_id,
-            ),
-        )
+    ordered = _derive_same_string_matches(
+        config,
+        candidates_by_split,
+        synthetic_by_split,
+        prepared.tokenizer,
     )
     _audit_same_string_match_collection(config, ordered)
     lineage = {
@@ -948,6 +871,104 @@ def _same_string_source_record(
         "path": relative.as_posix(),
         "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
     }
+
+
+def _strict_records(path: Path, record_type: type, label: str) -> tuple[Any, ...]:
+    expected = {field.name for field in fields(record_type)}
+    rows = _read_json_rows(path)
+    if any(set(row) != expected for row in rows):
+        raise ValueError(f"{label} row has invalid schema")
+    try:
+        return tuple(record_type(**row) for row in rows)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} row is invalid") from error
+
+
+def _load_same_string_sources(
+    store: FAArtifactStore,
+    config: FAConfig,
+    candidate_paths: Sequence[Path],
+    synthetic_paths: Sequence[Path],
+) -> tuple[
+    dict[str, tuple[CandidateEntity, ...]],
+    dict[str, tuple[SyntheticCandidate, ...]],
+    tuple[dict[str, str], ...],
+]:
+    candidates_by_split: dict[str, tuple[CandidateEntity, ...]] = {}
+    synthetic_by_split: dict[str, tuple[SyntheticCandidate, ...]] = {}
+    sources: list[dict[str, str]] = []
+    for path, record_type, kind, destination in (
+        *((path, CandidateEntity, "candidate", candidates_by_split) for path in candidate_paths),
+        *((path, SyntheticCandidate, "synthetic", synthetic_by_split) for path in synthetic_paths),
+    ):
+        records = _strict_records(path, record_type, f"same-string {kind}")
+        splits = {row.split for row in records}
+        if not records or len(splits) != 1:
+            raise ValueError(
+                f"{kind} manifest must contain exactly one registered split"
+            )
+        split = next(iter(splits))
+        if split not in config.split_counts or split in destination:
+            raise ValueError(
+                f"{kind} manifests must cover every registered split once"
+            )
+        destination[split] = records
+        sources.append(_same_string_source_record(store, path, split, kind))
+    if set(candidates_by_split) != set(config.split_counts) or set(
+        synthetic_by_split
+    ) != set(config.split_counts):
+        raise ValueError("same-string source manifests must cover every registered split")
+    all_candidates = tuple(
+        row for records in candidates_by_split.values() for row in records
+    )
+    for label, values in (
+        ("entity IDs", (row.entity_id for row in all_candidates)),
+        ("QIDs", (row.qid for row in all_candidates)),
+    ):
+        items = tuple(values)
+        if len(items) != len(set(items)):
+            raise ValueError(f"same-string candidates contain duplicate {label}")
+    return candidates_by_split, synthetic_by_split, tuple(sources)
+
+
+def _derive_same_string_matches(
+    config: FAConfig,
+    candidates_by_split: Mapping[str, Sequence[CandidateEntity]],
+    synthetic_by_split: Mapping[str, Sequence[SyntheticCandidate]],
+    tokenizer: Any,
+) -> tuple[EntityMatch, ...]:
+    matches: list[EntityMatch] = []
+    for split in sorted(config.split_counts):
+        matchable = _matchable_screening_candidates(
+            candidates_by_split[split], synthetic_by_split[split], tokenizer
+        )
+        selected = _select_domain_balanced_candidates(
+            sorted(
+                matchable,
+                key=lambda row: (
+                    hashlib.sha256(
+                        f"{split}\0{row.coarse_type}\0{row.entity_id}\0{row.qid}".encode()
+                    ).hexdigest(),
+                    row.entity_id,
+                ),
+            ),
+            required_count=config.split_counts[split],
+        )
+        matches.extend(
+            match_synthetic_entities(selected, synthetic_by_split[split], tokenizer)
+        )
+    ordered = tuple(
+        sorted(
+            matches,
+            key=lambda row: (
+                row.split,
+                hashlib.sha256(row.pair_id.encode()).hexdigest(),
+                row.pair_id,
+            ),
+        )
+    )
+    _audit_same_string_match_collection(config, ordered)
+    return ordered
 
 
 def _load_naturalness_packet_issuance(
@@ -1864,6 +1885,8 @@ def _same_string_matching_policy_sha256() -> str:
         {
             "revision": "fa-same-string-direct-matching-v1",
             "domains": tuple(REGISTERED_ENTITY_DOMAINS),
+            "source_loading": inspect.getsource(_load_same_string_sources),
+            "derivation": inspect.getsource(_derive_same_string_matches),
             "matchable": inspect.getsource(_matchable_screening_candidates),
             "domain_selection": inspect.getsource(_select_domain_balanced_candidates),
             "match": inspect.getsource(fa_entities.match_synthetic_entities),
@@ -5151,6 +5174,8 @@ def _load_verified_same_string_match_collection(
     if not isinstance(sources, list) or len(sources) != 2 * len(config.split_counts):
         raise ValueError("same-string collection source lineage is invalid")
     source_keys = set()
+    candidate_paths: list[Path] = []
+    synthetic_paths: list[Path] = []
     for source in sources:
         if not isinstance(source, Mapping) or set(source) != {
             "kind",
@@ -5175,6 +5200,10 @@ def _load_verified_same_string_match_collection(
             or hashlib.sha256(path.read_bytes()).hexdigest() != source.get("sha256")
         ):
             raise ValueError("same-string source hash does not verify")
+        if source["kind"] == "candidate":
+            candidate_paths.append(path)
+        else:
+            synthetic_paths.append(path)
     expected_source_keys = {
         (split, kind)
         for split in config.split_counts
@@ -5184,22 +5213,20 @@ def _load_verified_same_string_match_collection(
         raise ValueError("same-string collection source coverage is invalid")
 
     rows = _read_json_rows(shard.data_path)
+    expected_fields = {field.name for field in fields(EntityMatch)} | {"kind"}
+    if any(
+        set(row) != expected_fields
+        or row.get("kind") != "same_string_match_collection"
+        for row in rows
+    ):
+        raise ValueError("same-string collection row has invalid schema")
     try:
         matches = tuple(
-            EntityMatch(
-                **{
-                    key: value
-                    for key, value in _without_schema(row).items()
-                    if key != "kind"
-                }
-            )
+            EntityMatch(**{key: value for key, value in row.items() if key != "kind"})
             for row in rows
-            if row.get("kind") == "same_string_match_collection"
         )
     except (TypeError, ValueError) as error:
         raise ValueError("same-string collection rows are invalid") from error
-    if len(matches) != len(rows):
-        raise ValueError("same-string collection row has invalid record kind")
     _audit_same_string_match_collection(config, matches)
     expected_order = tuple(
         sorted(
@@ -5219,6 +5246,25 @@ def _load_verified_same_string_match_collection(
         raise ValueError("same-string collection split counts changed")
     if lineage.get("matches_sha256") != naturalness_matches_sha256(matches):
         raise ValueError("same-string collection hash does not verify")
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
+    candidates_by_split, synthetic_by_split, replayed_sources = (
+        _load_same_string_sources(
+            store,
+            config,
+            candidate_paths,
+            synthetic_paths,
+        )
+    )
+    if sorted(replayed_sources, key=lambda row: (row["split"], row["kind"])) != sources:
+        raise ValueError("same-string collection source lineage changed")
+    replayed = _derive_same_string_matches(
+        config,
+        candidates_by_split,
+        synthetic_by_split,
+        prepared.tokenizer,
+    )
+    if matches != replayed:
+        raise ValueError("same-string collection rows differ from source replay")
     return matches
 
 

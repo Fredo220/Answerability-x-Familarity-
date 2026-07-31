@@ -21,6 +21,7 @@ from trajectory_extractor.fa_cli import dispatch_fa, register_fa_subcommands
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_data import (
     CONFIRMATORY_POWER_SIMULATIONS,
+    REGISTERED_ENTITY_DOMAINS,
     REGISTERED_POWER_GRID,
     PowerAudit,
     PowerCell,
@@ -251,6 +252,7 @@ def same_string_source_manifests(tmp_path, config, *, surplus_per_domain=1):
                 synthetic_name = f"New Name {index}"
                 candidates.append(
                     {
+                        "schema_version": 1,
                         "entity_id": f"entity-{index}",
                         "qid": f"Q{index}",
                         "name": real_name,
@@ -263,6 +265,7 @@ def same_string_source_manifests(tmp_path, config, *, surplus_per_domain=1):
                 )
                 synthetic.append(
                     {
+                        "schema_version": 1,
                         "candidate_id": f"synthetic-{index}",
                         "name": synthetic_name,
                         "coarse_type": domain,
@@ -357,6 +360,128 @@ def test_same_string_matches_loader_rejects_altered_source_and_wrong_identity(
     with pytest.raises(ValueError, match="registered smoke run"):
         fa_cli._load_verified_same_string_match_collection(
             FAArtifactStore(tmp_path), manifest, replace(config, run_id="other-run")
+        )
+
+
+def test_same_string_matches_are_source_order_invariant_and_hash_selected(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_sources = same_string_source_manifests(first_root, config)
+    second_sources = same_string_source_manifests(second_root, config)
+    for candidate_path, synthetic_path in second_sources:
+        for path in (candidate_path, synthetic_path):
+            rows = json.loads(path.read_text(encoding="utf-8"))
+            path.write_text(json.dumps(list(reversed(rows))), encoding="utf-8")
+
+    assert cli.main(same_string_command_args(first_root, first_sources)) == 0
+    first_manifest = json.loads(capsys.readouterr().out)["manifest"]
+    assert cli.main(
+        same_string_command_args(second_root, tuple(reversed(second_sources)))
+    ) == 0
+    second_manifest = json.loads(capsys.readouterr().out)["manifest"]
+    first = fa_cli._load_verified_same_string_match_collection(
+        FAArtifactStore(first_root), first_manifest, config
+    )
+    second = fa_cli._load_verified_same_string_match_collection(
+        FAArtifactStore(second_root), second_manifest, config
+    )
+    assert first == second
+
+    for split, count in config.split_counts.items():
+        candidate_path = next(
+            path for path, _ in first_sources if split in path.stem
+        )
+        candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
+        for domain in REGISTERED_ENTITY_DOMAINS:
+            eligible = sorted(
+                (row for row in candidates if row["coarse_type"] == domain),
+                key=lambda row: (
+                    hashlib.sha256(
+                        f"{split}\0{domain}\0{row['entity_id']}\0{row['qid']}".encode()
+                    ).hexdigest(),
+                    row["entity_id"],
+                ),
+            )
+            expected = {row["entity_id"] for row in eligible[: count // 4]}
+            observed = {
+                row.real_entity_id
+                for row in first
+                if row.split == split and row.coarse_type == domain
+            }
+            assert observed == expected
+
+
+def test_same_string_matches_reject_missing_source_schema(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    candidate_path = sources[0][0]
+    rows = json.loads(candidate_path.read_text(encoding="utf-8"))
+    rows[0].pop("schema_version")
+    candidate_path.write_text(json.dumps(rows), encoding="utf-8")
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 2
+    assert "invalid schema" in json.loads(capsys.readouterr().out)["error"]["message"]
+
+
+@pytest.mark.parametrize("mutation", ["missing_schema", "forged_match"])
+def test_same_string_matches_loader_requires_schema_and_source_replay(
+    tmp_path, capsys, monkeypatch, mutation
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    manifest = Path(json.loads(capsys.readouterr().out)["manifest"])
+    store = FAArtifactStore(tmp_path)
+    shard = store.verify_shard(manifest)
+    rows = list(fa_cli._read_json_rows(shard.data_path))
+    lineage = json.loads(manifest.read_text(encoding="utf-8"))["lineage"]
+    if mutation == "missing_schema":
+        rows[0].pop("schema_version")
+        expected = "invalid schema"
+    else:
+        rows[0]["synthetic_name"] = rows[0]["synthetic_name"].replace(
+            "Name", "Fame"
+        )
+        matches = tuple(
+            EntityMatch(**{key: value for key, value in row.items() if key != "kind"})
+            for row in rows
+        )
+        lineage["matches_sha256"] = naturalness_matches_sha256(matches)
+        expected = "differ from source replay"
+    corrupt = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        f"corrupt-{mutation}",
+        rows,
+        lineage,
+        record_kind="same_string_match_collection",
+    )
+
+    with pytest.raises(ValueError, match=expected):
+        fa_cli._load_verified_same_string_match_collection(
+            store, corrupt.manifest_path, config
         )
 
 
