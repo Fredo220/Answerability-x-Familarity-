@@ -86,16 +86,20 @@ behavioral result.
 
 ## Current Status
 
-**Status as of 2026-07-28: instrument development, not hypothesis evidence.**
+**Status as of 2026-08-01: R11 instrument audit failed; the hypothesis remains
+untested.**
 
 - The original Source-v5 corpus was `not_evaluable` because too few entities
   passed its frozen familiarity screen.
 - R9 and R10 also failed their registered instrument-readiness gates. Their
   negative results remain preserved.
-- R11 is the current repair. It uses a larger candidate pool and five
-  preregistered relation questions per domain.
-- Development data select three relations deterministically. Those relations
-  are then evaluated once on fresh, entity-disjoint validation data.
+- R11 used a larger candidate pool and five preregistered relation questions
+  per domain. Development data selected three relations deterministically.
+- The strict-score yield was sufficient, but an independent human audit found
+  14 disallowed ambiguity, granularity, or alias defects in its 24-item packet.
+- R11 is therefore `not_evaluable`. Construction validation and confirmatory
+  endpoints were not opened, so this outcome is not evidence for or against
+  the main hypothesis.
 - The familiarity rule remains unchanged: an entity must be answered
   correctly on at least two of three selected questions.
 
@@ -109,8 +113,8 @@ The committed R11 source contains:
 The four registered domains are creative works, business enterprises, people,
 and countries. Development and validation share no entity IDs.
 
-The source has passed an AI-assisted development audit. An independent human
-audit is still required before confirmatory reporting.
+The full R11 outcome and auditable artifacts are published in
+[the R11 outcome report](docs/results/source_v6_r11_instrument_development_outcome.md).
 
 ## What R11 Can Show
 

@@ -1,0 +1,116 @@
+{
+  "by_domain_relation": {
+    "creative_work": {
+      "P136": {
+        "item_count": 32,
+        "success_count": 1,
+        "success_rate": 0.03125
+      },
+      "P364": {
+        "item_count": 32,
+        "success_count": 18,
+        "success_rate": 0.5625
+      },
+      "P495": {
+        "item_count": 32,
+        "success_count": 21,
+        "success_rate": 0.65625
+      },
+      "P57": {
+        "item_count": 32,
+        "success_count": 21,
+        "success_rate": 0.65625
+      },
+      "P577": {
+        "item_count": 32,
+        "success_count": 28,
+        "success_rate": 0.875
+      }
+    },
+    "organization": {
+      "P112": {
+        "item_count": 32,
+        "success_count": 19,
+        "success_rate": 0.59375
+      },
+      "P159": {
+        "item_count": 32,
+        "success_count": 23,
+        "success_rate": 0.71875
+      },
+      "P17": {
+        "item_count": 32,
+        "success_count": 29,
+        "success_rate": 0.90625
+      },
+      "P452": {
+        "item_count": 32,
+        "success_count": 8,
+        "success_rate": 0.25
+      },
+      "P571": {
+        "item_count": 32,
+        "success_count": 23,
+        "success_rate": 0.71875
+      }
+    },
+    "person": {
+      "P106": {
+        "item_count": 32,
+        "success_count": 20,
+        "success_rate": 0.625
+      },
+      "P19": {
+        "item_count": 32,
+        "success_count": 14,
+        "success_rate": 0.4375
+      },
+      "P27": {
+        "item_count": 32,
+        "success_count": 14,
+        "success_rate": 0.4375
+      },
+      "P569": {
+        "item_count": 32,
+        "success_count": 32,
+        "success_rate": 1.0
+      },
+      "P570": {
+        "item_count": 32,
+        "success_count": 26,
+        "success_rate": 0.8125
+      }
+    },
+    "place": {
+      "P30": {
+        "item_count": 32,
+        "success_count": 29,
+        "success_rate": 0.90625
+      },
+      "P36": {
+        "item_count": 32,
+        "success_count": 31,
+        "success_rate": 0.96875
+      },
+      "P37": {
+        "item_count": 32,
+        "success_count": 31,
+        "success_rate": 0.96875
+      },
+      "P38": {
+        "item_count": 32,
+        "success_count": 22,
+        "success_rate": 0.6875
+      },
+      "P610": {
+        "item_count": 32,
+        "success_count": 12,
+        "success_rate": 0.375
+      }
+    }
+  },
+  "correct_count": 422,
+  "entity_count": 128,
+  "item_count": 640,
+  "schema_version": 1
+}

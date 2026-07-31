@@ -1,0 +1,685 @@
+{
+  "claim_scope": "open_instrument_development_only",
+  "combination_audit": {
+    "creative_work": [
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 21,
+        "qualified_count": 24,
+        "relations": [
+          "P495",
+          "P57",
+          "P577"
+        ],
+        "total_success_count": 70
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 18,
+        "qualified_count": 24,
+        "relations": [
+          "P364",
+          "P57",
+          "P577"
+        ],
+        "total_success_count": 67
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 18,
+        "qualified_count": 23,
+        "relations": [
+          "P364",
+          "P495",
+          "P577"
+        ],
+        "total_success_count": 67
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 18,
+        "qualified_count": 21,
+        "relations": [
+          "P364",
+          "P495",
+          "P57"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 20,
+        "relations": [
+          "P136",
+          "P57",
+          "P577"
+        ],
+        "total_success_count": 50
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 19,
+        "relations": [
+          "P136",
+          "P495",
+          "P577"
+        ],
+        "total_success_count": 50
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 17,
+        "relations": [
+          "P136",
+          "P495",
+          "P57"
+        ],
+        "total_success_count": 43
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 14,
+        "relations": [
+          "P136",
+          "P364",
+          "P577"
+        ],
+        "total_success_count": 47
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 14,
+        "relations": [
+          "P136",
+          "P364",
+          "P495"
+        ],
+        "total_success_count": 40
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 1,
+        "qualified_count": 12,
+        "relations": [
+          "P136",
+          "P364",
+          "P57"
+        ],
+        "total_success_count": 40
+      }
+    ],
+    "organization": [
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 23,
+        "qualified_count": 27,
+        "relations": [
+          "P159",
+          "P17",
+          "P571"
+        ],
+        "total_success_count": 75
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 19,
+        "qualified_count": 27,
+        "relations": [
+          "P112",
+          "P17",
+          "P571"
+        ],
+        "total_success_count": 71
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 19,
+        "qualified_count": 25,
+        "relations": [
+          "P112",
+          "P159",
+          "P17"
+        ],
+        "total_success_count": 71
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 19,
+        "qualified_count": 25,
+        "relations": [
+          "P112",
+          "P159",
+          "P571"
+        ],
+        "total_success_count": 65
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 25,
+        "relations": [
+          "P159",
+          "P17",
+          "P452"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 25,
+        "relations": [
+          "P17",
+          "P452",
+          "P571"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 21,
+        "relations": [
+          "P159",
+          "P452",
+          "P571"
+        ],
+        "total_success_count": 54
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 20,
+        "relations": [
+          "P112",
+          "P17",
+          "P452"
+        ],
+        "total_success_count": 56
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 18,
+        "relations": [
+          "P112",
+          "P159",
+          "P452"
+        ],
+        "total_success_count": 50
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 8,
+        "qualified_count": 16,
+        "relations": [
+          "P112",
+          "P452",
+          "P571"
+        ],
+        "total_success_count": 50
+      }
+    ],
+    "person": [
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 30,
+        "relations": [
+          "P27",
+          "P569",
+          "P570"
+        ],
+        "total_success_count": 72
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 29,
+        "relations": [
+          "P106",
+          "P27",
+          "P569"
+        ],
+        "total_success_count": 66
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 20,
+        "qualified_count": 28,
+        "relations": [
+          "P106",
+          "P569",
+          "P570"
+        ],
+        "total_success_count": 78
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 28,
+        "relations": [
+          "P19",
+          "P569",
+          "P570"
+        ],
+        "total_success_count": 72
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 24,
+        "relations": [
+          "P106",
+          "P19",
+          "P569"
+        ],
+        "total_success_count": 66
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 23,
+        "relations": [
+          "P106",
+          "P27",
+          "P570"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 22,
+        "relations": [
+          "P106",
+          "P19",
+          "P570"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 21,
+        "relations": [
+          "P19",
+          "P27",
+          "P569"
+        ],
+        "total_success_count": 60
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 17,
+        "relations": [
+          "P19",
+          "P27",
+          "P570"
+        ],
+        "total_success_count": 54
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 14,
+        "qualified_count": 14,
+        "relations": [
+          "P106",
+          "P19",
+          "P27"
+        ],
+        "total_success_count": 48
+      }
+    ],
+    "place": [
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 29,
+        "qualified_count": 31,
+        "relations": [
+          "P30",
+          "P36",
+          "P37"
+        ],
+        "total_success_count": 91
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 22,
+        "qualified_count": 31,
+        "relations": [
+          "P36",
+          "P37",
+          "P38"
+        ],
+        "total_success_count": 84
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 22,
+        "qualified_count": 31,
+        "relations": [
+          "P30",
+          "P36",
+          "P38"
+        ],
+        "total_success_count": 82
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 22,
+        "qualified_count": 31,
+        "relations": [
+          "P30",
+          "P37",
+          "P38"
+        ],
+        "total_success_count": 82
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 31,
+        "relations": [
+          "P36",
+          "P37",
+          "P610"
+        ],
+        "total_success_count": 74
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 30,
+        "relations": [
+          "P30",
+          "P36",
+          "P610"
+        ],
+        "total_success_count": 72
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 30,
+        "relations": [
+          "P30",
+          "P37",
+          "P610"
+        ],
+        "total_success_count": 72
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 24,
+        "relations": [
+          "P36",
+          "P38",
+          "P610"
+        ],
+        "total_success_count": 65
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 24,
+        "relations": [
+          "P37",
+          "P38",
+          "P610"
+        ],
+        "total_success_count": 65
+      },
+      {
+        "complete_entity_count": 32,
+        "minimum_relation_success_count": 12,
+        "qualified_count": 23,
+        "relations": [
+          "P30",
+          "P38",
+          "P610"
+        ],
+        "total_success_count": 63
+      }
+    ]
+  },
+  "config_sha256": "3623ca102f97b4280f0ab8075fc1731c1ca807b4cfb628869504c96cfa87fbe2",
+  "development_candidates_per_domain": 32,
+  "development_execution_identity_sha256": "2c6900685f3d01d5ff011f04fd5453d4f1a60ddade9c3fba349fbb52f0584928",
+  "development_items_sha256": "958276585dadd97b94f621e9e855e103a8158bc14b081c5049de39e3a86c4e1e",
+  "development_qids": [
+    "Q102673",
+    "Q103372692",
+    "Q1047",
+    "Q108839994",
+    "Q109116",
+    "Q11463",
+    "Q11812",
+    "Q1281055",
+    "Q132689",
+    "Q1339",
+    "Q13417189",
+    "Q1359568",
+    "Q142",
+    "Q145",
+    "Q148",
+    "Q1496",
+    "Q150804",
+    "Q15270647",
+    "Q154950",
+    "Q155653",
+    "Q159",
+    "Q159846",
+    "Q160071",
+    "Q160120",
+    "Q162255",
+    "Q168383",
+    "Q170035",
+    "Q174555",
+    "Q17714",
+    "Q178516",
+    "Q180098",
+    "Q182477",
+    "Q182692",
+    "Q184701",
+    "Q184768",
+    "Q18647981",
+    "Q189875",
+    "Q191753",
+    "Q193701",
+    "Q202326",
+    "Q206921",
+    "Q208696",
+    "Q21708200",
+    "Q222",
+    "Q224",
+    "Q2283",
+    "Q23",
+    "Q230",
+    "Q230051",
+    "Q2308012",
+    "Q232",
+    "Q23434",
+    "Q237",
+    "Q2494",
+    "Q252",
+    "Q255",
+    "Q258",
+    "Q259011",
+    "Q262",
+    "Q27",
+    "Q271189",
+    "Q2831",
+    "Q29570",
+    "Q298",
+    "Q305250",
+    "Q307",
+    "Q31",
+    "Q3295867",
+    "Q33",
+    "Q334132",
+    "Q33866",
+    "Q34",
+    "Q35064",
+    "Q35476",
+    "Q35886",
+    "Q37158",
+    "Q37785",
+    "Q38",
+    "Q38076",
+    "Q39722",
+    "Q399",
+    "Q403",
+    "Q408",
+    "Q40895",
+    "Q41",
+    "Q414",
+    "Q43",
+    "Q45",
+    "Q450675",
+    "Q4612",
+    "Q46551",
+    "Q483941",
+    "Q49125",
+    "Q517",
+    "Q5281",
+    "Q537407",
+    "Q55",
+    "Q5592",
+    "Q5597",
+    "Q5673",
+    "Q58024",
+    "Q5879",
+    "Q61448040",
+    "Q6527",
+    "Q6686",
+    "Q692",
+    "Q7200",
+    "Q7416",
+    "Q762",
+    "Q780442",
+    "Q79",
+    "Q796",
+    "Q8007",
+    "Q8018",
+    "Q80978",
+    "Q81230",
+    "Q851",
+    "Q869",
+    "Q884",
+    "Q9047",
+    "Q9061",
+    "Q9068",
+    "Q937",
+    "Q943192",
+    "Q95",
+    "Q9584",
+    "Q96",
+    "Q9916"
+  ],
+  "git_commit": "932c7fadded4f93be5b9495ce44634afc4064da3",
+  "kind": "fa_r11_relation_selection",
+  "minimum_qualified_per_domain_validation": 8,
+  "minimum_success_per_relation_validation": 1,
+  "qualification_threshold": 2,
+  "relation_bank": {
+    "creative_work": [
+      "P136",
+      "P364",
+      "P495",
+      "P57",
+      "P577"
+    ],
+    "organization": [
+      "P112",
+      "P159",
+      "P17",
+      "P452",
+      "P571"
+    ],
+    "person": [
+      "P106",
+      "P19",
+      "P27",
+      "P569",
+      "P570"
+    ],
+    "place": [
+      "P30",
+      "P36",
+      "P37",
+      "P38",
+      "P610"
+    ]
+  },
+  "relation_bank_sha256": "5f81f1a51d673bca6bbe3c568e4868eaced94e7ada1ffbd0d4a9309e000294fa",
+  "schema_version": 1,
+  "screening_identity": {
+    "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+    "config_sha256": "76f557db589863ab217f963ce5020b4a57e88774582e1e3d3bd58600143103fa",
+    "model_id": "google/gemma-2-2b-it",
+    "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+    "parser_sha256": "2c0889729ee398c50639d1677aa70542d96f0d4e26f3fc6ea0ec7fa6643007f3",
+    "semantic_audit_sha256": "6acec92a77cb67b36bfb6c2d71574af7a7aa1c1e7d252d829006a4fed99e5498",
+    "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+  },
+  "selected_metrics": {
+    "creative_work": {
+      "complete_entity_count": 32,
+      "minimum_relation_success_count": 21,
+      "qualified_count": 24,
+      "total_success_count": 70
+    },
+    "organization": {
+      "complete_entity_count": 32,
+      "minimum_relation_success_count": 23,
+      "qualified_count": 27,
+      "total_success_count": 75
+    },
+    "person": {
+      "complete_entity_count": 32,
+      "minimum_relation_success_count": 14,
+      "qualified_count": 30,
+      "total_success_count": 72
+    },
+    "place": {
+      "complete_entity_count": 32,
+      "minimum_relation_success_count": 29,
+      "qualified_count": 31,
+      "total_success_count": 91
+    }
+  },
+  "selected_relations": {
+    "creative_work": [
+      "P495",
+      "P57",
+      "P577"
+    ],
+    "organization": [
+      "P159",
+      "P17",
+      "P571"
+    ],
+    "person": [
+      "P27",
+      "P569",
+      "P570"
+    ],
+    "place": [
+      "P30",
+      "P36",
+      "P37"
+    ]
+  },
+  "selection_rule": "maximize qualified_count; then minimum relation successes; then total successes; then lexicographic relation IDs",
+  "selection_sha256": "e6e65b362e725d6a8890a1a64a4c914b56164f848d05923446f227dce1046c29",
+  "source_manifest_sha256": "5c9b881402def0a2d5ff3b85495e04ee1b8296d6b38802d87783e474f0d716db",
+  "validation_candidates_per_domain": 16
+}

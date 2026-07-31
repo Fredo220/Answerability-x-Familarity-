@@ -1,0 +1,23 @@
+{
+  "batch_size": 16,
+  "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+  "config_sha256": "76f557db589863ab217f963ce5020b4a57e88774582e1e3d3bd58600143103fa",
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 16,
+    "temperature": 0.0
+  },
+  "git_commit": "932c7fadded4f93be5b9495ce44634afc4064da3",
+  "kind": "fa_r11_screening_execution",
+  "model_id": "google/gemma-2-2b-it",
+  "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "parser_sha256": "2c0889729ee398c50639d1677aa70542d96f0d4e26f3fc6ea0ec7fa6643007f3",
+  "prompt_count": 640,
+  "rows_sha256": "1b321c93af624604cde685be53b46c07bb9569070792073b0a23c9918c453a3b",
+  "schema_version": 1,
+  "selection_sha256": null,
+  "semantic_audit_sha256": "6acec92a77cb67b36bfb6c2d71574af7a7aa1c1e7d252d829006a4fed99e5498",
+  "source_manifest_sha256": "5c9b881402def0a2d5ff3b85495e04ee1b8296d6b38802d87783e474f0d716db",
+  "split": "instrument_development",
+  "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+}

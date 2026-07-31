@@ -1,0 +1,1039 @@
+{
+  "compiled": {
+    "adjudicated_count": 4,
+    "decision_counts": {
+      "ambiguous_ground_truth": 7,
+      "incomplete_alias_set": 1,
+      "no_error": 8,
+      "relation_unknown": 2,
+      "wrong_granularity": 6
+    },
+    "decisions": {
+      "fa-v6-audit-1c44ab4a9215d3286d52": "wrong_granularity",
+      "fa-v6-audit-2581c63b1787903fec80": "ambiguous_ground_truth",
+      "fa-v6-audit-2bf3a6ff036741be50f3": "wrong_granularity",
+      "fa-v6-audit-3018d404f955494cf722": "no_error",
+      "fa-v6-audit-30c2d71955d63b627940": "wrong_granularity",
+      "fa-v6-audit-3532d8bb8d060d2d5f87": "wrong_granularity",
+      "fa-v6-audit-3c2a1ce77b54bc345c8b": "no_error",
+      "fa-v6-audit-3d623c0a396f85500b63": "relation_unknown",
+      "fa-v6-audit-4a8cf9f0b5c93a9fd64a": "ambiguous_ground_truth",
+      "fa-v6-audit-4df0bcb239212f5fd661": "wrong_granularity",
+      "fa-v6-audit-5f60cf572b6047e01ab9": "no_error",
+      "fa-v6-audit-64b78352ea74fdbedd5d": "wrong_granularity",
+      "fa-v6-audit-677567b543752182079c": "no_error",
+      "fa-v6-audit-814b0f43dd5f889e618d": "incomplete_alias_set",
+      "fa-v6-audit-945f0b58019a3b6f61f9": "no_error",
+      "fa-v6-audit-945f5937ac024004882e": "ambiguous_ground_truth",
+      "fa-v6-audit-a43b2cd934a7577dd7fc": "no_error",
+      "fa-v6-audit-b932ac10b2ff35c0e874": "relation_unknown",
+      "fa-v6-audit-c0d7cdb5ce53471a0431": "ambiguous_ground_truth",
+      "fa-v6-audit-cd4d16fe10c506f324da": "ambiguous_ground_truth",
+      "fa-v6-audit-cf9f0efdb87eef002866": "no_error",
+      "fa-v6-audit-e0e1c1b27bd04642a183": "ambiguous_ground_truth",
+      "fa-v6-audit-e60e238a650607b2c274": "no_error",
+      "fa-v6-audit-fdeee3409e256e126a70": "ambiguous_ground_truth"
+    },
+    "item_count": 24
+  },
+  "design_sha256": "f10874cea7fc43944352be89c0461f03e0e4b3ff45030959cd66e171a45ef51b",
+  "development_items_sha256": "958276585dadd97b94f621e9e855e103a8158bc14b081c5049de39e3a86c4e1e",
+  "disallowed_count": 14,
+  "disallowed_error_labels": [
+    "ambiguous_ground_truth",
+    "incomplete_alias_set",
+    "wrong_granularity",
+    "parser_failure",
+    "source_error",
+    "other"
+  ],
+  "gate_passed": false,
+  "items_file_sha256": "559419db06fa46d234aa6f1a2ffb2d6c1d4a7f8d8a09b6d18c0467939d59e3b7",
+  "kind": "fa_r11_human_scoring_audit",
+  "maximum_disallowed_count": 0,
+  "maximum_scoring_disagreement_count": 0,
+  "packet": [
+    {
+      "accepted_aliases": [
+        "Republic of Geneva",
+        "Republic of Geneva."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-1c44ab4a9215d3286d52",
+      "completion": "Switzerland \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q6527",
+      "prompt": "Which state or country was Jean-Jacques Rousseau a citizen of? Answer with only the state or country name.",
+      "qid": "Q6527",
+      "question_id": "instrument_development:person:Q6527:P27",
+      "relation_id": "P27"
+    },
+    {
+      "accepted_aliases": [
+        "United States",
+        "United States."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-2581c63b1787903fec80",
+      "completion": "China \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q537407",
+      "prompt": "What is the country of origin of Mulan? Answer with only the country name.",
+      "qid": "Q537407",
+      "question_id": "instrument_development:creative_work:Q537407:P495",
+      "relation_id": "P495"
+    },
+    {
+      "accepted_aliases": [
+        "Boulogne-Billancourt",
+        "Boulogne-Billancourt."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-2bf3a6ff036741be50f3",
+      "completion": "Paris \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q6686",
+      "prompt": "Where is Renault headquartered? Answer with only the place name.",
+      "qid": "Q6686",
+      "question_id": "instrument_development:organization:Q6686:P159",
+      "relation_id": "P159"
+    },
+    {
+      "accepted_aliases": [
+        "Germany",
+        "Germany."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-3018d404f955494cf722",
+      "completion": "Germany \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q81230",
+      "prompt": "Which country is Siemens associated with? Answer with only the country name.",
+      "qid": "Q81230",
+      "question_id": "instrument_development:organization:Q81230:P17",
+      "relation_id": "P17"
+    },
+    {
+      "accepted_aliases": [
+        "Europe",
+        "Europe."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-30c2d71955d63b627940",
+      "completion": "Northern Europe \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q34",
+      "prompt": "Name one continent where Sweden is located. Answer with only one continent name.",
+      "qid": "Q34",
+      "question_id": "instrument_development:place:Q34:P30",
+      "relation_id": "P30"
+    },
+    {
+      "accepted_aliases": [
+        "Russian Empire",
+        "Russian Empire."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-3532d8bb8d060d2d5f87",
+      "completion": "Russia \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q7200",
+      "prompt": "Which state or country was Alexander Pushkin a citizen of? Answer with only the state or country name.",
+      "qid": "Q7200",
+      "question_id": "instrument_development:person:Q7200:P27",
+      "relation_id": "P27"
+    },
+    {
+      "accepted_aliases": [
+        "Turkish",
+        "Turkish."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-3c2a1ce77b54bc345c8b",
+      "completion": "Turkish \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q43",
+      "prompt": "What is an official language of Turkey? Answer with only one language.",
+      "qid": "Q43",
+      "question_id": "instrument_development:place:Q43:P37",
+      "relation_id": "P37"
+    },
+    {
+      "accepted_aliases": [
+        "2025",
+        "2025."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-3d623c0a396f85500b63",
+      "completion": "2023 \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q450675",
+      "prompt": "In which year did Pope Francis die? Answer with only the year.",
+      "qid": "Q450675",
+      "question_id": "instrument_development:person:Q450675:P570",
+      "relation_id": "P570"
+    },
+    {
+      "accepted_aliases": [
+        "1989",
+        "1989."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-4a8cf9f0b5c93a9fd64a",
+      "completion": "1990 \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q102673",
+      "prompt": "In which year was Gazprom founded? Answer with only the year.",
+      "qid": "Q102673",
+      "question_id": "instrument_development:organization:Q102673:P571",
+      "relation_id": "P571"
+    },
+    {
+      "accepted_aliases": [
+        "Republic of Florence",
+        "Republic of Florence."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-4df0bcb239212f5fd661",
+      "completion": "Italy \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q5592",
+      "prompt": "Which state or country was Michelangelo a citizen of? Answer with only the state or country name.",
+      "qid": "Q5592",
+      "question_id": "instrument_development:person:Q5592:P27",
+      "relation_id": "P27"
+    },
+    {
+      "accepted_aliases": [
+        "Francis Ford Coppola",
+        "Francis Ford Coppola."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-5f60cf572b6047e01ab9",
+      "completion": "Francis Ford Coppola \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q202326",
+      "prompt": "Who directed The Godfather Part III? Answer with only one director name.",
+      "qid": "Q202326",
+      "question_id": "instrument_development:creative_work:Q202326:P57",
+      "relation_id": "P57"
+    },
+    {
+      "accepted_aliases": [
+        "Minato",
+        "Minato."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-64b78352ea74fdbedd5d",
+      "completion": "Tokyo \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q49125",
+      "prompt": "Where is Toshiba headquartered? Answer with only the place name.",
+      "qid": "Q49125",
+      "question_id": "instrument_development:organization:Q49125:P159",
+      "relation_id": "P159"
+    },
+    {
+      "accepted_aliases": [
+        "Russia",
+        "Russia."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-677567b543752182079c",
+      "completion": "Russia \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q5281",
+      "prompt": "Which country is Yandex associated with? Answer with only the country name.",
+      "qid": "Q5281",
+      "question_id": "instrument_development:organization:Q5281:P17",
+      "relation_id": "P17"
+    },
+    {
+      "accepted_aliases": [
+        "Putonghua",
+        "Putonghua."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-814b0f43dd5f889e618d",
+      "completion": "Mandarin Chinese \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q148",
+      "prompt": "What is an official language of People's Republic of China? Answer with only one language.",
+      "qid": "Q148",
+      "question_id": "instrument_development:place:Q148:P37",
+      "relation_id": "P37"
+    },
+    {
+      "accepted_aliases": [
+        "United States",
+        "United States."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-945f0b58019a3b6f61f9",
+      "completion": "United States \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q182692",
+      "prompt": "What is the country of origin of Apocalypse Now? Answer with only the country name.",
+      "qid": "Q182692",
+      "question_id": "instrument_development:creative_work:Q182692:P495",
+      "relation_id": "P495"
+    },
+    {
+      "accepted_aliases": [
+        "Oceania",
+        "Oceania."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-945f5937ac024004882e",
+      "completion": "Australia \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q408",
+      "prompt": "Name one continent where Australia is located. Answer with only one continent name.",
+      "qid": "Q408",
+      "question_id": "instrument_development:place:Q408:P30",
+      "relation_id": "P30"
+    },
+    {
+      "accepted_aliases": [
+        "Asia",
+        "Asia."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-a43b2cd934a7577dd7fc",
+      "completion": "Asia \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q869",
+      "prompt": "Name one continent where Thailand is located. Answer with only one continent name.",
+      "qid": "Q869",
+      "question_id": "instrument_development:place:Q869:P30",
+      "relation_id": "P30"
+    },
+    {
+      "accepted_aliases": [
+        "United States",
+        "United States."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-b932ac10b2ff35c0e874",
+      "completion": "Poland \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q483941",
+      "prompt": "What is the country of origin of Schindler's List? Answer with only the country name.",
+      "qid": "Q483941",
+      "question_id": "instrument_development:creative_work:Q483941:P495",
+      "relation_id": "P495"
+    },
+    {
+      "accepted_aliases": [
+        "Clyde Geronimi",
+        "Clyde Geronimi.",
+        "Wilfred Jackson",
+        "Wilfred Jackson.",
+        "Hamilton Luske",
+        "Hamilton Luske."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-c0d7cdb5ce53471a0431",
+      "completion": "Tim Burton \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q189875",
+      "prompt": "Who directed Alice in Wonderland? Answer with only one director name.",
+      "qid": "Q189875",
+      "question_id": "instrument_development:creative_work:Q189875:P57",
+      "relation_id": "P57"
+    },
+    {
+      "accepted_aliases": [
+        "Tbilisi",
+        "Tbilisi."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-cd4d16fe10c506f324da",
+      "completion": "Atlanta \n",
+      "domain": "place",
+      "entity_id": "r11-instrument_development-place-q230",
+      "prompt": "What is the capital of Georgia? Answer with only the place name.",
+      "qid": "Q230",
+      "question_id": "instrument_development:place:Q230:P36",
+      "relation_id": "P36"
+    },
+    {
+      "accepted_aliases": [
+        "1732",
+        "1732."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-cf9f0efdb87eef002866",
+      "completion": "1732 \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q23",
+      "prompt": "In which year was George Washington born? Answer with only the year.",
+      "qid": "Q23",
+      "question_id": "instrument_development:person:Q23:P569",
+      "relation_id": "P569"
+    },
+    {
+      "accepted_aliases": [
+        "2000",
+        "2000."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-e0e1c1b27bd04642a183",
+      "completion": "1997 \n",
+      "domain": "organization",
+      "entity_id": "r11-instrument_development-organization-q5281",
+      "prompt": "In which year was Yandex founded? Answer with only the year.",
+      "qid": "Q5281",
+      "question_id": "instrument_development:organization:Q5281:P571",
+      "relation_id": "P571"
+    },
+    {
+      "accepted_aliases": [
+        "1712",
+        "1712."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-e60e238a650607b2c274",
+      "completion": "1712 \n",
+      "domain": "person",
+      "entity_id": "r11-instrument_development-person-q6527",
+      "prompt": "In which year was Jean-Jacques Rousseau born? Answer with only the year.",
+      "qid": "Q6527",
+      "question_id": "instrument_development:person:Q6527:P569",
+      "relation_id": "P569"
+    },
+    {
+      "accepted_aliases": [
+        "United States",
+        "United States."
+      ],
+      "allowed_error_labels": [
+        "no_error",
+        "entity_unknown",
+        "relation_unknown",
+        "ambiguous_ground_truth",
+        "incomplete_alias_set",
+        "wrong_granularity",
+        "parser_failure",
+        "model_format_failure",
+        "source_error",
+        "other"
+      ],
+      "audit_id": "fa-v6-audit-fdeee3409e256e126a70",
+      "completion": "England \n",
+      "domain": "creative_work",
+      "entity_id": "r11-instrument_development-creative_work-q189875",
+      "prompt": "What is the country of origin of Alice in Wonderland? Answer with only the country name.",
+      "qid": "Q189875",
+      "question_id": "instrument_development:creative_work:Q189875:P495",
+      "relation_id": "P495"
+    }
+  ],
+  "packet_sha256": "24065ee7c7f81ae6eec0d044bb9d125ab9d570e9ae7eef6f40242cdb7d21252f",
+  "rating_files_sha256": [
+    "009b98d3f025788adbdfb5464b97441a5b980f93cbe6ae5eb2f6ee20672b0a5f",
+    "89c96f2740958b8e4c6d4c72fb47774d661938909071db4529c3fa66c820f55f",
+    "a0f1c657780df2b84a0b26f9f3b36bb5efa5f68cc21ef1b922a92308c6f605f0"
+  ],
+  "ratings": [
+    {
+      "audit_id": "fa-v6-audit-1c44ab4a9215d3286d52",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Switzerland is broader and historically different from the accepted polity, Republic of Geneva.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-2581c63b1787903fec80",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Mulan can refer to the Chinese legend or to different film adaptations; the intended work is not specified.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-2bf3a6ff036741be50f3",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Paris gives the broader metropolitan location, while the accepted headquarters location is Boulogne-Billancourt.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3018d404f955494cf722",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "Germany exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-30c2d71955d63b627940",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Northern Europe is a subregion, not a continent; the requested answer is Europe.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3532d8bb8d060d2d5f87",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Russia is a modern successor state, while Pushkin was a citizen of the Russian Empire.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3c2a1ce77b54bc345c8b",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "Turkish exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3d623c0a396f85500b63",
+      "error_label": "relation_unknown",
+      "rater_id": "rater-a",
+      "reason": "The entity is correctly identified, but the death year is incorrect.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-4a8cf9f0b5c93a9fd64a",
+      "error_label": "relation_unknown",
+      "rater_id": "rater-a",
+      "reason": "The organization is correctly identified, but the founding year is incorrect.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-4df0bcb239212f5fd661",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Italy is a modern broader country label, while the accepted historical polity is the Republic of Florence.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-5f60cf572b6047e01ab9",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "Francis Ford Coppola exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-64b78352ea74fdbedd5d",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-a",
+      "reason": "Tokyo is the broader city, while the accepted headquarters location is the ward of Minato.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-677567b543752182079c",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "Russia exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-814b0f43dd5f889e618d",
+      "error_label": "incomplete_alias_set",
+      "rater_id": "rater-a",
+      "reason": "Mandarin Chinese is a valid common name for the official language standardized as Putonghua.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-945f0b58019a3b6f61f9",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "United States exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-945f5937ac024004882e",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Australia is treated as a continent in some geographic conventions, while the dataset expects Oceania.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-a43b2cd934a7577dd7fc",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "Asia exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-b932ac10b2ff35c0e874",
+      "error_label": "relation_unknown",
+      "rater_id": "rater-a",
+      "reason": "Poland appears to conflate the film's setting or subject with its country of origin.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-c0d7cdb5ce53471a0431",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Alice in Wonderland refers to multiple films, including the 1951 animation and Tim Burton's 2010 adaptation.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-cd4d16fe10c506f324da",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Georgia can refer either to the country, whose capital is Tbilisi, or the US state, whose capital is Atlanta.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-cf9f0efdb87eef002866",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "1732 exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-e0e1c1b27bd04642a183",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Yandex began as a search product in 1997, while the corporate organization was formed in 2000.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-e60e238a650607b2c274",
+      "error_label": "no_error",
+      "rater_id": "rater-a",
+      "reason": "1712 exactly matches the accepted answer.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-fdeee3409e256e126a70",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-a",
+      "reason": "Alice in Wonderland can refer to the English source work or to an American film adaptation.",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-1c44ab4a9215d3286d52",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-2581c63b1787903fec80",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-2bf3a6ff036741be50f3",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3018d404f955494cf722",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-30c2d71955d63b627940",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3532d8bb8d060d2d5f87",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3c2a1ce77b54bc345c8b",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3d623c0a396f85500b63",
+      "error_label": "other",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-4a8cf9f0b5c93a9fd64a",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-4df0bcb239212f5fd661",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-5f60cf572b6047e01ab9",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-64b78352ea74fdbedd5d",
+      "error_label": "incomplete_alias_set",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-677567b543752182079c",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-814b0f43dd5f889e618d",
+      "error_label": "incomplete_alias_set",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-945f0b58019a3b6f61f9",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-945f5937ac024004882e",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-a43b2cd934a7577dd7fc",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-b932ac10b2ff35c0e874",
+      "error_label": "other",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-c0d7cdb5ce53471a0431",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-cd4d16fe10c506f324da",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-cf9f0efdb87eef002866",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-e0e1c1b27bd04642a183",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-e60e238a650607b2c274",
+      "error_label": "no_error",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-fdeee3409e256e126a70",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-b",
+      "round": 1
+    },
+    {
+      "audit_id": "fa-v6-audit-3d623c0a396f85500b63",
+      "error_label": "relation_unknown",
+      "rater_id": "rater-c",
+      "reason": "The entity is recognized, but the requested death-year relation is answered incorrectly.",
+      "round": 2
+    },
+    {
+      "audit_id": "fa-v6-audit-4a8cf9f0b5c93a9fd64a",
+      "error_label": "ambiguous_ground_truth",
+      "rater_id": "rater-c",
+      "reason": "The founding year depends on which organizational predecessor or transition is treated as Gazprom's founding event.",
+      "round": 2
+    },
+    {
+      "audit_id": "fa-v6-audit-64b78352ea74fdbedd5d",
+      "error_label": "wrong_granularity",
+      "rater_id": "rater-c",
+      "reason": "Tokyo is the broader location; Minato is the more specific accepted administrative unit.",
+      "round": 2
+    },
+    {
+      "audit_id": "fa-v6-audit-b932ac10b2ff35c0e874",
+      "error_label": "relation_unknown",
+      "rater_id": "rater-c",
+      "reason": "The response confuses country of origin with setting, subject, or filming location.",
+      "round": 2
+    }
+  ],
+  "sample_per_domain": 4,
+  "schema_version": 1,
+  "scoring_disagreement_count": 0,
+  "seed": 20260726,
+  "selection_sha256": "e6e65b362e725d6a8890a1a64a4c914b56164f848d05923446f227dce1046c29",
+  "success_sample_per_domain": 2
+}
