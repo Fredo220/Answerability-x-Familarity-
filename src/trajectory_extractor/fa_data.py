@@ -504,6 +504,27 @@ def build_manifest(
     )
 
 
+def build_same_string_manifest(
+    config: FAConfig,
+    examples: Sequence[FAExample],
+) -> FAManifest:
+    """Seal the registered Same-String-only design without a factorial power audit."""
+    rows = tuple(sorted(examples, key=lambda row: row.example_id))
+    if any(row.block != "same_string" for row in rows):
+        raise ValueError("same-string manifest accepts only same-string rows")
+    if len({row.example_id for row in rows}) != len(rows):
+        raise ValueError("same-string manifest cannot contain duplicate example IDs")
+    if not _is_complete_same_string_design(config, rows):
+        raise ValueError(
+            "same-string manifest requires the complete registered four-cell design"
+        )
+    return FAManifest(
+        config_hash=config.config_hash,
+        examples=rows,
+        manifest_sha256=_manifest_sha256(config.config_hash, rows),
+    )
+
+
 def audit_dataset(
     rows: Sequence[FAExample],
     same_string_rows: Sequence[FAExample] = (),
@@ -526,6 +547,43 @@ def audit_dataset(
         "special_token_sequence": _check_special_tokens(core + replication, tokenizer),
         "lexical_multiset": _check_lexical_multisets(core, tokenizer),
         "same_string_token_budget": _check_same_string_budget(replication, tokenizer),
+    }
+    violations = tuple(name for name, passed in checks.items() if not passed)
+    return DatasetAudit(checks=checks, violations=violations)
+
+
+def audit_same_string_dataset(
+    rows: Sequence[FAExample],
+    *,
+    tokenizer: Any | None = None,
+    matches: Sequence[EntityMatch] | None = None,
+    split_seed: int | None = None,
+) -> DatasetAudit:
+    """Audit a Same-String-only corpus without invoking factorial-only controls."""
+    values = tuple(rows)
+    checks = {
+        "four_cell_completeness": _check_same_string_cells(values),
+        "target_string_identity": _check_same_string_target_identity(values),
+        "code_vocabulary": _check_same_string_code_vocabulary(values, tokenizer),
+        "template_overlap": _check_template_isolation(values),
+        "entity_overlap": _check_entity_isolation(values),
+        "rendered_token_length": _check_rendered_tokens(values, tokenizer),
+        "special_token_sequence": _check_special_tokens(values, tokenizer),
+        "same_string_token_budget": _check_same_string_budget(values, tokenizer),
+        "relation_code_leakage": _check_same_string_task_leakage(values),
+        "deterministic_cell_identity": (
+            _check_same_string_cell_identity(values)
+            and (
+                False
+                if matches is None
+                else _check_same_string_registered_assignment(
+                    values,
+                    matches,
+                    tokenizer=tokenizer,
+                    split_seed=split_seed,
+                )
+            )
+        ),
     }
     violations = tuple(name for name, passed in checks.items() if not passed)
     return DatasetAudit(checks=checks, violations=violations)
@@ -1191,6 +1249,56 @@ def _check_code_vocabulary(rows: Sequence[FAExample], tokenizer: Any | None) -> 
     return bool(factorial_by_unit)
 
 
+def _check_same_string_code_vocabulary(
+    rows: Sequence[FAExample], tokenizer: Any | None
+) -> bool:
+    by_unit: dict[str, set[str]] = defaultdict(set)
+    owner: dict[str, str] = {}
+    token_lengths: set[int] = set()
+    for row in rows:
+        if row.block != "same_string" or not _CODE.fullmatch(row.registry_code):
+            return False
+        token_length = (
+            len(_encode(tokenizer, row.registry_code, add_special_tokens=False))
+            if tokenizer is not None
+            else 1
+        )
+        if token_length < 1:
+            return False
+        token_lengths.add(token_length)
+        by_unit[row.entity_unit_id].add(row.registry_code)
+        if owner.setdefault(row.registry_code, row.entity_unit_id) != row.entity_unit_id:
+            return False
+    if (
+        not rows
+        or len(token_lengths) != 1
+        or not all(len(codes) == 1 for codes in by_unit.values())
+    ):
+        return False
+    sample_by_unit = {row.entity_unit_id: row for row in rows}
+    candidates_by_unit: dict[str, dict[int, list[str]]] = {}
+    for unit_id, row in sample_by_unit.items():
+        names = f"{row.target_text} {row.distractor_text}".casefold()
+        by_length: dict[int, list[str]] = defaultdict(list)
+        for attempt in range(256):
+            code = _code_for(row.split, unit_id, attempt)
+            if code.casefold() in names:
+                continue
+            length = (
+                len(_encode(tokenizer, code, add_special_tokens=False))
+                if tokenizer is not None
+                else 1
+            )
+            if length > 0:
+                by_length[length].append(code)
+        candidates_by_unit[unit_id] = by_length
+    try:
+        registered_length = _select_registered_code_length(candidates_by_unit)
+    except ValueError:
+        return False
+    return token_lengths == {registered_length}
+
+
 def _check_template_isolation(rows: Sequence[FAExample]) -> bool:
     confirmatory_splits = (
         "mechanism_train",
@@ -1319,6 +1427,111 @@ def _check_same_string_budget(rows: Sequence[FAExample], tokenizer: Any | None) 
             if len(tasks) != 1:
                 return False
     return bool(groups)
+
+
+def _check_same_string_cells(rows: Sequence[FAExample]) -> bool:
+    expected = Counter(
+        {
+            ("high_exposure", "target_bound"): 1,
+            ("low_exposure", "target_bound"): 1,
+            ("high_exposure", "code_absent"): 1,
+            ("low_exposure", "code_absent"): 1,
+        }
+    )
+    groups: dict[str, list[FAExample]] = defaultdict(list)
+    for row in rows:
+        if row.block != "same_string":
+            return False
+        groups[row.entity_unit_id].append(row)
+    return bool(groups) and all(
+        Counter((row.exposure, row.answerability) for row in group) == expected
+        for group in groups.values()
+    )
+
+
+def _check_same_string_target_identity(rows: Sequence[FAExample]) -> bool:
+    groups: dict[str, list[FAExample]] = defaultdict(list)
+    for row in rows:
+        groups[row.entity_unit_id].append(row)
+    return bool(groups) and all(
+        len({row.target_text for row in group}) == 1
+        and len({row.target_entity_id for row in group}) == 1
+        for group in groups.values()
+    )
+
+
+def _check_same_string_task_leakage(rows: Sequence[FAExample]) -> bool:
+    for row in rows:
+        prefix, separator, _task = row.user_text.partition(" Task: ")
+        if not separator:
+            return False
+        words = {word.casefold().strip(".,:;?!") for word in prefix.split()}
+        if (
+            row.registry_code.casefold() in prefix.casefold()
+            or _CODE.search(prefix) is not None
+            or not words.isdisjoint(_PROHIBITED_EXPOSURE_CONCEPTS)
+        ):
+            return False
+    return bool(rows)
+
+
+def _check_same_string_cell_identity(rows: Sequence[FAExample]) -> bool:
+    groups: dict[str, list[FAExample]] = defaultdict(list)
+    for row in rows:
+        if (
+            row.example_id != row.canonical_payload_sha256
+            or _example_sha256(row) != row.canonical_payload_sha256
+        ):
+            return False
+        groups[row.entity_unit_id].append(row)
+    if not groups or len({row.example_id for row in rows}) != len(rows):
+        return False
+    stable_fields = (
+        "split",
+        "template_family",
+        "target_text",
+        "distractor_text",
+        "registry_code",
+        "target_entity_id",
+        "distractor_entity_id",
+        "entity_order",
+        "query_role",
+        "target_familiarity",
+        "distractor_familiarity",
+    )
+    return all(
+        all(len({getattr(row, field) for row in group}) == 1 for field in stable_fields)
+        for group in groups.values()
+    )
+
+
+def _check_same_string_registered_assignment(
+    rows: Sequence[FAExample],
+    matches: Sequence[EntityMatch],
+    *,
+    tokenizer: Any | None,
+    split_seed: int | None,
+) -> bool:
+    if type(split_seed) is not int:
+        return False
+    prepared = tuple(matches)
+    if not prepared or len({match.pair_id for match in prepared}) != len(prepared):
+        return False
+    groups: dict[str, list[FAExample]] = defaultdict(list)
+    for row in rows:
+        groups[row.entity_unit_id].append(row)
+    if set(groups) != {match.pair_id for match in prepared}:
+        return False
+    try:
+        expected_families = _balanced_same_string_families(prepared, split_seed)
+        expected_codes = _allocate_codes(prepared, tokenizer)
+    except ValueError:
+        return False
+    return all(
+        {row.template_family for row in group} == {expected_families[unit_id]}
+        and {row.registry_code for row in group} == {expected_codes[unit_id]}
+        for unit_id, group in groups.items()
+    )
 
 
 def _prepare_power_design(rows: Sequence[FAExample]) -> dict[str, np.ndarray] | None:
@@ -1582,6 +1795,27 @@ def _is_complete_confirmatory_design(config: FAConfig, rows: Sequence[FAExample]
         ):
             return False
     return True
+
+
+def _is_complete_same_string_design(
+    config: FAConfig, rows: Sequence[FAExample]
+) -> bool:
+    if config.profile != "confirmatory" or not rows:
+        return False
+    if not (
+        _check_same_string_cells(rows)
+        and _check_same_string_target_identity(rows)
+        and _check_entity_isolation(rows)
+        and _check_same_string_task_leakage(rows)
+        and _check_same_string_cell_identity(rows)
+    ):
+        return False
+    split_by_unit: dict[str, str] = {}
+    for row in rows:
+        owner = split_by_unit.setdefault(row.entity_unit_id, row.split)
+        if owner != row.split:
+            return False
+    return Counter(split_by_unit.values()) == Counter(config.split_counts)
 
 
 def _recompute_confirmatory_power_audit(factorial_rows: Sequence[FAExample]) -> PowerAudit:

@@ -26,6 +26,7 @@ from trajectory_extractor.fa_data import (
     PowerAudit,
     PowerCell,
     build_factorial_examples,
+    build_same_string_examples,
 )
 from trajectory_extractor.fa_entities import (
     CandidateEntity,
@@ -553,6 +554,266 @@ def test_same_string_matches_loader_fails_closed_on_collection_leakage(
         fa_cli._load_verified_same_string_match_collection(
             store, corrupt.manifest_path, config
         )
+
+
+def test_confirmatory_naturalness_accepts_verified_same_string_collection(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    manifest = json.loads(capsys.readouterr().out)["manifest"]
+
+    matches = fa_cli._load_naturalness_matches(
+        config,
+        tmp_path,
+        SimpleNamespace(screened_matches_manifest=None, matches_manifest=manifest),
+    )
+
+    assert Counter(match.split for match in matches) == Counter(config.split_counts)
+
+
+def test_same_string_confirmatory_build_emits_isolated_capabilities_and_typed_seal(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    matches = confirmatory_reserve_matches(config, reserve_per_cell=0)
+    store = FAArtifactStore(tmp_path)
+    gate_shard = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        "same-string-pilot-gate-fixture",
+        [{"kind": "pilot_gate"}],
+        {"config_sha256": config.config_hash},
+        record_kind="pilot_gate",
+    )
+    match_shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "same-string-matches-fixture",
+        [{"kind": "same_string_match_collection"}],
+        {"config_sha256": config.config_hash},
+        record_kind="same_string_match_collection",
+    )
+    ratings_shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "same-string-ratings-fixture",
+        [{"kind": "naturalness_ratings"}],
+        {
+            "config_sha256": config.config_hash,
+            "matches_sha256": naturalness_matches_sha256(matches),
+        },
+        record_kind="naturalness_ratings",
+    )
+    accepted = tuple(match.pair_id for match in matches)
+    naturalness = NaturalnessAudit(
+        accepted_pair_ids=accepted,
+        excluded_pair_ids=(),
+        third_rater_pair_ids=(),
+        decisions={pair_id: "accepted" for pair_id in accepted},
+    )
+    tokenizer = FakeTokenizer()
+    prepared = SimpleNamespace(
+        tokenizer=tokenizer,
+        chat_template_bytes=b"registered confirmatory template",
+        chat_template_sha256=config.chat_template_sha256,
+    )
+    real_builder = build_same_string_examples
+
+    def build_with_test_template(_config, selected, *, tokenizer):
+        registered_hash = _config.chat_template_sha256
+        object.__setattr__(_config, "chat_template_sha256", CHAT_TEMPLATE_SHA256)
+        try:
+            return real_builder(_config, selected, tokenizer=tokenizer)
+        finally:
+            object.__setattr__(_config, "chat_template_sha256", registered_hash)
+
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_pilot_gate",
+        lambda *args, **kwargs: {"status": "passed", "evidence_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_same_string_match_collection",
+        lambda *args, **kwargs: matches,
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_naturalness_ratings",
+        lambda *args, **kwargs: ((), ratings_shard),
+    )
+    monkeypatch.setattr(fa_cli, "audit_naturalness_manifest", lambda *args: naturalness)
+    monkeypatch.setattr(fa_cli, "load_pinned_tokenizer", lambda *args, **kwargs: prepared)
+    monkeypatch.setattr(fa_cli, "build_same_string_examples", build_with_test_template)
+
+    payload = fa_cli._build_same_string_confirmatory(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            matches_manifest=match_shard.manifest_path,
+            pilot_gate_manifest=gate_shard.manifest_path,
+            naturalness_ratings_manifest=tmp_path / "ratings.json",
+        ),
+    )
+
+    assert payload["status"] == "built"
+    assert payload["count"] == 4 * sum(config.split_counts.values())
+    assert set(payload["namespace_manifests"]) == set(config.split_counts)
+    assert len(payload["same_string_seal"]["example_ids"]) == 192
+    assert payload["audit"]["status"] == "passed"
+    index = store.verify_shard(payload["manifest"])
+    assert index.record_kind == "same_string_confirmatory_index"
+    index_row = fa_cli._read_json_rows(index.data_path)[0]
+    assert index_row["kind"] == "same_string_confirmatory_index"
+    assert index_row["amendment_sha256"] == hashlib.sha256(
+        fa_cli._SAME_STRING_AMENDMENT_PATH.read_bytes()
+    ).hexdigest()
+    assert "power_audit_manifest" not in index_row
+    for manifest_path in payload["namespace_manifests"].values():
+        prompt_row = fa_cli._read_json_rows(store.verify_shard(manifest_path).data_path)[0]
+        assert {row["block"] for row in prompt_row["examples"]} == {"same_string"}
+
+
+def test_same_string_confirmatory_parser_rejects_factorial_power_flags(
+    tmp_path, capsys
+):
+    with pytest.raises(SystemExit, match="2"):
+        cli.main(
+            [
+                "fa-build-same-string-confirmatory",
+                "--config",
+                str(SAME_STRING_CONFIG_PATH),
+                "--root",
+                str(tmp_path),
+                "--matches-manifest",
+                "matches.json",
+                "--pilot-gate-manifest",
+                "gate.json",
+                "--naturalness-ratings-manifest",
+                "ratings.json",
+                "--run-registered-power-audit",
+            ]
+        )
+
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+
+def test_same_string_confirmatory_build_stops_before_data_on_blocked_pilot(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    gate_shard = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        "same-string-blocked-pilot-gate",
+        [{"kind": "pilot_gate"}],
+        {"config_sha256": config.config_hash},
+        record_kind="pilot_gate",
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_pilot_gate",
+        lambda *args, **kwargs: {
+            "status": "blocked",
+            "evidence_sha256": "a" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_same_string_match_collection",
+        lambda *args, **kwargs: pytest.fail("data loaded after blocked pilot"),
+    )
+
+    with pytest.raises(ValueError, match="passed pilot gate"):
+        fa_cli._build_same_string_confirmatory(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                matches_manifest=tmp_path / "matches.json",
+                pilot_gate_manifest=gate_shard.manifest_path,
+                naturalness_ratings_manifest=tmp_path / "ratings.json",
+            ),
+        )
+
+
+def test_same_string_confirmatory_rejects_ratings_for_different_stimuli(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    matches = confirmatory_reserve_matches(config, reserve_per_cell=0)
+    store = FAArtifactStore(tmp_path)
+    gate_shard = store.write_completed_shard(
+        config.run_id,
+        "pilot",
+        "same-string-provenance-pilot-gate",
+        [{"kind": "pilot_gate"}],
+        {"config_sha256": config.config_hash},
+        record_kind="pilot_gate",
+    )
+    match_shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "same-string-matches-provenance",
+        [{"kind": "same_string_match_collection"}],
+        {"config_sha256": config.config_hash},
+        record_kind="same_string_match_collection",
+    )
+    ratings_shard = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "same-string-ratings-wrong-stimuli",
+        [{"kind": "naturalness_ratings"}],
+        {"config_sha256": config.config_hash, "matches_sha256": "f" * 64},
+        record_kind="naturalness_ratings",
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_pilot_gate",
+        lambda *args, **kwargs: {"status": "passed", "evidence_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_same_string_match_collection",
+        lambda *args, **kwargs: matches,
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_naturalness_ratings",
+        lambda *args, **kwargs: ((), ratings_shard),
+    )
+
+    with pytest.raises(ValueError, match="do not bind the direct same-string"):
+        fa_cli._build_same_string_confirmatory(
+            config,
+            tmp_path,
+            SimpleNamespace(
+                matches_manifest=match_shard.manifest_path,
+                pilot_gate_manifest=gate_shard.manifest_path,
+                naturalness_ratings_manifest=ratings_shard.manifest_path,
+            ),
+        )
+
+
+def test_same_string_full_manifest_hash_is_rederived_from_examples():
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    matches = confirmatory_reserve_matches(config, reserve_per_cell=0)
+    registered_hash = config.chat_template_sha256
+    object.__setattr__(config, "chat_template_sha256", CHAT_TEMPLATE_SHA256)
+    try:
+        rows = build_same_string_examples(config, matches, tokenizer=FakeTokenizer())
+    finally:
+        object.__setattr__(config, "chat_template_sha256", registered_hash)
+
+    with pytest.raises(ValueError, match="full manifest hash does not verify"):
+        fa_cli._require_same_string_full_manifest_hash(config, rows, "f" * 64)
 
 
 def confirmatory_reserve_matches(config, *, reserve_per_cell=1):
@@ -1789,6 +2050,91 @@ def test_dataset_audit_uses_the_pinned_model_tokenizer(tmp_path, monkeypatch):
 
     assert payload["status"] == "passed"
     assert observed == [sentinel]
+
+
+def test_same_string_only_manifest_uses_dedicated_audit(tmp_path, monkeypatch):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sentinel = object()
+    rows = (SimpleNamespace(block="same_string"),)
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_manifest",
+        lambda *args, **kwargs: SimpleNamespace(examples=rows),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=sentinel),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "audit_dataset",
+        lambda *args, **kwargs: pytest.fail("factorial audit handled same-string-only corpus"),
+    )
+    observed = []
+    monkeypatch.setattr(
+        fa_cli,
+        "audit_same_string_dataset",
+        lambda same_string, *, tokenizer, matches, split_seed: observed.append(
+            (same_string, tokenizer, matches, split_seed)
+        )
+        or SimpleNamespace(passed=True, checks={"same_string": True}, violations=()),
+    )
+
+    payload = fa_cli._audit_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(manifest=tmp_path / "manifest.json"),
+    )
+
+    assert payload["status"] == "passed"
+    assert observed == [(rows, sentinel, None, None)]
+
+
+def test_same_string_index_audit_passes_bound_matches_and_seed(
+    tmp_path, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    index = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "same-string-index-audit-fixture",
+        [{"kind": "same_string_confirmatory_index"}],
+        {"config_sha256": config.config_hash},
+        record_kind="same_string_confirmatory_index",
+    )
+    rows = (SimpleNamespace(block="same_string"),)
+    matches = (EntityMatch(**MATCH),)
+    sentinel = object()
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_same_string_confirmatory_index_for_audit",
+        lambda *args, **kwargs: (rows, matches),
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=sentinel),
+    )
+    observed = []
+    monkeypatch.setattr(
+        fa_cli,
+        "audit_same_string_dataset",
+        lambda same_string, *, tokenizer, matches, split_seed: observed.append(
+            (same_string, tokenizer, matches, split_seed)
+        )
+        or SimpleNamespace(passed=True, checks={"deterministic": True}, violations=()),
+    )
+
+    payload = fa_cli._audit_manifest(
+        config,
+        tmp_path,
+        SimpleNamespace(manifest=index.manifest_path),
+    )
+
+    assert payload["status"] == "passed"
+    assert observed == [(rows, sentinel, matches, config.split_seed)]
 
 
 def test_confirmatory_reserve_selection_is_balanced_deterministic_and_excludes_rejected():

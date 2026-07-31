@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import copy
 from dataclasses import FrozenInstanceError, replace
 from itertools import product
 import hashlib
@@ -23,8 +24,10 @@ from trajectory_extractor.fa_data import (
     PowerAudit,
     PowerCell,
     audit_dataset,
+    audit_same_string_dataset,
     build_factorial_examples,
     build_same_string_examples,
+    build_same_string_manifest,
     build_manifest,
     simulate_interaction_power,
 )
@@ -188,9 +191,8 @@ def registered_examples(tokenizer=FakeTokenizer()):
     return build_factorial_examples(config(), matches, tokenizer=tokenizer), matches
 
 
-@pytest.fixture(scope="module")
-def full_confirmatory_design():
-    matches = tuple(
+def confirmatory_same_string_matches():
+    return tuple(
         entity_unit(
             index,
             split=split,
@@ -204,6 +206,11 @@ def full_confirmatory_design():
             + ["intervention_test"] * 24
         )
     )
+
+
+@pytest.fixture(scope="module")
+def full_confirmatory_design():
+    matches = confirmatory_same_string_matches()
     tokenizer = FakeTokenizer()
     factorial = build_factorial_examples(config(), matches, tokenizer=tokenizer)
     same_string = build_same_string_examples(config(), matches, tokenizer=tokenizer)
@@ -334,6 +341,177 @@ def test_same_string_rows_fix_target_and_token_budget_and_use_one_balanced_famil
             assert pair[0].special_token_sequence == pair[1].special_token_sequence
 
     assert not {row.example_id for row in factorial} & {row.example_id for row in rows}
+
+
+def test_same_string_manifest_seals_only_the_complete_registered_four_cell_design(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+
+    manifest = build_same_string_manifest(config(), rows)
+    audit = audit_same_string_dataset(
+        rows,
+        tokenizer=FakeTokenizer(),
+        matches=confirmatory_same_string_matches(),
+        split_seed=config().split_seed,
+    )
+
+    assert audit.passed
+    assert {row.block for row in manifest.examples} == {"same_string"}
+    assert len(
+        [row for row in manifest.examples if row.split == "behavior_test"]
+    ) == 192
+    assert manifest.power_audit is None
+
+
+def test_same_string_audit_requires_source_matches_for_deterministic_assignment(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+
+    audit = audit_same_string_dataset(rows, tokenizer=FakeTokenizer())
+
+    assert not audit.checks["deterministic_cell_identity"]
+    assert not audit.passed
+
+
+def test_same_string_manifest_rejects_a_factorial_row(full_confirmatory_design):
+    factorial, rows = full_confirmatory_design
+
+    with pytest.raises(ValueError, match="only same-string rows"):
+        build_same_string_manifest(config(), (*rows, factorial[0]))
+
+
+def test_same_string_manifest_rejects_an_incomplete_four_cell_unit(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+
+    with pytest.raises(ValueError, match="complete registered four-cell design"):
+        build_same_string_manifest(config(), rows[1:])
+
+
+def test_same_string_manifest_rejects_within_unit_target_string_drift(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+    tampered = list(rows)
+    tampered[0] = copy.copy(tampered[0])
+    object.__setattr__(tampered[0], "target_text", "Different Target")
+
+    with pytest.raises(ValueError, match="complete registered four-cell design"):
+        build_same_string_manifest(config(), tampered)
+
+
+def test_same_string_manifest_rejects_duplicate_example_ids(full_confirmatory_design):
+    _factorial, rows = full_confirmatory_design
+
+    with pytest.raises(ValueError, match="duplicate example IDs"):
+        build_same_string_manifest(config(), (*rows, rows[0]))
+
+
+def test_same_string_manifest_rejects_entity_overlap_across_protected_splits(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+    tampered = list(rows)
+    source = next(row for row in tampered if row.split == "behavior_test")
+    destination_index = next(
+        index for index, row in enumerate(tampered) if row.split == "probe_test"
+    )
+    tampered[destination_index] = copy.copy(tampered[destination_index])
+    destination = tampered[destination_index]
+    object.__setattr__(destination, "target_entity_id", source.target_entity_id)
+
+    audit = audit_same_string_dataset(tampered, tokenizer=FakeTokenizer())
+
+    assert not audit.checks["entity_overlap"]
+    with pytest.raises(ValueError, match="complete registered four-cell design"):
+        build_same_string_manifest(config(), tampered)
+
+
+def test_same_string_audit_rejects_relation_or_code_leakage_in_exposure_prefix(
+    full_confirmatory_design,
+):
+    _factorial, rows = full_confirmatory_design
+    tampered = list(rows)
+    tampered[0] = copy.copy(tampered[0])
+    prefix, separator, task = tampered[0].user_text.partition(" Task: ")
+    leaked_text = f"{prefix} archive code {tampered[0].registry_code}{separator}{task}"
+    token_ids, special_tokens = fa_data._token_metadata(leaked_text, FakeTokenizer())
+    object.__setattr__(tampered[0], "user_text", leaked_text)
+    object.__setattr__(tampered[0], "rendered_token_ids", token_ids)
+    object.__setattr__(tampered[0], "rendered_token_count", len(token_ids))
+    object.__setattr__(tampered[0], "special_token_sequence", special_tokens)
+
+    audit = audit_same_string_dataset(tampered, tokenizer=FakeTokenizer())
+
+    assert not audit.checks["relation_code_leakage"]
+
+
+def test_same_string_audit_rejects_a_different_seeded_template_assignment():
+    active = config()
+    matches = tuple(
+        entity_unit(index, split="mechanism_train", coarse_type="person")
+        for index in range(8)
+    )
+    alternate = copy.copy(active)
+    object.__setattr__(alternate, "split_seed", active.split_seed + 1)
+    alternate_rows = build_same_string_examples(
+        alternate, matches, tokenizer=FakeTokenizer()
+    )
+    registered_rows = build_same_string_examples(
+        active, matches, tokenizer=FakeTokenizer()
+    )
+    assert {
+        row.entity_unit_id: row.template_family for row in alternate_rows
+    } != {
+        row.entity_unit_id: row.template_family for row in registered_rows
+    }
+
+    audit = audit_same_string_dataset(
+        alternate_rows,
+        tokenizer=FakeTokenizer(),
+        matches=matches,
+        split_seed=active.split_seed,
+    )
+
+    assert not audit.checks["deterministic_cell_identity"]
+
+
+def test_same_string_audit_rejects_an_alternate_deterministic_code_assignment():
+    active = config()
+    tokenizer = FakeTokenizer()
+    matches = tuple(
+        entity_unit(index, split="mechanism_train", coarse_type="person")
+        for index in range(8)
+    )
+    registered = build_same_string_examples(active, matches, tokenizer=tokenizer)
+    family_by_unit = {
+        row.entity_unit_id: row.template_family for row in registered
+    }
+    alternate_rows = tuple(
+        fa_data._build_same_string_row(
+            match,
+            family_by_unit[match.pair_id],
+            exposure,
+            answerability,
+            fa_data._code_for(match.split, match.pair_id, 255),
+            tokenizer,
+        )
+        for match in matches
+        for exposure in ("high_exposure", "low_exposure")
+        for answerability in ("target_bound", "code_absent")
+    )
+
+    audit = audit_same_string_dataset(
+        alternate_rows,
+        tokenizer=tokenizer,
+        matches=matches,
+        split_seed=active.split_seed,
+    )
+
+    assert not audit.checks["deterministic_cell_identity"]
 
 
 def test_complete_confirmatory_construction_requires_exact_domain_balance_in_every_split():

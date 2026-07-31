@@ -35,9 +35,11 @@ from trajectory_extractor.fa_data import (
     PowerAudit,
     PowerCell,
     audit_dataset,
+    audit_same_string_dataset,
     build_factorial_examples,
     build_manifest,
     build_same_string_examples,
+    build_same_string_manifest,
     simulate_interaction_power,
 )
 from trajectory_extractor.fa_entities import (
@@ -108,7 +110,7 @@ from trajectory_extractor.fa_naturalness import (
 
 
 FA_COMMANDS = (
-    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-build-same-string-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
@@ -125,6 +127,7 @@ _IMPLEMENTED = frozenset(
         "fa-finalize-naturalness-adjudication",
         "fa-build-pilot",
         "fa-build-confirmatory",
+        "fa-build-same-string-confirmatory",
         "fa-audit-manifest",
         "fa-run-generation",
         "fa-score-behavior",
@@ -158,6 +161,12 @@ _PREREGISTRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
     / "familiarity_answerability_preregistration.md"
+)
+_SAME_STRING_AMENDMENT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-08-01-fa-same-string-primary.md"
 )
 _NATURALNESS_PROTOCOL_PATH = (
     Path(__file__).resolve().parents[2]
@@ -301,6 +310,12 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     parsers["fa-build-confirmatory"].add_argument(
         "--naturalness-ratings-manifest", required=True
     )
+    same_string_build = parsers["fa-build-same-string-confirmatory"]
+    same_string_build.add_argument("--matches-manifest", required=True)
+    same_string_build.add_argument("--pilot-gate-manifest", required=True)
+    same_string_build.add_argument(
+        "--naturalness-ratings-manifest", required=True
+    )
     power = parsers["fa-build-confirmatory"].add_mutually_exclusive_group(required=True)
     power.add_argument("--power-audit-manifest")
     power.add_argument("--run-registered-power-audit", action="store_true")
@@ -397,6 +412,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _finalize_naturalness_adjudication(config, root, args)
         elif command in {"fa-build-pilot", "fa-build-confirmatory"}:
             payload = _build_manifest(config, root, args, confirmatory=command == "fa-build-confirmatory")
+        elif command == "fa-build-same-string-confirmatory":
+            payload = _build_same_string_confirmatory(config, root, args)
         elif command == "fa-audit-manifest":
             payload = _audit_manifest(config, root, args)
         elif command == "fa-run-generation":
@@ -723,8 +740,19 @@ def _load_naturalness_matches(
             )
         return _load_verified_screened_matches(store, screened, config)
     if config.profile == "confirmatory":
+        store = FAArtifactStore(root)
+        try:
+            shard = store.verify_shard(raw)
+        except ValueError as error:
+            raise ValueError(
+                "confirmatory naturalness requires a verified screened-match "
+                "collection or same-string match collection"
+            ) from error
+        if shard.record_kind == "same_string_match_collection":
+            return _load_verified_same_string_match_collection(store, raw, config)
         raise ValueError(
-            "confirmatory naturalness requires a verified screened-match collection"
+            "confirmatory naturalness requires a verified screened-match or "
+            "same-string match collection"
         )
     rows = _read_json_rows(raw)
     try:
@@ -2135,6 +2163,393 @@ def _build_manifest(config: FAConfig, root: Path, args: argparse.Namespace, *, c
     }
 
 
+def _build_same_string_confirmatory(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Build the isolated Same-String primary corpus and its capabilities."""
+    if config.profile != "confirmatory":
+        raise ValueError("same-string confirmatory construction requires a confirmatory config")
+    store = FAArtifactStore(root)
+    smoke_config = FAConfig.from_json(_SMOKE_CONFIG_PATH)
+    gate_shard = _require_verified_shard_kind(
+        store, args.pilot_gate_manifest, "pilot_gate", "verified pilot gate"
+    )
+    gate = _load_verified_pilot_gate(store, args.pilot_gate_manifest, smoke_config)
+    if gate.get("status") != "passed":
+        raise ValueError("same-string confirmatory construction requires a passed pilot gate")
+
+    match_shard = _require_verified_shard_kind(
+        store,
+        args.matches_manifest,
+        "same_string_match_collection",
+        "verified same-string match collection",
+    )
+    direct_matches = _load_verified_same_string_match_collection(
+        store, args.matches_manifest, config
+    )
+    ratings, ratings_shard = _load_verified_naturalness_ratings(
+        store, args.naturalness_ratings_manifest, config
+    )
+    ratings_lineage = _read_json_object(ratings_shard.manifest_path).get("lineage")
+    if (
+        not isinstance(ratings_lineage, dict)
+        or ratings_lineage.get("matches_sha256")
+        != naturalness_matches_sha256(direct_matches)
+    ):
+        raise ValueError(
+            "naturalness ratings do not bind the direct same-string match collection"
+        )
+    naturalness = audit_naturalness_manifest(direct_matches, ratings)
+    if not naturalness.accepted_pair_ids:
+        raise ValueError("same-string construction requires accepted naturalness pairs")
+    matches = _select_confirmatory_matches(config, direct_matches, naturalness)
+    naturalness_shard = _write_naturalness_audit(
+        store, config, direct_matches, naturalness, ratings, ratings_shard
+    )
+
+    prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
+    rows = build_same_string_examples(config, matches, tokenizer=prepared.tokenizer)
+    preflight = audit_same_string_dataset(
+        rows,
+        tokenizer=prepared.tokenizer,
+        matches=matches,
+        split_seed=config.split_seed,
+    )
+    if not preflight.passed:
+        raise ValueError(
+            "same-string manifest preflight failed: " + ", ".join(preflight.violations)
+        )
+    manifest = build_same_string_manifest(config, rows)
+    tokenizer_pin = _write_tokenizer_pin(
+        store, config, prepared, manifest.manifest_sha256
+    )
+    probe_metadata = _write_probe_metadata(
+        store, config, manifest.manifest_sha256, matches, rows
+    )
+    capabilities = {
+        namespace: _write_prompt_capability(
+            store,
+            config,
+            manifest.manifest_sha256,
+            namespace,
+            tuple(row for row in rows if row.split == namespace),
+            prepared.chat_template_sha256,
+            tokenizer_pin,
+            naturalness_shard,
+        )
+        for namespace in sorted({row.split for row in rows})
+    }
+    missing_protected = _PROTECTED - capabilities.keys()
+    if missing_protected:
+        raise ValueError(
+            "same-string manifest is missing protected endpoint capabilities: "
+            + ", ".join(sorted(missing_protected))
+        )
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256=manifest.manifest_sha256,
+        example_ids=tuple(
+            row.example_id for row in rows if row.split == "behavior_test"
+        ),
+    )
+    amendment_sha256 = hashlib.sha256(_SAME_STRING_AMENDMENT_PATH.read_bytes()).hexdigest()
+    index_row = _same_string_confirmatory_index_record(
+        store=store,
+        config=config,
+        full_manifest_sha256=manifest.manifest_sha256,
+        amendment_sha256=amendment_sha256,
+        gate=gate,
+        gate_shard=gate_shard,
+        capabilities=capabilities,
+        tokenizer_pin=tokenizer_pin,
+        naturalness_audit=naturalness_shard,
+        match_collection=match_shard,
+        probe_metadata=probe_metadata,
+        seal=seal,
+    )
+    capabilities_sha256 = _sha256_json(index_row["capabilities"])
+    index = _write_or_resume_single_record(
+        store,
+        run_id=config.run_id,
+        namespace="mechanism_train",
+        shard_id=f"same-string-confirmatory-index-{manifest.manifest_sha256[:16]}",
+        row=index_row,
+        lineage={
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": manifest.manifest_sha256,
+            "amendment_sha256": amendment_sha256,
+            "pilot_gate_sha256": gate_shard.sha256,
+            "naturalness_audit_sha256": naturalness_shard.sha256,
+            "match_collection_sha256": match_shard.sha256,
+            "matching_policy_sha256": _same_string_matching_policy_sha256(),
+            "tokenizer_pin_sha256": tokenizer_pin.sha256,
+            "same_string_seal_sha256": seal.sha256,
+            "capabilities_sha256": capabilities_sha256,
+        },
+        record_kind="same_string_confirmatory_index",
+    )
+    return {
+        "status": "built",
+        "manifest": str(index.manifest_path),
+        "count": len(rows),
+        "manifest_sha256": manifest.manifest_sha256,
+        "same_string_seal": seal.to_record(),
+        "same_string_seal_sha256": seal.sha256,
+        "namespace_manifests": {
+            namespace: str(shard.manifest_path)
+            for namespace, shard in sorted(capabilities.items())
+        },
+        "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path),
+        "naturalness_audit_manifest": str(naturalness_shard.manifest_path),
+        "naturalness_audit_sha256": naturalness_shard.sha256,
+        "probe_metadata_manifest": str(probe_metadata.manifest_path),
+        "audit": {
+            "status": "passed",
+            "checks": dict(preflight.checks),
+            "violations": [],
+        },
+    }
+
+
+def _same_string_confirmatory_index_record(
+    *,
+    store: FAArtifactStore,
+    config: FAConfig,
+    full_manifest_sha256: str,
+    amendment_sha256: str,
+    gate: Mapping[str, Any],
+    gate_shard: Any,
+    capabilities: Mapping[str, Any],
+    tokenizer_pin: Any,
+    naturalness_audit: Any,
+    match_collection: Any,
+    probe_metadata: Any,
+    seal: SameStringSealEvidence,
+) -> dict[str, Any]:
+    return {
+        "kind": "same_string_confirmatory_index",
+        "schema_version": 1,
+        "config_sha256": config.config_hash,
+        "full_manifest_sha256": full_manifest_sha256,
+        "amendment_path": str(
+            _SAME_STRING_AMENDMENT_PATH.relative_to(Path(__file__).resolve().parents[2])
+        ),
+        "amendment_sha256": _required_sha256(amendment_sha256, "amendment sha256"),
+        "pilot_gate_evidence_sha256": _required_sha256(
+            gate.get("evidence_sha256"), "pilot gate evidence sha256"
+        ),
+        "pilot_gate_manifest": str(gate_shard.manifest_path.relative_to(store.root)),
+        "pilot_gate_sha256": gate_shard.sha256,
+        "naturalness_audit_manifest": str(
+            naturalness_audit.manifest_path.relative_to(store.root)
+        ),
+        "naturalness_audit_sha256": naturalness_audit.sha256,
+        "match_collection_manifest": str(
+            match_collection.manifest_path.relative_to(store.root)
+        ),
+        "match_collection_sha256": match_collection.sha256,
+        "matching_policy_sha256": _same_string_matching_policy_sha256(),
+        "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path.relative_to(store.root)),
+        "tokenizer_pin_sha256": tokenizer_pin.sha256,
+        "probe_metadata_manifest": str(probe_metadata.manifest_path.relative_to(store.root)),
+        "probe_metadata_sha256": probe_metadata.sha256,
+        "same_string_seal": seal.to_record(),
+        "same_string_seal_sha256": seal.sha256,
+        "capabilities": {
+            namespace: {
+                "manifest_path": str(shard.manifest_path.relative_to(store.root)),
+                "sha256": shard.sha256,
+            }
+            for namespace, shard in sorted(capabilities.items())
+        },
+    }
+
+
+def _load_same_string_confirmatory_index_for_audit(
+    store: FAArtifactStore,
+    path: str | Path,
+    config: FAConfig,
+) -> tuple[tuple[FAExample, ...], tuple[EntityMatch, ...]]:
+    shard = _require_verified_shard_kind(
+        store,
+        path,
+        "same_string_confirmatory_index",
+        "verified same-string confirmatory index",
+    )
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    if shard.namespace != "mechanism_train":
+        raise ValueError("same-string confirmatory index must use mechanism_train")
+    records = _read_json_rows(shard.data_path)
+    required = {
+        "kind",
+        "schema_version",
+        "config_sha256",
+        "full_manifest_sha256",
+        "amendment_path",
+        "amendment_sha256",
+        "pilot_gate_evidence_sha256",
+        "pilot_gate_manifest",
+        "pilot_gate_sha256",
+        "naturalness_audit_manifest",
+        "naturalness_audit_sha256",
+        "match_collection_manifest",
+        "match_collection_sha256",
+        "matching_policy_sha256",
+        "tokenizer_pin_manifest",
+        "tokenizer_pin_sha256",
+        "probe_metadata_manifest",
+        "probe_metadata_sha256",
+        "same_string_seal",
+        "same_string_seal_sha256",
+        "capabilities",
+    }
+    if (
+        len(records) != 1
+        or set(records[0]) != required
+        or records[0].get("kind") != "same_string_confirmatory_index"
+        or records[0].get("schema_version") != 1
+        or records[0].get("config_sha256") != config.config_hash
+    ):
+        raise ValueError("same-string confirmatory index has an invalid schema")
+    row = records[0]
+    full_hash = _required_sha256(
+        row.get("full_manifest_sha256"), "same-string full manifest sha256"
+    )
+    amendment_hash = hashlib.sha256(_SAME_STRING_AMENDMENT_PATH.read_bytes()).hexdigest()
+    expected_amendment_path = str(
+        _SAME_STRING_AMENDMENT_PATH.relative_to(Path(__file__).resolve().parents[2])
+    )
+    if (
+        row.get("amendment_path") != expected_amendment_path
+        or row.get("amendment_sha256") != amendment_hash
+    ):
+        raise ValueError("same-string amendment identity does not verify")
+
+    gate_path = _artifact_path_from_record(
+        store, row.get("pilot_gate_manifest"), "same-string pilot gate"
+    )
+    gate_shard = _require_verified_shard_kind(
+        store, gate_path, "pilot_gate", "verified pilot gate"
+    )
+    if gate_shard.sha256 != row.get("pilot_gate_sha256"):
+        raise ValueError("same-string pilot gate hash does not verify")
+    gate = _load_verified_pilot_gate(
+        store, gate_path, FAConfig.from_json(_SMOKE_CONFIG_PATH)
+    )
+    if (
+        gate.get("status") != "passed"
+        or gate.get("evidence_sha256") != row.get("pilot_gate_evidence_sha256")
+    ):
+        raise ValueError("same-string pilot gate evidence does not verify")
+
+    match_path = _artifact_path_from_record(
+        store, row.get("match_collection_manifest"), "same-string match collection"
+    )
+    match_shard = _require_verified_shard_kind(
+        store,
+        match_path,
+        "same_string_match_collection",
+        "verified same-string match collection",
+    )
+    if (
+        match_shard.sha256 != row.get("match_collection_sha256")
+        or row.get("matching_policy_sha256") != _same_string_matching_policy_sha256()
+    ):
+        raise ValueError("same-string match collection identity does not verify")
+    matches = _load_verified_same_string_match_collection(store, match_path, config)
+
+    capabilities = row.get("capabilities")
+    if not isinstance(capabilities, dict) or set(capabilities) != set(config.split_counts):
+        raise ValueError("same-string confirmatory capabilities are incomplete")
+    examples: list[FAExample] = []
+    prompt_manifests = []
+    for namespace, capability in sorted(capabilities.items()):
+        if not isinstance(capability, dict) or set(capability) != {
+            "manifest_path",
+            "sha256",
+        }:
+            raise ValueError("same-string capability has an invalid schema")
+        capability_path = _artifact_path_from_record(
+            store,
+            capability.get("manifest_path"),
+            f"same-string {namespace} capability",
+        )
+        prompt = _load_manifest(store, capability_path, config)
+        if (
+            prompt.namespace != namespace
+            or prompt.shard_sha256 != capability.get("sha256")
+            or prompt.full_manifest_sha256 != full_hash
+        ):
+            raise ValueError("same-string capability identity does not verify")
+        prompt_manifests.append(prompt)
+        examples.extend(prompt.examples)
+    ordered_examples = tuple(sorted(examples, key=lambda value: value.example_id))
+    _require_same_string_full_manifest_hash(config, ordered_examples, full_hash)
+
+    seal = SameStringSealEvidence.from_record(row.get("same_string_seal"))
+    behavior_ids = tuple(
+        sorted(value.example_id for value in ordered_examples if value.split == "behavior_test")
+    )
+    if (
+        seal.source_manifest_sha256 != full_hash
+        or seal.example_ids != behavior_ids
+        or seal.sha256 != row.get("same_string_seal_sha256")
+    ):
+        raise ValueError("same-string typed seal does not verify")
+    naturalness_hash = row.get("naturalness_audit_sha256")
+    tokenizer_hash = row.get("tokenizer_pin_sha256")
+    if any(
+        prompt.naturalness_audit_sha256 != naturalness_hash
+        or prompt.tokenizer_pin_sha256 != tokenizer_hash
+        for prompt in prompt_manifests
+    ):
+        raise ValueError("same-string capability provenance does not match the index")
+    naturalness_path = _artifact_path_from_record(
+        store, row.get("naturalness_audit_manifest"), "same-string naturalness audit"
+    )
+    _load_verified_naturalness_audit(
+        store,
+        naturalness_path,
+        config,
+        expected_sha256=_required_sha256(naturalness_hash, "naturalness audit sha256"),
+        expected_pair_ids=frozenset(match.pair_id for match in matches),
+    )
+    probe_path = _artifact_path_from_record(
+        store, row.get("probe_metadata_manifest"), "same-string probe metadata"
+    )
+    probe_shard = _require_verified_shard_kind(
+        store, probe_path, "probe_metadata", "verified probe metadata"
+    )
+    if probe_shard.sha256 != row.get("probe_metadata_sha256"):
+        raise ValueError("same-string probe metadata identity does not verify")
+    capabilities_sha256 = _sha256_json(capabilities)
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "source_manifest_sha256": full_hash,
+            "amendment_sha256": amendment_hash,
+            "pilot_gate_sha256": gate_shard.sha256,
+            "naturalness_audit_sha256": naturalness_hash,
+            "match_collection_sha256": match_shard.sha256,
+            "matching_policy_sha256": _same_string_matching_policy_sha256(),
+            "tokenizer_pin_sha256": tokenizer_hash,
+            "same_string_seal_sha256": seal.sha256,
+            "capabilities_sha256": capabilities_sha256,
+        },
+    )
+    return ordered_examples, matches
+
+
+def _require_same_string_full_manifest_hash(
+    config: FAConfig,
+    examples: Sequence[FAExample],
+    expected_sha256: str,
+) -> None:
+    rebuilt_manifest = build_same_string_manifest(config, examples)
+    if rebuilt_manifest.manifest_sha256 != expected_sha256:
+        raise ValueError("same-string full manifest hash does not verify")
+
+
 def _confirmatory_index_record(
     store,
     config,
@@ -2176,11 +2591,31 @@ def _confirmatory_index_record(
 
 
 def _audit_manifest(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:
-    manifest = _load_manifest(FAArtifactStore(root), args.manifest, config)
-    factorial = tuple(row for row in manifest.examples if row.block == "factorial")
-    same_string = tuple(row for row in manifest.examples if row.block == "same_string")
+    store = FAArtifactStore(root)
+    try:
+        supplied = store.verify_shard(args.manifest)
+    except ValueError:
+        supplied = None
+    matches = None
+    if supplied is not None and supplied.record_kind == "same_string_confirmatory_index":
+        examples, matches = _load_same_string_confirmatory_index_for_audit(
+            store, args.manifest, config
+        )
+    else:
+        examples = _load_manifest(store, args.manifest, config).examples
+    factorial = tuple(row for row in examples if row.block == "factorial")
+    same_string = tuple(row for row in examples if row.block == "same_string")
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
-    audit = audit_dataset(factorial, same_string, tokenizer=prepared.tokenizer)
+    audit = (
+        audit_same_string_dataset(
+            same_string,
+            tokenizer=prepared.tokenizer,
+            matches=matches,
+            split_seed=config.split_seed if matches is not None else None,
+        )
+        if same_string and not factorial
+        else audit_dataset(factorial, same_string, tokenizer=prepared.tokenizer)
+    )
     return {"status": "passed" if audit.passed else "failed", "checks": dict(audit.checks), "violations": list(audit.violations)}
 
 
