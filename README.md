@@ -1,36 +1,39 @@
 # Familiarity vs. Answerability in Language Models
 
-Does a language model answer more readily when it recognizes an entity, even
-when the information needed to answer is missing?
+Does a language model answer more readily after receiving unrelated contextual
+exposure to a target, even when the information needed to answer is missing?
 
-This project tests that question with a preregistered behavioral experiment
-and a small mechanistic-interpretability follow-up on
-`google/gemma-2-2b-it`.
+This repository contains a controlled behavioral experiment and a gated small
+mechanistic-interpretability follow-up on `google/gemma-2-2b-it`. The active
+study is the **Same-String Primary Study**. It tests contextual familiarization
+without depending on the failed real-entity R11 screening instrument.
 
 ## The Idea
 
-The experiment separates two factors:
+The active experiment separates two factors while keeping the target string
+identical within every four-prompt unit:
 
-- **Familiarity:** Does the model recognize the target entity?
+- **Contextual exposure:** Has the prompt introduced several unrelated facts
+  about the target string?
 - **Answerability:** Does the prompt contain the evidence required to answer?
 
-For example, the model may see either a familiar name such as an established
-organization or a matched synthetic name. The prompt then either provides a
-fictional archive code for that entity or leaves the code unavailable.
+The prompt either supplies a fictional archive code for the target or leaves
+that code unavailable. High-exposure prompts first provide unrelated facts
+about the same target; low-exposure controls assign matched facts elsewhere.
 
 The primary question is:
 
-> Does familiarity selectively increase answer attempts when the required
-> evidence is absent?
+> Does controlled contextual familiarization selectively increase answer
+> attempts when the required evidence is absent?
 
 This distinction matters because confidently completing a pattern is not the
 same as having evidence for the requested answer.
 
 ## Why This Matters
 
-A model may confuse **recognizing an entity** with **having enough evidence to
-answer a question about it**. This distinction matters for hallucination
-detection, uncertainty calibration, and reliable abstention.
+A model may confuse **having seen more context about a target** with **having
+enough evidence to answer a question about it**. This distinction matters for
+hallucination detection, uncertainty calibration, and reliable abstention.
 
 This study is deliberately scoped so it can be completed reproducibly with
 limited compute. It serves as a concrete demonstration of controlled
@@ -40,59 +43,61 @@ pursue a more ambitious research question aligned with Anthropic's priorities.
 
 ## Research Approach
 
-1. **Controlled behavioral test — (Our contribution**)
-   We use a 2×2 design that independently varies entity familiarity and
-   answerability. Matched prompts and synthetic facts test whether familiarity
-   increases answer attempts when the required evidence is absent.
+1. **Controlled behavioral test (our contribution)**
+   We use a 2×2 Same-String design that independently varies contextual
+   exposure and answerability. The target string and task remain fixed.
 
-2. **Population-level validation — (Our contribution**)
+2. **Population-level validation (our contribution)**
    We evaluate the interaction across multiple entities and domains rather
    than drawing conclusions from individual prompts.
 
-3. **Internal activation analysis — (Combined approach**)
-   We test whether model activations predict the behavioral effect before the
-   answer is generated.
+3. **Internal activation analysis (gated follow-up)**
+   We test whether held-out activations decode exposure and answerability and
+   predict unsupported answer attempts beyond registered controls.
 
-4. **Circuit tracing — (Anthropic methodology**)
-   For preregistered representative cases, we use Anthropic-style Replacement
-   Models, Cross-Layer Transcoders, and Attribution Graphs to generate
-   hypotheses about the internal mechanism.
+4. **Local causal validation (gated follow-up)**
+   If the behavioral and probe gates pass, we test matched activation
+   replacement against reverse, shuffled, orthogonal, and norm-matched
+   controls in the original model.
 
-5. **Causal validation — (Combined contribution**)
-   We validate graph hypotheses through fidelity checks, controlled
-   interventions, and appropriate null controls in the original model.
+Our primary contribution is the controlled Same-String exposure ×
+answerability experiment. Attribution graphs are an unregistered future
+possibility, not part of the active confirmatory study.
 
-Our primary contribution is the controlled Familiarity × Answerability
-experiment and its systematic dataset. Anthropic's tools provide the
-mechanistic framework used to investigate why the measured behavior occurs.
-
-## Experiment
+## Active Experiment
 
 The planned Fellowship artifact has two gated stages:
 
-1. **F1: behavioral interaction**
-   - Cross familiar and synthetic entities with answerable and unanswerable
-     prompts.
-   - Measure whether familiarity changes answer attempts specifically when
-     evidence is absent.
-2. **F2A: mechanistic pilot**
+1. **Primary behavior study**
+   - Cross high and low contextual exposure with present and absent evidence.
+   - Estimate the registered difference-in-differences in answer attempts.
+2. **Gated mechanistic pilot**
    - Extract internal activations before the answer is produced.
    - Test whether they add held-out predictive information beyond surface
      features and output confidence.
 
-F2A runs only after a valid F1 corpus exists. Activation interchange and
-attribution graphs are optional follow-ups; they cannot rescue a failed
-behavioral result.
+The mechanistic pilot runs only after the behavioral endpoint is complete.
+Activation interchange and attribution graphs are optional follow-ups; they
+cannot rescue a failed behavioral result.
 
 ## Current Status
 
-**Status as of 2026-08-01: R11 instrument audit failed; the hypothesis remains
-untested.**
+**Status as of 2026-08-01: the Same-String implementation is pre-outcome. It is
+not yet an empirical result.**
+
+- The Same-String design, amendment, direct matching path, sealed-manifest
+  construction, estimator, bootstrap, and behavior gate are implemented.
+- Human naturalness review, the unprotected runtime smoke, and the one-shot
+  protected Gemma behavior run remain to be completed in that order.
+- R11 remains immutable and `not_evaluable`; it is preserved as a negative
+  instrument-development result and is not repaired by this study.
+
+### Preserved R11 record
 
 - The original Source-v5 corpus was `not_evaluable` because too few entities
   passed its frozen familiarity screen.
-- R9 and R10 also failed their registered instrument-readiness gates. Their
-  negative results remain preserved.
+- R9 and R10 also failed their registered instrument-readiness gates. These
+  feasibility outcomes remain preserved.
 - R11 used a larger candidate pool and five preregistered relation questions
   per domain. Development data selected three relations deterministically.
 - The strict-score yield was sufficient, but an independent human audit found
@@ -128,8 +133,9 @@ It does **not** show that:
 - Gemma represents human-like belief, knowledge, or intuition;
 - the result generalizes to other tasks or models.
 
-Only the later frozen F1 analysis can provide evidence for the behavioral
-interaction. Null and `not_evaluable` outcomes are valid reportable results.
+Only the separately registered Same-String primary analysis can now provide
+evidence for its contextual-exposure interaction. It cannot reinterpret R11.
+Null and `not_evaluable` outcomes are valid reportable results.
 
 ## Reproduce Locally
 
@@ -143,36 +149,24 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements/fa-core.lock
 python -m pip install --no-deps -e .
-python -m pytest -q tests/test_fa_r11_*.py
+python -m pytest -q \
+  tests/test_fa_data.py \
+  tests/test_fa_scoring.py \
+  tests/test_fa_cli.py \
+  tests/test_fa_notebooks.py \
+  -k "same_string or notebook"
 ```
 
 The 8 GB local machine is suitable for tests, audits, analysis, and reporting.
 The pinned Gemma generation requires a Colab GPU in the current setup.
 
-## Run the Current R11 Screen
+## Run the Active Same-String Study
 
-Add `HF_TOKEN` through Colab Secrets, check out a clean repository revision,
-and run:
-
-```bash
-COMMIT="$(git rev-parse HEAD)"
-test -z "$(git status --porcelain --untracked-files=all)"
-
-PYTHONPATH=src python tools/run_fa_r11_screening.py \
-  --config configs/familiarity_answerability_gemma2_2b.json \
-  --source-root data/fa/development_source_v6_r11 \
-  --split instrument_development \
-  --output-root /content/fa-r11-artifacts \
-  --pre-model-semantic-audit \
-    data/fa/development_source_v6_r11/pre_model_semantic_audit_v1.json \
-  --batch-size 16 \
-  --git-commit "$COMMIT"
-```
-
-The command is resumable and verifies source, audit, model, tokenizer, parser,
-and commit identities before reusing completed batches. Continue with the
-[R11 runbook](docs/fa_source_v6_r11_runbook.md) to freeze the selected
-relations and perform the one-shot validation.
+Follow the ordered [Same-String primary runbook](docs/fa_same_string_primary_runbook.md)
+or open the thin
+[Colab launcher](notebooks/fa_same_string_primary_colab.ipynb). The notebook
+uses only repository CLI commands, a pinned commit, Colab Secrets, and a
+persistent Drive checkpoint.
 
 ## Research Integrity
 
@@ -186,10 +180,18 @@ relations and perform the one-shot validation.
 
 ## Key Documents
 
-Start here:
+Active study:
+
+- [Same-String primary runbook](docs/fa_same_string_primary_runbook.md)
+- [Same-String design](docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md)
+- [Same-String amendment](docs/amendments/2026-08-01-fa-same-string-primary.md)
+- [Same-String implementation plan](docs/superpowers/plans/2026-08-01-same-string-primary-hybrid-implementation.md)
+
+Preserved R11 record:
 
 - [R11 runbook](docs/fa_source_v6_r11_runbook.md)
 - [R11 instrument amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
+- [R11 negative result](docs/results/source_v6_r11_instrument_development_outcome.md)
 - [Preregistration](docs/familiarity_answerability_preregistration.md)
 - [Claim boundaries](docs/familiarity_answerability_claims.md)
 
