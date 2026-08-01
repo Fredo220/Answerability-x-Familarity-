@@ -1,0 +1,166 @@
+{
+  "config_sha256": "3cb14e7fbd7df7005231b7dfe2df208d9ec313a64a25099d1e51043c062cc845",
+  "dataset_audit": {
+    "checks": {
+      "code_vocabulary": true,
+      "deterministic_cell_identity": true,
+      "entity_overlap": true,
+      "four_cell_completeness": true,
+      "relation_code_leakage": true,
+      "rendered_token_length": true,
+      "same_string_token_budget": true,
+      "special_token_sequence": true,
+      "target_string_identity": true,
+      "template_overlap": true
+    },
+    "passed": true,
+    "violations": []
+  },
+  "development_history": {
+    "human_packets_distributed": false,
+    "initial_preflight_commit": "40f010964076d7f59e188f86c3d3ce71c7c2ad39",
+    "initial_preflight_status": "failed_model_independent_audit",
+    "initial_violations": [
+      "same_string_token_budget",
+      "relation_code_leakage"
+    ],
+    "model_outputs_inspected": false,
+    "protected_endpoint_opened": false,
+    "repair": "symmetric_preselection_exclusion_of_registered_task_vocabulary"
+  },
+  "gates": {
+    "behavior_endpoint": "closed",
+    "confirmatory_index": "not_built",
+    "deterministic_prompt_audit": "passed",
+    "direct_matching": "passed",
+    "independent_naturalness": "awaiting_independent_ratings",
+    "runtime_smoke": "not_run"
+  },
+  "git_commit": "151f818cb51b7782ad4b32c36b9cebfd06a7a499",
+  "match_collection": {
+    "data_sha256": "d270795e36d5bc8ed1722ab05bf3e00e09375cd90971b9ba1f51cee0d165f835",
+    "manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-matches-v1.jsonl.manifest.json",
+    "manifest_sha256": "be37827428e36dd8b65590cf2cb288b753b8b3e2c6123e78c5acb86634d30f02",
+    "matches_sha256": "28ab2745074e5d68834202328a4c7c10ab3f04ae2b854ff1ccc4267be94b10d4",
+    "matching_policy_sha256": "09cbe8b3a4195475f4e2f05e6efd9d418356e38135883293e42a4baf63a6e4af",
+    "row_count": 768,
+    "sources": [
+      {
+        "kind": "candidate",
+        "path": "inputs/confirmatory_source_v5/candidate_entities_behavior_test_v1.json",
+        "sha256": "005d2a6cb99f95bd7c837b9a846efbc4c457cddefb17fe0eff1f59c617e337e3",
+        "split": "behavior_test"
+      },
+      {
+        "kind": "synthetic",
+        "path": "inputs/confirmatory_source_v5/synthetic_candidates_behavior_test_v1.json",
+        "sha256": "1df43c49cb24a4a04dfbfb70d10b4d755939a6c075a30ef7ccf6a087490e55e8",
+        "split": "behavior_test"
+      },
+      {
+        "kind": "candidate",
+        "path": "inputs/confirmatory_source_v5/candidate_entities_intervention_test_v1.json",
+        "sha256": "de5302351e6daf293fb44b7f9dcf6c50253a60272d98c4d0a80ab843cd0135d1",
+        "split": "intervention_test"
+      },
+      {
+        "kind": "synthetic",
+        "path": "inputs/confirmatory_source_v5/synthetic_candidates_intervention_test_v1.json",
+        "sha256": "a7fa8d8424c95992f48ccab9f343dba59596ad16710d568fe8f7cbf0a327bf95",
+        "split": "intervention_test"
+      },
+      {
+        "kind": "candidate",
+        "path": "inputs/confirmatory_source_v5/candidate_entities_locked_validation_v1.json",
+        "sha256": "b63a2af7a6357e8ae93b6a114e474a2226e18b2fd99fbc86fb8a02c686480f60",
+        "split": "locked_validation"
+      },
+      {
+        "kind": "synthetic",
+        "path": "inputs/confirmatory_source_v5/synthetic_candidates_locked_validation_v1.json",
+        "sha256": "0cdc8ea22f35de4604e1f82e66a90d0885ad2f0c336951e2a2017657cea8fffc",
+        "split": "locked_validation"
+      },
+      {
+        "kind": "candidate",
+        "path": "inputs/confirmatory_source_v5/candidate_entities_mechanism_train_v1.json",
+        "sha256": "010f42a0e31bb0fe36d2b6f8695b43a29fc696581138b8e5abea9d31b9f3b383",
+        "split": "mechanism_train"
+      },
+      {
+        "kind": "synthetic",
+        "path": "inputs/confirmatory_source_v5/synthetic_candidates_mechanism_train_v1.json",
+        "sha256": "c6ea5c63772e017052cc6335a51c359ab0bb76eb0a540a152ca6c58ccffb8bdc",
+        "split": "mechanism_train"
+      },
+      {
+        "kind": "candidate",
+        "path": "inputs/confirmatory_source_v5/candidate_entities_probe_test_v1.json",
+        "sha256": "74819373005ed60dde5b241e483fec9a4f916213d2c7c7c52db860b7dd1f5824",
+        "split": "probe_test"
+      },
+      {
+        "kind": "synthetic",
+        "path": "inputs/confirmatory_source_v5/synthetic_candidates_probe_test_v1.json",
+        "sha256": "fd128f6c4067dca1514da6cf3453ce84550388f5e556e08b32d80268fc303886",
+        "split": "probe_test"
+      }
+    ],
+    "split_domain_unit_counts": {
+      "behavior_test/creative_work": 12,
+      "behavior_test/organization": 12,
+      "behavior_test/person": 12,
+      "behavior_test/place": 12,
+      "intervention_test/creative_work": 6,
+      "intervention_test/organization": 6,
+      "intervention_test/person": 6,
+      "intervention_test/place": 6,
+      "locked_validation/creative_work": 8,
+      "locked_validation/organization": 8,
+      "locked_validation/person": 8,
+      "locked_validation/place": 8,
+      "mechanism_train/creative_work": 16,
+      "mechanism_train/organization": 16,
+      "mechanism_train/person": 16,
+      "mechanism_train/place": 16,
+      "probe_test/creative_work": 6,
+      "probe_test/organization": 6,
+      "probe_test/person": 6,
+      "probe_test/place": 6
+    },
+    "split_row_counts": {
+      "behavior_test": 192,
+      "intervention_test": 96,
+      "locked_validation": 128,
+      "mechanism_train": 256,
+      "probe_test": 96
+    },
+    "split_unit_counts": {
+      "behavior_test": 48,
+      "intervention_test": 24,
+      "locked_validation": 32,
+      "mechanism_train": 64,
+      "probe_test": 24
+    },
+    "unit_count": 192
+  },
+  "model_id": "google/gemma-2-2b-it",
+  "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "rating_issuance": {
+    "manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-naturalness-issuance-v1.jsonl.manifest.json",
+    "manifest_sha256": "6eb4c9ca3a5ebe770c3f87ac92ed54505de572e8d2e0c9ff69e8057d456b8dfe",
+    "pair_count": 192,
+    "public_packet_sha256s": {
+      "rater-a-packet.json": "42c06e60119bb78844dab5e85380c2b007dbfb9b88c0256af086950a8979afa2",
+      "rater-a-response.csv": "b01028a0c0193ccbfb59a91d46f45e5f7823369e823c2c5c604b982bc5d50c3f",
+      "rater-b-packet.json": "6180e6e899b90e6e8d27cb7c864533a3b2a9a9b877d3e63f7a071edada0898f2",
+      "rater-b-response.csv": "5750b43b338533999ed98cf587009f3b46dbb33fe41061137cc4af1b076f5984"
+    },
+    "rater_count": 2
+  },
+  "run_id": "same-string-primary-v1",
+  "schema_version": 1,
+  "status": "awaiting_independent_ratings",
+  "study_id": "familiarity-answerability-same-string-gemma2-2b-v1",
+  "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+}

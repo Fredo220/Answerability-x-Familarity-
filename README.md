@@ -87,8 +87,9 @@ not yet an empirical result.**
 
 - The Same-String design, amendment, direct matching path, sealed-manifest
   construction, estimator, bootstrap, and behavior gate are implemented.
-- Human naturalness review, the unprotected runtime smoke, and the one-shot
-  protected Gemma behavior run remain to be completed in that order.
+- The model-independent preflight passed all ten prompt audits. Two sealed,
+  blinded naturalness packets now await independent human ratings; the runtime
+  smoke and one-shot protected Gemma behavior run remain closed.
 - R11 remains immutable and `not_evaluable`; it is preserved as a negative
   instrument-development result and is not repaired by this study.
 
@@ -186,6 +187,7 @@ Active study:
 - [Same-String design](docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md)
 - [Same-String amendment](docs/amendments/2026-08-01-fa-same-string-primary.md)
 - [Same-String implementation plan](docs/superpowers/plans/2026-08-01-same-string-primary-hybrid-implementation.md)
+- [Same-String preflight result](docs/results/same_string_primary_preflight.md)
 
 Preserved R11 record:
 
