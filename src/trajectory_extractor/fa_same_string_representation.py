@@ -122,6 +122,17 @@ class _Candidate:
     mean_layer_permutation_p: float | None = None
 
 
+def _fixed_layer_slice(
+    layer_ids: Sequence[int], activations: np.ndarray
+) -> tuple[tuple[int, ...], np.ndarray]:
+    available = tuple(int(value) for value in layer_ids)
+    try:
+        indices = tuple(available.index(layer_id) for layer_id in REPRESENTATION_LAYER_IDS)
+    except ValueError as error:
+        raise ValueError("representation activations omit a fixed layer") from error
+    return REPRESENTATION_LAYER_IDS, np.asarray(activations)[:, indices, :]
+
+
 def build_same_string_representation_rows(
     examples: Sequence[FAExample],
     activation_records: Sequence[ActivationRecord],
@@ -139,13 +150,9 @@ def build_same_string_representation_rows(
         activation = activations[example.example_id]
         if activation.anchors.input_ids != tuple(example.rendered_token_ids):
             raise ValueError("representation activation prompt provenance is invalid")
-        try:
-            layer_indices = tuple(
-                activation.layer_ids.index(layer_id)
-                for layer_id in REPRESENTATION_LAYER_IDS
-            )
-        except ValueError as error:
-            raise ValueError("representation activations omit a fixed layer") from error
+        fixed_layers, fixed_activations = _fixed_layer_slice(
+            activation.layer_ids, activation.activations
+        )
         rows.append(
             SameStringRepresentationRow(
                 example_id=example.example_id,
@@ -155,9 +162,9 @@ def build_same_string_representation_rows(
                 exposure=example.exposure,
                 answerability=example.answerability,
                 surface_features=surface_feature_vector(example)[:10],
-                layer_ids=activation.layer_ids,
+                layer_ids=fixed_layers,
                 anchor_names=activation.anchor_names,
-                activations=activation.activations[:, layer_indices, :],
+                activations=fixed_activations,
             )
         )
     return _validate_rows(rows)

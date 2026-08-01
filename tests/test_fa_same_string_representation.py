@@ -7,6 +7,7 @@ from trajectory_extractor.fa_activations import ANCHOR_NAMES
 from trajectory_extractor.fa_same_string_representation import (
     REPRESENTATION_LAYER_IDS,
     SameStringRepresentationRow,
+    _fixed_layer_slice,
     analyze_same_string_representations,
 )
 
@@ -109,3 +110,14 @@ def test_representation_row_rejects_unregistered_layers():
             anchor_names=row.anchor_names,
             activations=row.activations,
         )
+
+
+def test_fixed_layer_slice_rebinds_full_extraction_metadata():
+    full_layers = tuple(range(26))
+    activations = np.arange(3 * 26 * 16, dtype=np.float64).reshape(3, 26, 16)
+
+    layers, selected = _fixed_layer_slice(full_layers, activations)
+
+    assert layers == REPRESENTATION_LAYER_IDS
+    assert selected.shape == (3, len(REPRESENTATION_LAYER_IDS), 16)
+    assert np.array_equal(selected[:, 1, :], activations[:, 6, :])
