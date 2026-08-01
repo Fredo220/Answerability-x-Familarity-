@@ -1,5 +1,6 @@
 {
   "repository": "https://github.com/microsoft/SkillOpt.git",
-  "commit": "e7014cd",
-  "integration": "skillopt-sleep"
+  "commit": "e7014cd18a18e11e6f6c10b897f7a009960d2e1b",
+  "integration": "skillopt-sleep",
+  "codex_model": "gpt-5.4-mini"
 }

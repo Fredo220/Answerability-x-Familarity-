@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.prepare_fa_skillopt_workspace import prepare
 from tools.validate_fa_skillopt import validate, validate_staging
 
 
@@ -24,8 +25,9 @@ def test_skillopt_integration_is_pinned_reviewed_and_split():
 
     assert lock == {
         "repository": "https://github.com/microsoft/SkillOpt.git",
-        "commit": "e7014cd",
+        "commit": "e7014cd18a18e11e6f6c10b897f7a009960d2e1b",
         "integration": "skillopt-sleep",
+        "codex_model": "gpt-5.4-mini",
     }
     assert tasks["format"] == "skillopt_sleep.tasks.v1"
     assert tasks["reviewed"] is True
@@ -77,6 +79,9 @@ def test_runner_defaults_to_mock_and_blocks_automatic_adoption():
     assert "validate_fa_skillopt.py" in text
     assert "codex_preflight" in text
     assert "project memory" in text
+    assert 'echo "Automatic adoption is disabled.' in text
+    assert "evaluate-test" in text
+    assert 'project "$SAFE_ROOT"' in text
 
 
 def test_validator_accepts_committed_integration():
@@ -104,15 +109,16 @@ def test_validator_rejects_protected_task_text(tmp_path: Path):
 
 
 def test_validator_rejects_memory_edits_before_adoption(tmp_path: Path):
-    staging = tmp_path / "staging"
-    staging.mkdir()
+    safe = tmp_path / "safe"
+    staging = safe / ".skillopt-sleep" / "staging" / "run"
+    staging.mkdir(parents=True)
     (staging / "manifest.json").write_text(
         json.dumps(
             {
                 "accepted": True,
                 "has_skill": True,
                 "has_memory": True,
-                "live_skill_path": str(TARGET),
+                "live_skill_path": str(safe / TARGET.relative_to(ROOT)),
             }
         ),
         encoding="utf-8",
@@ -123,3 +129,84 @@ def test_validator_rejects_memory_edits_before_adoption(tmp_path: Path):
 
     with pytest.raises(ValueError, match="memory edits"):
         validate_staging(ROOT, staging)
+
+
+def test_validator_rejects_changes_to_immutable_boundaries(tmp_path: Path):
+    safe = tmp_path / "safe"
+    staging = safe / ".skillopt-sleep" / "staging" / "run"
+    staging.mkdir(parents=True)
+    proposed = TARGET.read_text(encoding="utf-8").replace(
+        "Never use SkillOpt to inspect", "Use SkillOpt to inspect"
+    )
+    (staging / "proposed_SKILL.md").write_text(proposed, encoding="utf-8")
+    (staging / "manifest.json").write_text(
+        json.dumps(
+            {
+                "accepted": True,
+                "has_skill": True,
+                "has_memory": False,
+                "live_skill_path": str(safe / TARGET.relative_to(ROOT)),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="immutable section"):
+        validate_staging(ROOT, staging)
+
+
+def test_sanitized_workspace_contains_only_allowlisted_inputs(tmp_path: Path):
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "skillopt", project / "skillopt")
+    shutil.copytree(ROOT / ".agents", project / ".agents")
+    (project / "protected-result.json").write_text("secret", encoding="utf-8")
+
+    safe = prepare(project, tmp_path / "sanitized", tmp_path)
+    files = {
+        path.relative_to(safe).as_posix()
+        for path in safe.rglob("*")
+        if path.is_file()
+    }
+    assert files == {
+        ".agents/skills/fa-research-workflow/SKILL.md",
+        "README.md",
+        "skillopt/fa_research_workflow_tasks_v1.json",
+    }
+    assert not any(path.is_symlink() for path in safe.rglob("*"))
+
+
+def test_sanitized_workspace_must_stay_outside_project(tmp_path: Path):
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "skillopt", project / "skillopt")
+    shutil.copytree(ROOT / ".agents", project / ".agents")
+
+    with pytest.raises(ValueError, match="outside the source project"):
+        prepare(project, project / ".skillopt-workspace", project)
+
+
+def test_sanitized_workspace_cannot_delete_outside_allowed_root(tmp_path: Path):
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "skillopt", project / "skillopt")
+    shutil.copytree(ROOT / ".agents", project / ".agents")
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    marker = victim / "keep.txt"
+    marker.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="child of the allowed root"):
+        prepare(project, victim, tmp_path / "approved")
+    assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_sanitized_workspace_refuses_to_replace_existing_state(tmp_path: Path):
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "skillopt", project / "skillopt")
+    shutil.copytree(ROOT / ".agents", project / ".agents")
+    destination = tmp_path / "existing"
+    destination.mkdir()
+    marker = destination / "staged-proposal.json"
+    marker.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="new and empty"):
+        prepare(project, destination, tmp_path)
+    assert marker.read_text(encoding="utf-8") == "keep"

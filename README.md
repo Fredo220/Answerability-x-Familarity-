@@ -215,6 +215,9 @@ Supporting protocols:
 - [Implementation plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
 - [SkillOpt development runbook](docs/fa_skillopt_runbook.md)
 
+SkillOpt runs only against a generated allowlisted workspace and can stage
+workflow-skill proposals, but it cannot adopt them into this research tree.
+
 SkillOpt is available only as a gated development aid for improving the agent's
 research workflow instructions. It never consumes protected study artifacts and
 is not part of the scientific method or evidence.

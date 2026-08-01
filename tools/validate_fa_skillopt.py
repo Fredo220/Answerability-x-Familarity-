@@ -29,6 +29,7 @@ FORBIDDEN_TASK_TEXT = (
     "endpoint result",
 )
 TARGET_PATH = ".agents/skills/fa-research-workflow/SKILL.md"
+UPSTREAM_COMMIT = "e7014cd18a18e11e6f6c10b897f7a009960d2e1b"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -43,8 +44,9 @@ def validate(project: Path) -> None:
     lock = _load(project / "skillopt" / "skillopt.lock.json")
     if lock != {
         "repository": "https://github.com/microsoft/SkillOpt.git",
-        "commit": "e7014cd",
+        "commit": UPSTREAM_COMMIT,
         "integration": "skillopt-sleep",
+        "codex_model": "gpt-5.4-mini",
     }:
         raise ValueError("SkillOpt lock does not match the reviewed upstream pin")
 
@@ -116,9 +118,11 @@ def validate_staging(project: Path, staging: Path) -> None:
     project = project.resolve()
     staging = staging.resolve()
     manifest = _load(staging / "manifest.json")
-    expected_skill = (project / TARGET_PATH).resolve()
+    if staging.parent.name != "staging" or staging.parent.parent.name != ".skillopt-sleep":
+        raise ValueError("proposal is outside the SkillOpt staging namespace")
+    expected_skill = (staging.parents[2] / TARGET_PATH).resolve()
     if manifest.get("accepted") is not True:
-        raise ValueError("only an accepted SkillOpt proposal may be adopted")
+        raise ValueError("only an accepted SkillOpt proposal may be reviewed")
     if manifest.get("has_skill") is not True:
         raise ValueError("proposal does not contain a target-skill improvement")
     if manifest.get("has_memory") is not False:
@@ -137,6 +141,14 @@ def validate_staging(project: Path, staging: Path) -> None:
     missing = [term for term in required if term not in proposed]
     if missing:
         raise ValueError(f"proposal weakens research boundaries: {missing}")
+    baseline = (project / TARGET_PATH).read_text(encoding="utf-8")
+    candidate = (staging / "proposed_SKILL.md").read_text(encoding="utf-8")
+    for heading in ("Scientific Boundaries", "SkillOpt Adoption Boundary"):
+        pattern = rf"(?ms)^## {re.escape(heading)}\n.*?(?=^## |\Z)"
+        old = re.search(pattern, baseline)
+        new = re.search(pattern, candidate)
+        if old is None or new is None or old.group(0) != new.group(0):
+            raise ValueError(f"proposal changes immutable section: {heading}")
 
 
 def main() -> int:
