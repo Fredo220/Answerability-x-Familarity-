@@ -134,6 +134,7 @@ def test_feasibility_v2_colab_replays_v1_then_allocates_before_model_compute():
     assert 'drive.mount("/content/drive", timeout_ms=60_000)' in text
     assert 'Path("/content/fa-same-string-feasibility-v2-checkpoints")' in text
     assert "Drive unavailable; using local checkpoints" in text
+    assert 'sys.path.insert(0, str(CHECKOUT / "src"))' in text
     assert "familiarity_answerability_same_string_gemma2_2b.json" in text
     assert "familiarity_answerability_same_string_feasibility_v2.json" in text
     assert "/content/fa-same-string-feasibility-v2-artifacts" in text
