@@ -5,6 +5,8 @@ import pytest
 
 from trajectory_extractor.fa_activations import ANCHOR_NAMES
 from trajectory_extractor.fa_same_string_representation import (
+    METRIC_RECORD_KIND,
+    PREDICTION_RECORD_KIND,
     REPRESENTATION_LAYER_IDS,
     SameStringRepresentationRow,
     _fixed_layer_slice,
@@ -63,6 +65,10 @@ def test_representation_pilot_uses_fixed_test_units_and_reports_nulls():
     assert result.test_group_count == 4
     assert len(result.metric_records) == 42
     assert len(result.prediction_records) == 42 * 16
+    assert {row["kind"] for row in result.metric_records} == {METRIC_RECORD_KIND}
+    assert {row["kind"] for row in result.prediction_records} == {
+        PREDICTION_RECORD_KIND
+    }
     assert all(row["split"] == "probe_test" for row in result.prediction_records)
     assert all(
         row["claim_scope"] == "exploratory_representation_only"

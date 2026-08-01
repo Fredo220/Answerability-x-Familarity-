@@ -108,6 +108,8 @@ from trajectory_extractor.fa_pilot_analysis import (
     build_pilot_analysis_rows,
 )
 from trajectory_extractor.fa_same_string_representation import (
+    METRIC_RECORD_KIND as SAME_STRING_REPRESENTATION_METRIC_KIND,
+    PREDICTION_RECORD_KIND as SAME_STRING_REPRESENTATION_PREDICTION_KIND,
     REPRESENTATION_PERMUTATION_SEEDS,
     analyze_same_string_representations,
     build_same_string_representation_rows,
@@ -3486,7 +3488,7 @@ def _analyze_same_string_representations(
         shard_id=f"{shard_id}-predictions",
         rows=result.prediction_records,
         lineage=lineage,
-        record_kind="same_string_representation_predictions",
+        record_kind=SAME_STRING_REPRESENTATION_PREDICTION_KIND,
         allow_resume=True,
     )
     metrics = _write_or_resume_records(
@@ -3502,7 +3504,7 @@ def _analyze_same_string_representations(
             ),
             "predictions_sha256": predictions.sha256,
         },
-        record_kind="same_string_representation_metrics",
+        record_kind=SAME_STRING_REPRESENTATION_METRIC_KIND,
         allow_resume=True,
     )
     return {

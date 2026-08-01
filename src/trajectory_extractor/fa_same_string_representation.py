@@ -24,6 +24,8 @@ REPRESENTATION_LAYER_IDS = (0, 6, 12, 18, 25)
 REPRESENTATION_ANALYSIS_SEED = 20260802
 REPRESENTATION_PERMUTATION_SEEDS = tuple(range(2026080201, 2026080300))
 REPRESENTATION_BOOTSTRAP_DRAWS = 2_000
+METRIC_RECORD_KIND = "same_string_representation_metrics"
+PREDICTION_RECORD_KIND = "same_string_representation_prediction"
 _SPLIT_GROUP_COUNTS = {
     "mechanism_train": 12,
     "locked_validation": 4,
@@ -507,7 +509,7 @@ def _attach_layer_nulls(candidates: Sequence[_Candidate]) -> list[_Candidate]:
 
 def _metric_record(candidate: _Candidate) -> dict[str, Any]:
     return {
-        "kind": "same_string_representation_metrics",
+        "kind": METRIC_RECORD_KIND,
         "schema_version": 1,
         "task": candidate.task,
         "anchor": candidate.anchor,
@@ -538,7 +540,7 @@ def _prediction_records(
         probability = float(candidate.probabilities[local_index])
         records.append(
             {
-                "kind": "same_string_representation_prediction",
+                "kind": PREDICTION_RECORD_KIND,
                 "schema_version": 1,
                 "example_id": row.example_id,
                 "entity_unit_id": row.entity_unit_id,
