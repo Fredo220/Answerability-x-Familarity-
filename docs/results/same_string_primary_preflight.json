@@ -147,14 +147,15 @@
   "model_id": "google/gemma-2-2b-it",
   "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
   "rating_issuance": {
-    "manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-naturalness-issuance-v1.jsonl.manifest.json",
-    "manifest_sha256": "6eb4c9ca3a5ebe770c3f87ac92ed54505de572e8d2e0c9ff69e8057d456b8dfe",
+    "git_commit": "8d08f3fbcade196d830cae4c4d6cabf06e14ce69",
+    "manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-naturalness-issuance-v2.jsonl.manifest.json",
+    "manifest_sha256": "ea4c7b03e09324b696675b1b695b626fcb78ab84c2c856c64c3ee05b12c0cec5",
     "pair_count": 192,
     "public_packet_sha256s": {
-      "rater-a-packet.json": "42c06e60119bb78844dab5e85380c2b007dbfb9b88c0256af086950a8979afa2",
-      "rater-a-response.csv": "b01028a0c0193ccbfb59a91d46f45e5f7823369e823c2c5c604b982bc5d50c3f",
-      "rater-b-packet.json": "6180e6e899b90e6e8d27cb7c864533a3b2a9a9b877d3e63f7a071edada0898f2",
-      "rater-b-response.csv": "5750b43b338533999ed98cf587009f3b46dbb33fe41061137cc4af1b076f5984"
+      "rater-a-packet.json": "42f3918dfa559a69f53ddcb97e32bc49e54d5a452db12833d7aba3e42904010e",
+      "rater-a-response.csv": "cd53e295f01f9004c4f24fbdcfb18411d395113cfd9b097474f8b4abcf3b08f7",
+      "rater-b-packet.json": "1dc3f3704c76332a821a83fae2e90284dbf0e9562b62e7847b53636b30266514",
+      "rater-b-response.csv": "fc9741286d7bf6a721e3c94f6930f36c19b11790ebcf1ed8f286f62145cd29fc"
     },
     "rater_count": 2
   },

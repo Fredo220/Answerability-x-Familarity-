@@ -79,6 +79,11 @@ Run `fa-prepare-naturalness-ratings` with exactly two independent raters. Give
 each rater only the blinded public packet. Do not share the private unblinding
 key or the other rater's responses.
 
+Each rater receives their own JSON reference packet and their own CSV
+worksheet. The CSV already displays the question, entity type, both candidates,
+and neutral example sentences. Raters fill only the six rating columns and set
+`independence_attested=true`; they must not edit the displayed stimuli.
+
 After both response files are returned, run
 `fa-compile-naturalness-ratings`. If it reports disagreements, issue the
 already-generated blinded packet to one independent third adjudicator and run

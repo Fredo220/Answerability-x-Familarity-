@@ -41,12 +41,14 @@ edited. The repeated preflight then passed all checks.
 
 ## Human gate
 
-Two independent blinded packets are sealed under the ignored artifact root:
+Two independent blinded packet/worksheet pairs are sealed under the ignored
+artifact root. Each CSV is self-contained and shows the rating question,
+entity type, both candidate names, and both neutral example sentences:
 
-- `runs/same-string-primary-preflight-v2/rater-packets/public/rater-a-packet.json`
-- `runs/same-string-primary-preflight-v2/rater-packets/public/rater-a-response.csv`
-- `runs/same-string-primary-preflight-v2/rater-packets/public/rater-b-packet.json`
-- `runs/same-string-primary-preflight-v2/rater-packets/public/rater-b-response.csv`
+- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-a-packet.json`
+- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-a-response.csv`
+- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-b-packet.json`
+- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-b-response.csv`
 
 Each rater receives only their own packet and response template and follows
 [`fa_naturalness_rating_protocol.md`](../fa_naturalness_rating_protocol.md).
