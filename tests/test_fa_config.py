@@ -5,6 +5,7 @@ import pytest
 
 from trajectory_extractor.fa_config import (
     CONFIRMATORY_SPLIT_COUNTS,
+    FEASIBILITY_SAME_STRING_SPLIT_COUNTS,
     NON_CONFIRMATORY_NAMESPACES,
     FAConfig,
 )
@@ -16,6 +17,11 @@ SAME_STRING_CONFIG = (
     REPO_ROOT
     / "configs"
     / "familiarity_answerability_same_string_gemma2_2b.json"
+)
+FEASIBILITY_SAME_STRING_CONFIG = (
+    REPO_ROOT
+    / "configs"
+    / "familiarity_answerability_same_string_feasibility_v2.json"
 )
 SMOKE_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_qwen06b_smoke.json"
 ACTIVE_SMOKE_CONFIG = (
@@ -92,6 +98,29 @@ def test_same_string_confirmatory_config_reuses_registered_model_and_counts():
         same_string_payload.pop(identity_field)
 
     assert same_string_payload == canonical_payload
+
+
+def test_feasibility_same_string_v2_has_separate_identity_and_registered_counts():
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG)
+
+    assert config.study_id == "familiarity-answerability-same-string-feasibility-v2"
+    assert config.run_id == "same-string-feasibility-v2"
+    assert dict(config.split_counts) == FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+    assert dict(config.split_counts) == {
+        "mechanism_train": 12,
+        "locked_validation": 4,
+        "behavior_test": 32,
+        "probe_test": 4,
+    }
+    assert "intervention_test" not in config.split_counts
+
+
+def test_feasibility_counts_are_allowed_only_for_the_registered_v2_identity():
+    payload = json.loads(CONFIRMATORY_CONFIG.read_text(encoding="utf-8"))
+    payload["split_counts"] = FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+
+    with pytest.raises(ValueError, match="preregistration"):
+        FAConfig(**payload)
 
 
 def test_config_rejects_mutable_revision_and_unknown_split(tmp_path):

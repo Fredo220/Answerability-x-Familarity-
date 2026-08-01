@@ -63,6 +63,11 @@ SAME_STRING_CONFIG_PATH = (
     / "configs"
     / "familiarity_answerability_same_string_gemma2_2b.json"
 )
+FEASIBILITY_SAME_STRING_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "configs"
+    / "familiarity_answerability_same_string_feasibility_v2.json"
+)
 
 MATCH = {
     "pair_id": "Q1--syn-1",
@@ -297,6 +302,344 @@ def same_string_command_args(tmp_path, sources, *, shard_id="same-string-matches
     for _, synthetic in sources:
         args.extend(("--synthetic-manifest", str(synthetic)))
     return [*args, "--shard-id", shard_id]
+
+
+def feasibility_source_matches(*, accepted_per_domain=13):
+    domains = ("person", "place", "organization", "creative_work")
+    source_splits = tuple(FAConfig.from_json(SAME_STRING_CONFIG_PATH).split_counts)
+    matches = []
+    index = 0
+    for domain in domains:
+        for domain_index in range(accepted_per_domain):
+            index += 1
+            split = source_splits[domain_index % len(source_splits)]
+            real_name = f"Real Name {index}"
+            synthetic_name = f"Fake Name {index}"
+            real_entity_id = f"real-{domain}-{domain_index:02d}"
+            synthetic_candidate_id = f"synthetic-{domain}-{domain_index:02d}"
+            matches.append(
+                EntityMatch(
+                    pair_id=f"{real_entity_id}--{synthetic_candidate_id}",
+                    real_entity_id=real_entity_id,
+                    real_qid=f"Q{index}",
+                    synthetic_candidate_id=synthetic_candidate_id,
+                    real_name=real_name,
+                    synthetic_name=synthetic_name,
+                    coarse_type=domain,
+                    split=split,
+                    generator_revision="same-string-names-v1",
+                    tokenizer_revision="tokenizer-v1",
+                    real_token_count=3,
+                    synthetic_token_count=3,
+                    real_word_count=3,
+                    synthetic_word_count=3,
+                    real_character_count=len(real_name),
+                    synthetic_character_count=len(synthetic_name),
+                    character_length_delta=len(synthetic_name) - len(real_name),
+                    character_tolerance=2,
+                    capitalization_pattern_equal=True,
+                )
+            )
+    return tuple(matches)
+
+
+def test_feasibility_v2_reassigns_exact_accepted_pairs_by_domain_hash():
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG_PATH)
+    source = feasibility_source_matches()
+    accepted = tuple(row.pair_id for row in source)
+
+    selected, allocation = fa_cli._derive_same_string_feasibility_v2_matches(
+        config, source, accepted
+    )
+
+    assert Counter(row.split for row in selected) == Counter(config.split_counts)
+    assert "intervention_test" not in {row.split for row in selected}
+    source_by_id = {row.pair_id: row for row in source}
+    for row in selected:
+        assert replace(row, split=source_by_id[row.pair_id].split) == source_by_id[row.pair_id]
+    expected_split_order = (
+        "behavior_test",
+        "mechanism_train",
+        "locked_validation",
+        "probe_test",
+    )
+    for domain in REGISTERED_ENTITY_DOMAINS:
+        ranked = sorted(
+            (row for row in source if row.coarse_type == domain),
+            key=lambda row: (
+                hashlib.sha256(
+                    f"{domain}\0{row.pair_id}".encode("utf-8")
+                ).hexdigest(),
+                row.pair_id,
+            ),
+        )
+        offset = 0
+        for split in expected_split_order:
+            quota = config.split_counts[split] // len(REGISTERED_ENTITY_DOMAINS)
+            assert {
+                row.pair_id
+                for row in selected
+                if row.coarse_type == domain and row.split == split
+            } == {row.pair_id for row in ranked[offset : offset + quota]}
+            offset += quota
+    assert {row["pair_id"] for row in allocation} == {row.pair_id for row in selected}
+
+
+def test_feasibility_v2_fails_closed_when_an_accepted_domain_is_short():
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG_PATH)
+    source = feasibility_source_matches()
+    accepted = tuple(
+        row.pair_id
+        for row in source
+        if row.coarse_type != "place" or row.pair_id.endswith("00")
+    )
+
+    with pytest.raises(ValueError, match="accepted place pairs"):
+        fa_cli._derive_same_string_feasibility_v2_matches(config, source, accepted)
+
+
+def verified_v1_same_string_evidence(tmp_path, capsys, monkeypatch):
+    source_config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, source_config)
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    matches_manifest = json.loads(capsys.readouterr().out)["manifest"]
+
+    packet_dir = tmp_path / "v1-rating-packets"
+    assert cli.main(
+        [
+            "fa-prepare-naturalness-ratings",
+            "--config",
+            str(SAME_STRING_CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--matches-manifest",
+            matches_manifest,
+            "--output-dir",
+            str(packet_dir),
+            "--rater-id",
+            "rater-a",
+            "--rater-id",
+            "rater-b",
+            "--shard-id",
+            "v1-rating-issuance",
+        ]
+    ) == 0
+    issuance_manifest = json.loads(capsys.readouterr().out)["issuance_manifest"]
+    responses = tuple(
+        packet_dir / "public" / f"{rater}-response.csv"
+        for rater in ("rater-a", "rater-b")
+    )
+    for response_path in responses:
+        with response_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+            fieldnames = tuple(rows[0])
+        for row in rows:
+            for candidate in ("a", "b"):
+                row[f"candidate_{candidate}_naturalness"] = "4"
+                row[f"candidate_{candidate}_type_fit"] = "4"
+                row[f"candidate_{candidate}_malformed"] = "false"
+            row["independence_attested"] = "true"
+        with response_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+    assert cli.main(
+        [
+            "fa-compile-naturalness-ratings",
+            "--config",
+            str(SAME_STRING_CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--matches-manifest",
+            matches_manifest,
+            "--issuance-manifest",
+            issuance_manifest,
+            "--response",
+            str(responses[0]),
+            "--response",
+            str(responses[1]),
+            "--shard-id",
+            "v1-naturalness-ratings",
+        ]
+    ) == 0
+    ratings_manifest = json.loads(capsys.readouterr().out)["ratings_manifest"]
+    return matches_manifest, ratings_manifest
+
+
+def feasibility_v2_command_args(tmp_path, matches_manifest, ratings_manifest):
+    return [
+        "fa-prepare-same-string-v2-matches",
+        "--config",
+        str(FEASIBILITY_SAME_STRING_CONFIG_PATH),
+        "--root",
+        str(tmp_path),
+        "--source-config",
+        str(SAME_STRING_CONFIG_PATH),
+        "--source-matches-manifest",
+        matches_manifest,
+        "--source-naturalness-ratings-manifest",
+        ratings_manifest,
+        "--shard-id",
+        "same-string-feasibility-v2",
+    ]
+
+
+def test_feasibility_v2_cli_writes_replayable_parent_rating_and_allocation_lineage(
+    tmp_path, capsys, monkeypatch
+):
+    matches_manifest, ratings_manifest = verified_v1_same_string_evidence(
+        tmp_path, capsys, monkeypatch
+    )
+
+    assert cli.main(
+        feasibility_v2_command_args(tmp_path, matches_manifest, ratings_manifest)
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    shard = store.verify_shard(payload["manifest"])
+    assert shard.record_kind == "same_string_feasibility_match_collection"
+    matches = fa_cli._load_verified_same_string_match_collection_for_config(
+        store, payload["manifest"], config
+    )
+    assert Counter(row.split for row in matches) == Counter(config.split_counts)
+
+    lineage = json.loads(shard.manifest_path.read_text(encoding="utf-8"))["lineage"]
+    assert set(lineage) == {
+        "config_sha256",
+        "source_config",
+        "source_config_sha256",
+        "source_match_collection_manifest",
+        "source_match_collection_sha256",
+        "source_matches_sha256",
+        "source_naturalness_ratings_manifest",
+        "source_naturalness_ratings_sha256",
+        "source_naturalness_audit_sha256",
+        "accepted_pair_ids_sha256",
+        "allocation_policy_sha256",
+        "allocation",
+        "allocation_sha256",
+        "selected_pair_ids",
+        "split_counts",
+        "matches_sha256",
+    }
+    assert lineage["allocation_sha256"] == fa_cli._sha256_json(lineage["allocation"])
+    with pytest.raises(ValueError, match="record kind"):
+        fa_cli._load_verified_same_string_match_collection(
+            store, payload["manifest"], config
+        )
+    loaded_for_naturalness = fa_cli._load_naturalness_matches(
+        config,
+        tmp_path,
+        SimpleNamespace(screened_matches_manifest=None, matches_manifest=payload["manifest"]),
+    )
+    assert loaded_for_naturalness == matches
+
+
+def test_feasibility_v2_loader_rejects_rehashed_allocation_tampering(
+    tmp_path, capsys, monkeypatch
+):
+    matches_manifest, ratings_manifest = verified_v1_same_string_evidence(
+        tmp_path, capsys, monkeypatch
+    )
+    assert cli.main(
+        feasibility_v2_command_args(tmp_path, matches_manifest, ratings_manifest)
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    original = store.verify_shard(payload["manifest"])
+    rows = fa_cli._read_json_rows(original.data_path)
+    lineage = json.loads(original.manifest_path.read_text(encoding="utf-8"))["lineage"]
+    lineage["allocation"][0]["assigned_split"] = "probe_test"
+    lineage["allocation_sha256"] = fa_cli._sha256_json(lineage["allocation"])
+    tampered = store.write_completed_shard(
+        config.run_id,
+        "mechanism_train",
+        "tampered-feasibility-v2",
+        rows,
+        lineage,
+        record_kind="same_string_feasibility_match_collection",
+    )
+
+    with pytest.raises(ValueError, match="allocation differs from deterministic replay"):
+        fa_cli._load_verified_same_string_match_collection_for_config(
+            store, tampered.manifest_path, config
+        )
+
+
+def test_feasibility_v2_collection_builds_without_an_intervention_split(
+    tmp_path, capsys, monkeypatch
+):
+    matches_manifest, ratings_manifest = verified_v1_same_string_evidence(
+        tmp_path, capsys, monkeypatch
+    )
+    assert cli.main(
+        feasibility_v2_command_args(tmp_path, matches_manifest, ratings_manifest)
+    ) == 0
+    v2_manifest = json.loads(capsys.readouterr().out)["manifest"]
+    config = FAConfig.from_json(FEASIBILITY_SAME_STRING_CONFIG_PATH)
+    smoke = FAConfig.from_json(CONFIG_PATH)
+    store = FAArtifactStore(tmp_path)
+    gate = store.write_completed_shard(
+        smoke.run_id,
+        "pilot",
+        "v2-build-pilot-gate",
+        ({"kind": "pilot_gate"},),
+        {"config_sha256": smoke.config_hash},
+        record_kind="pilot_gate",
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "_load_verified_pilot_gate",
+        lambda *args, **kwargs: {"status": "passed", "evidence_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(
+            tokenizer=FakeTokenizer(),
+            chat_template_bytes=CHAT_TEMPLATE_BYTES,
+            chat_template_sha256=config.chat_template_sha256,
+        ),
+    )
+    monkeypatch.setattr(
+        "trajectory_extractor.fa_data._require_confirmatory_chat_template",
+        lambda *args, **kwargs: None,
+    )
+
+    payload = fa_cli._build_same_string_confirmatory(
+        config,
+        tmp_path,
+        SimpleNamespace(
+            matches_manifest=v2_manifest,
+            pilot_gate_manifest=gate.manifest_path,
+            naturalness_ratings_manifest=ratings_manifest,
+        ),
+    )
+
+    assert set(payload["namespace_manifests"]) == set(config.split_counts)
+    assert "intervention_test" not in payload["namespace_manifests"]
+    index_shard = store.verify_shard(payload["manifest"])
+    index_row = fa_cli._read_json_rows(index_shard.data_path)[0]
+    assert index_row["matching_policy_sha256"] == (
+        fa_cli._same_string_feasibility_v2_allocation_policy_sha256()
+    )
+    selected = fa_cli._load_verified_same_string_match_collection_for_config(
+        store, v2_manifest, config
+    )
+    fa_cli._load_verified_naturalness_audit(
+        store,
+        payload["naturalness_audit_manifest"],
+        config,
+        expected_sha256=payload["naturalness_audit_sha256"],
+        expected_pair_ids=frozenset(row.pair_id for row in selected),
+    )
 
 
 def test_same_string_matches_prepare_direct_collection_without_screening(

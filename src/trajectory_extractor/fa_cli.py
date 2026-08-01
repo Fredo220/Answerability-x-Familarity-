@@ -8,7 +8,7 @@ import math
 import re
 import stat
 from collections import Counter
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -22,7 +22,15 @@ from trajectory_extractor.fa_activations import (
     write_activation_shard,
 )
 from trajectory_extractor.fa_artifacts import FAArtifactStore
-from trajectory_extractor.fa_config import FAConfig, SMOKE_CHAT_TEMPLATE_SHA256
+from trajectory_extractor.fa_config import (
+    FAConfig,
+    FEASIBILITY_SAME_STRING_RUN_ID,
+    FEASIBILITY_SAME_STRING_SPLIT_COUNTS,
+    FEASIBILITY_SAME_STRING_STUDY_ID,
+    SAME_STRING_V1_RUN_ID,
+    SAME_STRING_V1_STUDY_ID,
+    SMOKE_CHAT_TEMPLATE_SHA256,
+)
 from trajectory_extractor.fa_confirmatory_source import (
     SOURCE_REVISION as CONFIRMATORY_SOURCE_REVISION,
 )
@@ -114,7 +122,7 @@ from trajectory_extractor.fa_naturalness import (
 
 
 FA_COMMANDS = (
-    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-build-same-string-confirmatory", "fa-audit-manifest",
+    "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-same-string-v2-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-build-same-string-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
@@ -126,6 +134,7 @@ _IMPLEMENTED = frozenset(
         "fa-screen-entities",
         "fa-assemble-screened-matches",
         "fa-prepare-same-string-matches",
+        "fa-prepare-same-string-v2-matches",
         "fa-prepare-naturalness-ratings",
         "fa-compile-naturalness-ratings",
         "fa-finalize-naturalness-adjudication",
@@ -149,6 +158,12 @@ _IMPLEMENTED = frozenset(
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
 _PROTECTED = frozenset({"behavior_test", "probe_test", "intervention_test"})
+_FEASIBILITY_V2_SPLIT_ORDER = (
+    "behavior_test",
+    "mechanism_train",
+    "locked_validation",
+    "probe_test",
+)
 _CONFIRMATORY_RESERVE_PER_DOMAIN = {
     "mechanism_train": 4,
     "locked_validation": 2,
@@ -299,6 +314,13 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     same_string.add_argument("--candidate-manifest", action="append", required=True)
     same_string.add_argument("--synthetic-manifest", action="append", required=True)
     same_string.add_argument("--shard-id", required=True)
+    feasibility_v2 = parsers["fa-prepare-same-string-v2-matches"]
+    feasibility_v2.add_argument("--source-config", required=True)
+    feasibility_v2.add_argument("--source-matches-manifest", required=True)
+    feasibility_v2.add_argument(
+        "--source-naturalness-ratings-manifest", required=True
+    )
+    feasibility_v2.add_argument("--shard-id", required=True)
     for command in (
         "fa-prepare-naturalness-ratings",
         "fa-compile-naturalness-ratings",
@@ -422,6 +444,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _assemble_screened_matches(config, root, args)
         elif command == "fa-prepare-same-string-matches":
             payload = _prepare_same_string_matches(config, root, args)
+        elif command == "fa-prepare-same-string-v2-matches":
+            payload = _prepare_same_string_v2_matches(config, root, args)
         elif command == "fa-prepare-naturalness-ratings":
             payload = _prepare_naturalness_ratings(config, root, args)
         elif command == "fa-compile-naturalness-ratings":
@@ -770,8 +794,13 @@ def _load_naturalness_matches(
                 "confirmatory naturalness requires a verified screened-match "
                 "collection or same-string match collection"
             ) from error
-        if shard.record_kind == "same_string_match_collection":
-            return _load_verified_same_string_match_collection(store, raw, config)
+        if shard.record_kind in {
+            "same_string_match_collection",
+            "same_string_feasibility_match_collection",
+        }:
+            return _load_verified_same_string_match_collection_for_config(
+                store, raw, config
+            )
         raise ValueError(
             "confirmatory naturalness requires a verified screened-match or "
             "same-string match collection"
@@ -901,6 +930,81 @@ def _prepare_same_string_matches(
         "count": len(ordered),
         "split_counts": dict(config.split_counts),
         "matches_sha256": lineage["matches_sha256"],
+    }
+
+
+def _prepare_same_string_v2_matches(
+    config: FAConfig,
+    root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Derive the registered feasibility-v2 corpus from verified v1 evidence."""
+
+    _require_feasibility_v2_config(config)
+    source_config = FAConfig.from_json(args.source_config)
+    _require_same_string_v1_config(source_config)
+    store = FAArtifactStore(root)
+    source_matches = _load_verified_same_string_match_collection(
+        store, args.source_matches_manifest, source_config
+    )
+    source_match_shard = store.verify_shard(args.source_matches_manifest)
+    ratings, ratings_shard = _load_verified_naturalness_ratings(
+        store, args.source_naturalness_ratings_manifest, source_config
+    )
+    ratings_lineage = _read_json_object(ratings_shard.manifest_path)["lineage"]
+    source_matches_sha256 = naturalness_matches_sha256(source_matches)
+    if ratings_lineage.get("matches_sha256") != source_matches_sha256:
+        raise ValueError("source ratings do not bind the verified v1 match collection")
+    naturalness = audit_naturalness_manifest(source_matches, ratings)
+    selected, allocation = _derive_same_string_feasibility_v2_matches(
+        config, source_matches, naturalness.accepted_pair_ids
+    )
+    lineage = {
+        "config_sha256": config.config_hash,
+        "source_config": json.loads(source_config.canonical_bytes),
+        "source_config_sha256": source_config.config_hash,
+        "source_match_collection_manifest": str(
+            source_match_shard.manifest_path.relative_to(store.root)
+        ),
+        "source_match_collection_sha256": source_match_shard.sha256,
+        "source_matches_sha256": source_matches_sha256,
+        "source_naturalness_ratings_manifest": str(
+            ratings_shard.manifest_path.relative_to(store.root)
+        ),
+        "source_naturalness_ratings_sha256": ratings_shard.sha256,
+        "source_naturalness_audit_sha256": _naturalness_audit_sha256(naturalness),
+        "accepted_pair_ids_sha256": _sha256_json(
+            list(naturalness.accepted_pair_ids)
+        ),
+        "allocation_policy_sha256": (
+            _same_string_feasibility_v2_allocation_policy_sha256()
+        ),
+        "allocation": list(allocation),
+        "allocation_sha256": _sha256_json(list(allocation)),
+        "selected_pair_ids": [row.pair_id for row in selected],
+        "split_counts": dict(config.split_counts),
+        "matches_sha256": naturalness_matches_sha256(selected),
+    }
+    shard = _write_or_verify_screening_shard(
+        store,
+        config.run_id,
+        "mechanism_train",
+        _safe_cli_id(args.shard_id, "feasibility v2 match collection shard-id"),
+        [
+            {"kind": "same_string_feasibility_match_collection", **asdict(row)}
+            for row in selected
+        ],
+        lineage,
+        record_kind="same_string_feasibility_match_collection",
+    )
+    return {
+        "status": "prepared",
+        "manifest": str(shard.manifest_path),
+        "count": len(selected),
+        "split_counts": dict(config.split_counts),
+        "matches_sha256": lineage["matches_sha256"],
+        "source_match_collection_sha256": source_match_shard.sha256,
+        "source_naturalness_ratings_sha256": ratings_shard.sha256,
     }
 
 
@@ -1957,6 +2061,28 @@ def _same_string_matching_policy_sha256() -> str:
     )
 
 
+def _same_string_feasibility_v2_allocation_policy_sha256() -> str:
+    return _sha256_json(
+        {
+            "revision": "fa-same-string-feasibility-v2-allocation-v1",
+            "domains": tuple(REGISTERED_ENTITY_DOMAINS),
+            "split_order": _FEASIBILITY_V2_SPLIT_ORDER,
+            "rank": "sha256(domain\\0pair_id),pair_id",
+            "derivation": inspect.getsource(
+                _derive_same_string_feasibility_v2_matches
+            ),
+        }
+    )
+
+
+def _same_string_collection_policy_sha256(record_kind: str) -> str:
+    if record_kind == "same_string_match_collection":
+        return _same_string_matching_policy_sha256()
+    if record_kind == "same_string_feasibility_match_collection":
+        return _same_string_feasibility_v2_allocation_policy_sha256()
+    raise ValueError("same-string collection has an unsupported record kind")
+
+
 def _matchable_screening_candidates(
     candidates: Sequence[CandidateEntity],
     synthetic: Sequence[SyntheticCandidate],
@@ -2211,34 +2337,76 @@ def _build_same_string_confirmatory(
     if gate.get("status") != "passed":
         raise ValueError("same-string confirmatory construction requires a passed pilot gate")
 
-    match_shard = _require_verified_shard_kind(
-        store,
-        args.matches_manifest,
+    match_shard = store.verify_shard(args.matches_manifest)
+    if match_shard.record_kind not in {
         "same_string_match_collection",
-        "verified same-string match collection",
-    )
-    direct_matches = _load_verified_same_string_match_collection(
+        "same_string_feasibility_match_collection",
+    }:
+        raise ValueError("verified same-string match collection has an unsupported kind")
+    direct_matches = _load_verified_same_string_match_collection_for_config(
         store, args.matches_manifest, config
     )
-    ratings, ratings_shard = _load_verified_naturalness_ratings(
-        store, args.naturalness_ratings_manifest, config
-    )
-    ratings_lineage = _read_json_object(ratings_shard.manifest_path).get("lineage")
-    if (
-        not isinstance(ratings_lineage, dict)
-        or ratings_lineage.get("matches_sha256")
-        != naturalness_matches_sha256(direct_matches)
-    ):
-        raise ValueError(
-            "naturalness ratings do not bind the direct same-string match collection"
+    if match_shard.record_kind == "same_string_match_collection":
+        ratings, ratings_shard = _load_verified_naturalness_ratings(
+            store, args.naturalness_ratings_manifest, config
         )
-    naturalness = audit_naturalness_manifest(direct_matches, ratings)
-    if not naturalness.accepted_pair_ids:
-        raise ValueError("same-string construction requires accepted naturalness pairs")
-    matches = _select_confirmatory_matches(config, direct_matches, naturalness)
-    naturalness_shard = _write_naturalness_audit(
-        store, config, direct_matches, naturalness, ratings, ratings_shard
-    )
+        ratings_lineage = _read_json_object(ratings_shard.manifest_path).get("lineage")
+        if (
+            not isinstance(ratings_lineage, dict)
+            or ratings_lineage.get("matches_sha256")
+            != naturalness_matches_sha256(direct_matches)
+        ):
+            raise ValueError(
+                "naturalness ratings do not bind the direct same-string match collection"
+            )
+        naturalness = audit_naturalness_manifest(direct_matches, ratings)
+        if not naturalness.accepted_pair_ids:
+            raise ValueError("same-string construction requires accepted naturalness pairs")
+        matches = _select_confirmatory_matches(config, direct_matches, naturalness)
+        naturalness_shard = _write_naturalness_audit(
+            store, config, direct_matches, naturalness, ratings, ratings_shard
+        )
+    else:
+        match_lineage = _read_json_object(match_shard.manifest_path)["lineage"]
+        source_config = FAConfig(**match_lineage["source_config"])
+        _require_same_string_v1_config(source_config)
+        registered_ratings_path = _artifact_path_from_record(
+            store,
+            match_lineage["source_naturalness_ratings_manifest"],
+            "feasibility v2 source naturalness ratings",
+        )
+        if Path(args.naturalness_ratings_manifest).absolute() != registered_ratings_path:
+            raise ValueError("build ratings do not match the v2 source ratings")
+        ratings, ratings_shard = _load_verified_naturalness_ratings(
+            store, registered_ratings_path, source_config
+        )
+        source_match_path = _artifact_path_from_record(
+            store,
+            match_lineage["source_match_collection_manifest"],
+            "feasibility v2 source match collection",
+        )
+        source_matches = _load_verified_same_string_match_collection(
+            store, source_match_path, source_config
+        )
+        source_audit = audit_naturalness_manifest(source_matches, ratings)
+        selected_ids = frozenset(row.pair_id for row in direct_matches)
+        if not selected_ids <= frozenset(source_audit.accepted_pair_ids):
+            raise ValueError("v2 collection includes a source pair rejected by raters")
+        selected_ratings = tuple(
+            rating for rating in ratings if rating.pair_id in selected_ids
+        )
+        naturalness = audit_naturalness_manifest(direct_matches, selected_ratings)
+        matches = direct_matches
+        naturalness_shard = _write_naturalness_audit(
+            store,
+            config,
+            direct_matches,
+            naturalness,
+            selected_ratings,
+            ratings_shard,
+            ratings_config=source_config,
+            source_match_collection=match_shard,
+        )
 
     prepared = load_pinned_tokenizer(config, tokenizer_loader=_TOKENIZER_LOADER)
     rows = build_same_string_examples(config, matches, tokenizer=prepared.tokenizer)
@@ -2272,7 +2440,7 @@ def _build_same_string_confirmatory(
         )
         for namespace in sorted({row.split for row in rows})
     }
-    missing_protected = _PROTECTED - capabilities.keys()
+    missing_protected = (_PROTECTED & set(config.split_counts)) - capabilities.keys()
     if missing_protected:
         raise ValueError(
             "same-string manifest is missing protected endpoint capabilities: "
@@ -2313,7 +2481,9 @@ def _build_same_string_confirmatory(
             "pilot_gate_sha256": gate_shard.sha256,
             "naturalness_audit_sha256": naturalness_shard.sha256,
             "match_collection_sha256": match_shard.sha256,
-            "matching_policy_sha256": _same_string_matching_policy_sha256(),
+            "matching_policy_sha256": _same_string_collection_policy_sha256(
+                match_shard.record_kind
+            ),
             "tokenizer_pin_sha256": tokenizer_pin.sha256,
             "same_string_seal_sha256": seal.sha256,
             "capabilities_sha256": capabilities_sha256,
@@ -2380,7 +2550,9 @@ def _same_string_confirmatory_index_record(
             match_collection.manifest_path.relative_to(store.root)
         ),
         "match_collection_sha256": match_collection.sha256,
-        "matching_policy_sha256": _same_string_matching_policy_sha256(),
+        "matching_policy_sha256": _same_string_collection_policy_sha256(
+            match_collection.record_kind
+        ),
         "tokenizer_pin_manifest": str(tokenizer_pin.manifest_path.relative_to(store.root)),
         "tokenizer_pin_sha256": tokenizer_pin.sha256,
         "probe_metadata_manifest": str(probe_metadata.manifest_path.relative_to(store.root)),
@@ -2477,18 +2649,21 @@ def _load_same_string_confirmatory_index_for_audit(
     match_path = _artifact_path_from_record(
         store, row.get("match_collection_manifest"), "same-string match collection"
     )
-    match_shard = _require_verified_shard_kind(
-        store,
-        match_path,
-        "same_string_match_collection",
-        "verified same-string match collection",
-    )
+    match_shard = store.verify_shard(match_path)
     if (
+        match_shard.record_kind not in {
+            "same_string_match_collection",
+            "same_string_feasibility_match_collection",
+        }
+        or
         match_shard.sha256 != row.get("match_collection_sha256")
-        or row.get("matching_policy_sha256") != _same_string_matching_policy_sha256()
+        or row.get("matching_policy_sha256")
+        != _same_string_collection_policy_sha256(match_shard.record_kind)
     ):
         raise ValueError("same-string match collection identity does not verify")
-    matches = _load_verified_same_string_match_collection(store, match_path, config)
+    matches = _load_verified_same_string_match_collection_for_config(
+        store, match_path, config
+    )
 
     capabilities = row.get("capabilities")
     if not isinstance(capabilities, dict) or set(capabilities) != set(config.split_counts):
@@ -2564,7 +2739,9 @@ def _load_same_string_confirmatory_index_for_audit(
             "pilot_gate_sha256": gate_shard.sha256,
             "naturalness_audit_sha256": naturalness_hash,
             "match_collection_sha256": match_shard.sha256,
-            "matching_policy_sha256": _same_string_matching_policy_sha256(),
+            "matching_policy_sha256": _same_string_collection_policy_sha256(
+                match_shard.record_kind
+            ),
             "tokenizer_pin_sha256": tokenizer_hash,
             "same_string_seal_sha256": seal.sha256,
             "capabilities_sha256": capabilities_sha256,
@@ -2821,6 +2998,109 @@ def _select_confirmatory_matches(
                 )
             selected.extend(candidates[:quota])
     return tuple(sorted(selected, key=lambda match: (match.split, match.pair_id)))
+
+
+def _require_feasibility_v2_config(config: FAConfig) -> None:
+    if (
+        config.profile != "confirmatory"
+        or config.study_id != FEASIBILITY_SAME_STRING_STUDY_ID
+        or config.run_id != FEASIBILITY_SAME_STRING_RUN_ID
+        or dict(config.split_counts) != FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+    ):
+        raise ValueError("operation requires the registered feasibility v2 config")
+
+
+def _require_same_string_v1_config(config: FAConfig) -> None:
+    if (
+        config.profile != "confirmatory"
+        or config.study_id != SAME_STRING_V1_STUDY_ID
+        or config.run_id != SAME_STRING_V1_RUN_ID
+    ):
+        raise ValueError("source config must be the registered same-string v1 config")
+
+
+def _naturalness_audit_sha256(audit: NaturalnessAudit) -> str:
+    return _sha256_json(
+        {
+            "accepted_pair_ids": list(audit.accepted_pair_ids),
+            "excluded_pair_ids": list(audit.excluded_pair_ids),
+            "third_rater_pair_ids": list(audit.third_rater_pair_ids),
+            "decisions": dict(audit.decisions),
+        }
+    )
+
+
+def _derive_same_string_feasibility_v2_matches(
+    config: FAConfig,
+    source_matches: Sequence[EntityMatch],
+    accepted_pair_ids: Sequence[str],
+) -> tuple[tuple[EntityMatch, ...], tuple[dict[str, str | int], ...]]:
+    """Reassign accepted v1 pairs to the registered feasibility-v2 splits."""
+
+    if (
+        config.study_id != FEASIBILITY_SAME_STRING_STUDY_ID
+        or config.run_id != FEASIBILITY_SAME_STRING_RUN_ID
+        or dict(config.split_counts) != FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+    ):
+        raise ValueError("feasibility allocation requires the registered v2 identity")
+    accepted = frozenset(accepted_pair_ids)
+    if len(accepted) != len(tuple(accepted_pair_ids)):
+        raise ValueError("accepted pair IDs must be unique")
+    by_pair = {row.pair_id: row for row in source_matches}
+    if len(by_pair) != len(tuple(source_matches)) or not accepted <= set(by_pair):
+        raise ValueError("accepted pair IDs do not match the verified source collection")
+
+    selected: list[EntityMatch] = []
+    allocation: list[dict[str, str | int]] = []
+    total_per_domain = sum(
+        config.split_counts[split] // len(REGISTERED_ENTITY_DOMAINS)
+        for split in _FEASIBILITY_V2_SPLIT_ORDER
+    )
+    for domain in REGISTERED_ENTITY_DOMAINS:
+        ranked = sorted(
+            (
+                row
+                for row in source_matches
+                if row.pair_id in accepted and row.coarse_type == domain
+            ),
+            key=lambda row: (
+                hashlib.sha256(
+                    f"{domain}\0{row.pair_id}".encode("utf-8")
+                ).hexdigest(),
+                row.pair_id,
+            ),
+        )
+        if len(ranked) < total_per_domain:
+            raise ValueError(
+                f"feasibility v2 requires {total_per_domain} accepted {domain} pairs"
+            )
+        offset = 0
+        for split in _FEASIBILITY_V2_SPLIT_ORDER:
+            count = config.split_counts[split]
+            if count % len(REGISTERED_ENTITY_DOMAINS):
+                raise ValueError("feasibility v2 split counts must be divisible by four")
+            quota = count // len(REGISTERED_ENTITY_DOMAINS)
+            for domain_rank, source in enumerate(
+                ranked[offset : offset + quota], start=offset + 1
+            ):
+                selected.append(replace(source, split=split))
+                allocation.append(
+                    {
+                        "pair_id": source.pair_id,
+                        "domain": domain,
+                        "domain_rank": domain_rank,
+                        "allocation_hash": hashlib.sha256(
+                            f"{domain}\0{source.pair_id}".encode("utf-8")
+                        ).hexdigest(),
+                        "source_split": source.split,
+                        "assigned_split": split,
+                    }
+                )
+            offset += quota
+    ordered = tuple(sorted(selected, key=lambda row: (row.split, row.pair_id)))
+    ordered_allocation = tuple(sorted(allocation, key=lambda row: row["pair_id"]))
+    _audit_same_string_match_collection(config, ordered)
+    return ordered, ordered_allocation
 
 
 def _naturalness_quota_summary(
@@ -4900,7 +5180,15 @@ def _prompt_subset_sha256(
 
 
 def _write_naturalness_audit(
-    store, config, matches, audit, ratings, ratings_shard
+    store,
+    config,
+    matches,
+    audit,
+    ratings,
+    ratings_shard,
+    *,
+    ratings_config: FAConfig | None = None,
+    source_match_collection: Any | None = None,
 ):
     row = {
         "kind": "naturalness_audit",
@@ -4920,17 +5208,37 @@ def _write_naturalness_audit(
         "third_rater_pair_ids": list(audit.third_rater_pair_ids),
         "decisions": dict(audit.decisions),
     }
+    lineage = {
+        "config_sha256": config.config_hash,
+        "ratings_sha256": ratings_shard.sha256,
+    }
+    if ratings_config is not None or source_match_collection is not None:
+        if ratings_config is None or source_match_collection is None:
+            raise ValueError("inherited naturalness evidence requires both source bindings")
+        row.update(
+            {
+                "ratings_config": json.loads(ratings_config.canonical_bytes),
+                "ratings_config_sha256": ratings_config.config_hash,
+                "source_match_collection_manifest": str(
+                    source_match_collection.manifest_path.relative_to(store.root)
+                ),
+                "source_match_collection_sha256": source_match_collection.sha256,
+            }
+        )
+        lineage.update(
+            {
+                "ratings_config_sha256": ratings_config.config_hash,
+                "source_match_collection_sha256": source_match_collection.sha256,
+            }
+        )
     audit_hash = _sha256_json(row)
+    lineage["audit_sha256"] = audit_hash
     return store.write_completed_shard(
         config.run_id,
         "mechanism_train",
         f"naturalness-audit-{audit_hash[:16]}",
         [row],
-        {
-            "config_sha256": config.config_hash,
-            "audit_sha256": audit_hash,
-            "ratings_sha256": ratings_shard.sha256,
-        },
+        lineage,
         record_kind="naturalness_audit",
     )
 
@@ -5010,7 +5318,17 @@ def _load_verified_naturalness_audit(
         "third_rater_pair_ids",
         "decisions",
     }
-    if set(row) != required or row.get("config_sha256") != config.config_hash:
+    inherited_fields = {
+        "ratings_config",
+        "ratings_config_sha256",
+        "source_match_collection_manifest",
+        "source_match_collection_sha256",
+    }
+    inherited = set(row) == required | inherited_fields
+    if (
+        frozenset(row) not in {frozenset(required), frozenset(required | inherited_fields)}
+        or row.get("config_sha256") != config.config_hash
+    ):
         raise ValueError("naturalness audit has an invalid schema or config")
     ratings_path = _artifact_path_from_record(
         store, row.get("ratings_manifest"), "naturalness ratings manifest"
@@ -5018,8 +5336,45 @@ def _load_verified_naturalness_audit(
     expected_ratings_sha256 = _required_sha256(
         row.get("ratings_sha256"), "naturalness ratings sha256"
     )
+    ratings_config = config
+    source_matches = None
+    source_match_shard = None
+    if inherited:
+        raw_ratings_config = row.get("ratings_config")
+        if not isinstance(raw_ratings_config, dict):
+            raise ValueError("inherited naturalness ratings config is invalid")
+        try:
+            ratings_config = FAConfig(**raw_ratings_config)
+        except (TypeError, ValueError) as error:
+            raise ValueError("inherited naturalness ratings config is invalid") from error
+        _require_same_string_v1_config(ratings_config)
+        if row.get("ratings_config_sha256") != ratings_config.config_hash:
+            raise ValueError("inherited naturalness ratings config hash changed")
+        source_match_path = _artifact_path_from_record(
+            store,
+            row.get("source_match_collection_manifest"),
+            "inherited naturalness source match collection",
+        )
+        source_match_shard = store.verify_shard(source_match_path)
+        if source_match_shard.sha256 != row.get("source_match_collection_sha256"):
+            raise ValueError("inherited naturalness source collection identity changed")
+        source_matches = _load_verified_same_string_match_collection_for_config(
+            store, source_match_path, config
+        )
+        source_lineage = _read_json_object(source_match_shard.manifest_path)["lineage"]
+        registered_ratings_path = _artifact_path_from_record(
+            store,
+            source_lineage.get("source_naturalness_ratings_manifest"),
+            "inherited naturalness source ratings",
+        )
+        if (
+            ratings_path != registered_ratings_path
+            or expected_ratings_sha256
+            != source_lineage.get("source_naturalness_ratings_sha256")
+        ):
+            raise ValueError("inherited naturalness ratings differ from v2 lineage")
     verified_ratings, ratings_shard = _load_verified_naturalness_ratings(
-        store, ratings_path, config
+        store, ratings_path, ratings_config
     )
     if ratings_shard.sha256 != expected_ratings_sha256:
         raise ValueError("naturalness ratings identity does not verify")
@@ -5029,14 +5384,31 @@ def _load_verified_naturalness_audit(
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("naturalness audit evidence is invalid") from error
     recomputed = audit_naturalness_manifest(matches, ratings)
-    if ratings != verified_ratings:
+    expected_verified_ratings = (
+        tuple(
+            sorted(
+                (
+                    value
+                    for value in verified_ratings
+                    if value.pair_id in {match.pair_id for match in matches}
+                ),
+                key=lambda value: (value.pair_id, value.round, value.rater_id),
+            )
+        )
+        if inherited
+        else verified_ratings
+    )
+    if ratings != expected_verified_ratings:
         raise ValueError("naturalness audit ratings differ from their source artifact")
     ratings_lineage = _read_json_object(ratings_shard.manifest_path).get("lineage")
-    if (
-        not isinstance(ratings_lineage, dict)
-        or ratings_lineage.get("matches_sha256")
-        != naturalness_matches_sha256(matches)
-    ):
+    if not isinstance(ratings_lineage, dict):
+        raise ValueError("naturalness ratings lineage is invalid")
+    if inherited:
+        if tuple(sorted(matches, key=lambda value: value.pair_id)) != tuple(
+            sorted(source_matches, key=lambda value: value.pair_id)
+        ):
+            raise ValueError("inherited naturalness audit differs from the v2 collection")
+    elif ratings_lineage.get("matches_sha256") != naturalness_matches_sha256(matches):
         raise ValueError("naturalness ratings do not bind the audited entity pairs")
     recorded = {
         "accepted_pair_ids": list(recomputed.accepted_pair_ids),
@@ -5049,14 +5421,19 @@ def _load_verified_naturalness_audit(
     accepted = frozenset(recomputed.accepted_pair_ids)
     if not expected_pair_ids <= accepted:
         raise ValueError("naturalness audit does not accept every prompt entity unit")
-    _verify_shard_lineage(
-        shard,
-        {
-            "config_sha256": config.config_hash,
-            "audit_sha256": _sha256_json(row),
-            "ratings_sha256": expected_ratings_sha256,
-        },
-    )
+    expected_lineage = {
+        "config_sha256": config.config_hash,
+        "audit_sha256": _sha256_json(row),
+        "ratings_sha256": expected_ratings_sha256,
+    }
+    if inherited:
+        expected_lineage.update(
+            {
+                "ratings_config_sha256": ratings_config.config_hash,
+                "source_match_collection_sha256": source_match_shard.sha256,
+            }
+        )
+    _verify_shard_lineage(shard, expected_lineage)
     return shard
 
 
@@ -5939,6 +6316,153 @@ def _load_verified_same_string_match_collection(
     )
     if matches != replayed:
         raise ValueError("same-string collection rows differ from source replay")
+    return matches
+
+
+def _load_verified_same_string_match_collection_for_config(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    config: FAConfig,
+) -> tuple[EntityMatch, ...]:
+    """Dispatch without relaxing the source-replay contract of the v1 loader."""
+
+    shard = store.verify_shard(manifest_path)
+    if shard.record_kind == "same_string_match_collection":
+        return _load_verified_same_string_match_collection(store, manifest_path, config)
+    if shard.record_kind == "same_string_feasibility_match_collection":
+        return _load_verified_same_string_feasibility_match_collection(
+            store, manifest_path, config
+        )
+    raise ValueError("same-string match collection has an unsupported record kind")
+
+
+def _load_verified_same_string_feasibility_match_collection(
+    store: FAArtifactStore,
+    manifest_path: str | Path,
+    config: FAConfig,
+) -> tuple[EntityMatch, ...]:
+    _require_feasibility_v2_config(config)
+    shard = _require_verified_shard_kind(
+        store,
+        manifest_path,
+        "same_string_feasibility_match_collection",
+        "verified feasibility v2 match collection manifest",
+    )
+    if shard.namespace != "mechanism_train":
+        raise ValueError("feasibility v2 match collection must use mechanism_train")
+    _verify_artifact_run_id(shard.manifest_path, config.run_id)
+    lineage = _read_json_object(shard.manifest_path).get("lineage")
+    required_lineage = {
+        "config_sha256",
+        "source_config",
+        "source_config_sha256",
+        "source_match_collection_manifest",
+        "source_match_collection_sha256",
+        "source_matches_sha256",
+        "source_naturalness_ratings_manifest",
+        "source_naturalness_ratings_sha256",
+        "source_naturalness_audit_sha256",
+        "accepted_pair_ids_sha256",
+        "allocation_policy_sha256",
+        "allocation",
+        "allocation_sha256",
+        "selected_pair_ids",
+        "split_counts",
+        "matches_sha256",
+    }
+    if not isinstance(lineage, dict) or set(lineage) != required_lineage:
+        raise ValueError("feasibility v2 match collection lineage is invalid")
+    _verify_shard_lineage(
+        shard,
+        {
+            "config_sha256": config.config_hash,
+            "allocation_policy_sha256": (
+                _same_string_feasibility_v2_allocation_policy_sha256()
+            ),
+        },
+    )
+    source_payload = lineage.get("source_config")
+    if not isinstance(source_payload, dict):
+        raise ValueError("feasibility v2 source config is invalid")
+    try:
+        source_config = FAConfig(**source_payload)
+    except (TypeError, ValueError) as error:
+        raise ValueError("feasibility v2 source config is invalid") from error
+    _require_same_string_v1_config(source_config)
+    if lineage.get("source_config_sha256") != source_config.config_hash:
+        raise ValueError("feasibility v2 source config hash does not verify")
+
+    source_match_path = _artifact_path_from_record(
+        store,
+        lineage.get("source_match_collection_manifest"),
+        "feasibility v2 source match collection",
+    )
+    source_match_shard = store.verify_shard(source_match_path)
+    if source_match_shard.sha256 != lineage.get("source_match_collection_sha256"):
+        raise ValueError("feasibility v2 source match collection identity changed")
+    source_matches = _load_verified_same_string_match_collection(
+        store, source_match_path, source_config
+    )
+    source_matches_sha256 = naturalness_matches_sha256(source_matches)
+    if source_matches_sha256 != lineage.get("source_matches_sha256"):
+        raise ValueError("feasibility v2 source matches hash does not verify")
+
+    ratings_path = _artifact_path_from_record(
+        store,
+        lineage.get("source_naturalness_ratings_manifest"),
+        "feasibility v2 source naturalness ratings",
+    )
+    ratings, ratings_shard = _load_verified_naturalness_ratings(
+        store, ratings_path, source_config
+    )
+    if ratings_shard.sha256 != lineage.get("source_naturalness_ratings_sha256"):
+        raise ValueError("feasibility v2 source ratings identity changed")
+    ratings_lineage = _read_json_object(ratings_shard.manifest_path)["lineage"]
+    if ratings_lineage.get("matches_sha256") != source_matches_sha256:
+        raise ValueError("feasibility v2 source ratings do not bind source matches")
+    naturalness = audit_naturalness_manifest(source_matches, ratings)
+    if (
+        lineage.get("source_naturalness_audit_sha256")
+        != _naturalness_audit_sha256(naturalness)
+        or lineage.get("accepted_pair_ids_sha256")
+        != _sha256_json(list(naturalness.accepted_pair_ids))
+    ):
+        raise ValueError("feasibility v2 naturalness decision lineage changed")
+
+    expected, expected_allocation = _derive_same_string_feasibility_v2_matches(
+        config, source_matches, naturalness.accepted_pair_ids
+    )
+    rows = _read_json_rows(shard.data_path)
+    expected_fields = {field.name for field in fields(EntityMatch)} | {"kind"}
+    if any(
+        set(row) != expected_fields
+        or row.get("kind") != "same_string_feasibility_match_collection"
+        for row in rows
+    ):
+        raise ValueError("feasibility v2 match collection row has invalid schema")
+    try:
+        matches = tuple(
+            EntityMatch(**{key: value for key, value in row.items() if key != "kind"})
+            for row in rows
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("feasibility v2 match collection rows are invalid") from error
+    _audit_same_string_match_collection(config, matches)
+    if matches != expected:
+        raise ValueError("feasibility v2 rows differ from deterministic replay")
+    allocation = lineage.get("allocation")
+    if (
+        not isinstance(allocation, list)
+        or lineage.get("allocation_sha256") != _sha256_json(allocation)
+        or allocation != list(expected_allocation)
+    ):
+        raise ValueError("feasibility v2 allocation differs from deterministic replay")
+    if lineage.get("selected_pair_ids") != [row.pair_id for row in matches]:
+        raise ValueError("feasibility v2 selected pair IDs changed")
+    if lineage.get("split_counts") != dict(config.split_counts):
+        raise ValueError("feasibility v2 split counts changed")
+    if lineage.get("matches_sha256") != naturalness_matches_sha256(matches):
+        raise ValueError("feasibility v2 match collection hash does not verify")
     return matches
 
 

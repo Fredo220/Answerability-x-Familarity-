@@ -8,12 +8,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "fa_same_string_primary_colab.ipynb"
+V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
 
 
 def notebook_text() -> str:
     payload = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+    return "\n".join(
+        "".join(cell.get("source", ())) for cell in payload.get("cells", ())
+    )
+
+
+def v2_notebook_text() -> str:
+    payload = json.loads(V2_NOTEBOOK.read_text(encoding="utf-8"))
     return "\n".join(
         "".join(cell.get("source", ())) for cell in payload.get("cells", ())
     )
@@ -115,6 +123,31 @@ def test_same_string_colab_uses_published_anonymous_ratings():
     assert text.index('ratings["naturalness_gate"]["status"]') < text.index(
         "fa-run-screening"
     )
+
+
+def test_feasibility_v2_colab_replays_v1_then_allocates_before_model_compute():
+    text = v2_notebook_text()
+
+    assert re.search(r'PINNED_REPO_COMMIT\s*=\s*"[0-9a-f]{40}"', text)
+    assert "familiarity_answerability_same_string_gemma2_2b.json" in text
+    assert "familiarity_answerability_same_string_feasibility_v2.json" in text
+    assert "/content/fa-same-string-feasibility-v2-artifacts" in text
+    commands = (
+        "fa-prepare-same-string-matches",
+        "fa-prepare-naturalness-ratings",
+        "fa-compile-naturalness-ratings",
+        "fa-finalize-naturalness-adjudication",
+        "fa-prepare-same-string-v2-matches",
+        "fa-run-screening",
+        "fa-build-same-string-confirmatory",
+        "fa-seal-behavior-test",
+        "fa-evaluate-behavior-test",
+    )
+    positions = [text.index(command) for command in commands]
+    assert positions == sorted(positions)
+    assert 'ratings["naturalness_gate"]["status"] == "failed"' in text
+    assert '"behavior_test": 32' in text
+    assert "intervention_test\": 24" not in text[text.index("v2_matches =") :]
 
 
 def test_same_string_runbook_states_counts_gates_and_claim_boundary():

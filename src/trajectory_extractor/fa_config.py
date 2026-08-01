@@ -17,6 +17,18 @@ CONFIRMATORY_SPLIT_COUNTS = {
     "probe_test": 24,
     "intervention_test": 24,
 }
+FEASIBILITY_SAME_STRING_STUDY_ID = (
+    "familiarity-answerability-same-string-feasibility-v2"
+)
+FEASIBILITY_SAME_STRING_RUN_ID = "same-string-feasibility-v2"
+SAME_STRING_V1_STUDY_ID = "familiarity-answerability-same-string-gemma2-2b-v1"
+SAME_STRING_V1_RUN_ID = "same-string-primary-v1"
+FEASIBILITY_SAME_STRING_SPLIT_COUNTS = {
+    "behavior_test": 32,
+    "mechanism_train": 12,
+    "locked_validation": 4,
+    "probe_test": 4,
+}
 NON_CONFIRMATORY_NAMESPACES = frozenset({"pilot", "circuit_dev"})
 REGISTERED_ANCHORS = (
     "target_intro_end",
@@ -176,7 +188,15 @@ class FAConfig:
                 raise ValueError("confirmatory tokenizer_revision must match the official pin")
             if self.chat_template_sha256 != CONFIRMATORY_CHAT_TEMPLATE_SHA256:
                 raise ValueError("confirmatory chat_template_sha256 must match the official pin")
-            if dict(self.split_counts) != CONFIRMATORY_SPLIT_COUNTS:
+            registered_split_counts = (
+                FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+                if (
+                    self.study_id == FEASIBILITY_SAME_STRING_STUDY_ID
+                    and self.run_id == FEASIBILITY_SAME_STRING_RUN_ID
+                )
+                else CONFIRMATORY_SPLIT_COUNTS
+            )
+            if dict(self.split_counts) != registered_split_counts:
                 unknown = set(self.split_counts) - set(CONFIRMATORY_SPLIT_COUNTS)
                 if unknown:
                     raise ValueError("split_counts contains an unregistered split")

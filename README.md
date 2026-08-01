@@ -134,9 +134,12 @@ It does **not** show that:
 - Gemma represents human-like belief, knowledge, or intuition;
 - the result generalizes to other tasks or models.
 
-Only the separately registered Same-String primary analysis can now provide
-evidence for its contextual-exposure interaction. It cannot reinterpret R11.
-Null and `not_evaluable` outcomes are valid reportable results.
+The original Same-String v1 corpus is also `not_evaluable`: its ratings
+compiled, but only 73 of 192 pairs passed the frozen naturalness rule and the
+registered split/domain quotas could not be filled. The separately registered
+balanced feasibility pilot v2 can provide limited evidence for the
+contextual-exposure interaction. It cannot reinterpret R11 or v1. Null and
+`not_evaluable` outcomes remain valid reportable results.
 
 ## Reproduce Locally
 
@@ -161,13 +164,16 @@ python -m pytest -q \
 The 8 GB local machine is suitable for tests, audits, analysis, and reporting.
 The pinned Gemma generation requires a Colab GPU in the current setup.
 
-## Run the Active Same-String Study
+## Run the Active Same-String Pilot
 
-Follow the ordered [Same-String primary runbook](docs/fa_same_string_primary_runbook.md)
-or open the thin
-[Colab launcher](notebooks/fa_same_string_primary_colab.ipynb). The notebook
-uses only repository CLI commands, a pinned commit, Colab Secrets, and a
-persistent Drive checkpoint.
+Read the frozen
+[v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
+and open the thin
+[v2 Colab launcher](notebooks/fa_same_string_feasibility_v2_colab.ipynb). The
+notebook first reproduces the immutable v1 ratings, then deterministically
+allocates 52 accepted pairs before any model compute. It uses only repository
+CLI commands, a pinned commit, Colab Secrets, and a persistent Drive
+checkpoint.
 
 ## Research Integrity
 
@@ -181,7 +187,12 @@ persistent Drive checkpoint.
 
 ## Key Documents
 
-Active study:
+Active pilot:
+
+- [Balanced feasibility v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
+- [Balanced feasibility v2 Colab](notebooks/fa_same_string_feasibility_v2_colab.ipynb)
+
+Preserved Same-String v1 record:
 
 - [Same-String primary runbook](docs/fa_same_string_primary_runbook.md)
 - [Same-String design](docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md)
