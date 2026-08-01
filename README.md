@@ -104,6 +104,68 @@ evaluable, and `not_supported`.**
 See the [behavioral result report](docs/results/same_string_feasibility_v2_behavior_result.md)
 and its [machine-readable record](docs/results/same_string_feasibility_v2_behavior_result.json).
 
+## How to Interpret the Result
+
+In this task, Gemma behaved more selectively than the original risk hypothesis
+predicted. Answerability dominated the manipulation: the model usually returned
+the archive code when the prompt supplied it and usually answered `UNKNOWN`
+when the code was absent. Unrelated exposure did not produce the registered
+positive increase in unsupported answer attempts.
+
+This is a limited but directionally encouraging result for the tested model and
+task. It does not prove that LLMs generally understand answerability, reason
+reliably, or avoid hallucinations. The interval is wide, the absent-evidence
+cells were near the abstention floor, and only one small checkpoint was tested.
+
+Had the hypothesis been supported, the interpretation would have been a
+reliability concern rather than evidence of a desirable capability: it would
+suggest that merely making a target feel more familiar can make a model answer
+without the information required to do so.
+
+## Compute-Constrained Scope
+
+This was intentionally built as a low-compute portfolio study. Development,
+auditing, and analysis ran on a computer with 8 GB RAM; protected model
+generation used only free-tier Google Colab capacity. Those constraints made a
+small, reproducible behavioral pilot more responsible than an under-resourced
+claim about frontier-model cognition.
+
+The project is therefore meant to demonstrate research practice: isolate a
+confound, preregister a decision rule, preserve failed instruments, open a
+protected endpoint once, publish a negative result, and make the evidence
+auditable. It is not presented as the largest experiment the question merits.
+
+With a research-compute budget on the order of USD 15,000, a substantially more
+ambitious study could test several model families and scales, increase the
+number of unseen units and templates, run multiple registered seeds, and add
+properly powered activation and causal-intervention studies. USD 15,000 is an
+illustrative expansion budget, not an estimate of the minimum cost required to
+replicate this pilot.
+
+## What a Stronger Follow-Up Should Test
+
+A new study should preserve v2 unchanged and register a new endpoint before
+generating outputs:
+
+1. Calibrate prompts on open development data to avoid near-zero unsupported
+   attempt rates and near-one answerable attempt rates.
+2. Publish a power and minimum-detectable-effect analysis before freezing the
+   sample size.
+3. Add an independent manipulation check showing that high exposure actually
+   changed the intended familiarity proxy.
+4. Replicate the same 2x2 estimand on at least one larger model and one
+   independent model family.
+5. Use held-out activation probes to test whether familiarity and
+   answerability are internally separable before the answer is produced.
+6. If the behavioral and probe gates pass, use controlled activation patching
+   with shuffled, reversed, orthogonal, and norm-matched controls to test local
+   causal influence.
+
+The decisive next question is not whether v2 can be made positive. It is
+whether a better-powered, multi-model design can distinguish a genuine absence
+of the effect from floor behavior, limited manipulation strength, and
+model-specific behavior.
+
 ### Preserved R11 record
 
 - The original Source-v5 corpus was `not_evaluable` because too few entities
