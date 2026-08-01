@@ -1058,13 +1058,62 @@ def test_same_string_confirmatory_build_emits_isolated_capabilities_and_typed_se
     assert index.record_kind == "same_string_confirmatory_index"
     index_row = fa_cli._read_json_rows(index.data_path)[0]
     assert index_row["kind"] == "same_string_confirmatory_index"
+    assert index_row["amendment_path"] == (
+        "docs/amendments/2026-08-01-fa-same-string-primary.md"
+    )
     assert index_row["amendment_sha256"] == hashlib.sha256(
-        fa_cli._SAME_STRING_AMENDMENT_PATH.read_bytes()
+        fa_cli._SAME_STRING_V1_AMENDMENT_PATH.read_bytes()
     ).hexdigest()
     assert "power_audit_manifest" not in index_row
     for manifest_path in payload["namespace_manifests"].values():
         prompt_row = fa_cli._read_json_rows(store.verify_shard(manifest_path).data_path)[0]
         assert {row["block"] for row in prompt_row["examples"]} == {"same_string"}
+
+
+def test_same_string_amendment_identity_is_bound_to_registered_run():
+    v1 = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    v2 = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_same_string_feasibility_v2.json"
+    )
+
+    assert fa_cli._same_string_amendment_path(v1).name == (
+        "2026-08-01-fa-same-string-primary.md"
+    )
+    assert fa_cli._same_string_amendment_path(v2).name == (
+        "2026-08-01-fa-same-string-balanced-pilot-v2.md"
+    )
+    with pytest.raises(ValueError, match="unregistered same-string run id"):
+        fa_cli._same_string_amendment_path(
+            SimpleNamespace(run_id="unregistered-v2")
+        )
+
+
+def test_feasibility_v2_behavior_selection_hashes_v2_amendment():
+    config = FAConfig.from_json(
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "familiarity_answerability_same_string_feasibility_v2.json"
+    )
+    seal = SameStringSealEvidence.from_registered_block(
+        source_manifest_sha256="a" * 64,
+        example_ids=("example-1",),
+    )
+    source = fa_cli._BehaviorEvaluationSource(
+        prompt=SimpleNamespace(
+            shard_sha256="b" * 64,
+            full_manifest_sha256="a" * 64,
+        ),
+        same_string_seal=seal,
+        same_string_index_sha256="c" * 64,
+    )
+
+    record = fa_cli._behavior_selection_record(config, source)
+
+    assert record["preregistration_sha256"] == hashlib.sha256(
+        fa_cli._SAME_STRING_V2_AMENDMENT_PATH.read_bytes()
+    ).hexdigest()
 
 
 def test_same_string_confirmatory_parser_rejects_factorial_power_flags(
@@ -3512,6 +3561,7 @@ def test_same_string_behavior_selection_rejects_threshold_and_lineage_tampering(
     tmp_path, tamper, message
 ):
     config = FAConfig.from_json(CONFIG_PATH)
+    object.__setattr__(config, "run_id", fa_cli.SAME_STRING_V1_RUN_ID)
     _rows, prompt_shard = prompt_capability(tmp_path, config, "behavior_test")
     store = FAArtifactStore(tmp_path)
     prompt = fa_cli._load_manifest(store, prompt_shard.manifest_path, config)
@@ -3556,6 +3606,7 @@ def test_same_string_behavior_recovery_rechecks_selection_binding(
     tmp_path, monkeypatch
 ):
     config = FAConfig.from_json(CONFIG_PATH)
+    object.__setattr__(config, "run_id", fa_cli.SAME_STRING_V1_RUN_ID)
     _rows, prompt_shard = prompt_capability(tmp_path, config, "behavior_test")
     store = FAArtifactStore(tmp_path)
     prompt = fa_cli._load_manifest(store, prompt_shard.manifest_path, config)

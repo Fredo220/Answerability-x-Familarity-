@@ -181,11 +181,17 @@ _PREREGISTRATION_PATH = (
     / "docs"
     / "familiarity_answerability_preregistration.md"
 )
-_SAME_STRING_AMENDMENT_PATH = (
+_SAME_STRING_V1_AMENDMENT_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
     / "amendments"
     / "2026-08-01-fa-same-string-primary.md"
+)
+_SAME_STRING_V2_AMENDMENT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-08-01-fa-same-string-balanced-pilot-v2.md"
 )
 _NATURALNESS_PROTOCOL_PATH = (
     Path(__file__).resolve().parents[2]
@@ -212,6 +218,16 @@ _PILOT_ANALYSIS_AMENDMENTS = (
     / "amendments"
     / "2026-07-23-fa-pilot-analysis-v13.md",
 )
+
+
+def _same_string_amendment_path(config: FAConfig) -> Path:
+    if config.run_id == SAME_STRING_V1_RUN_ID:
+        return _SAME_STRING_V1_AMENDMENT_PATH
+    if config.run_id == FEASIBILITY_SAME_STRING_RUN_ID:
+        return _SAME_STRING_V2_AMENDMENT_PATH
+    raise ValueError(f"unregistered same-string run id: {config.run_id}")
+
+
 _TOKENIZER_LOADER = None
 _POWER_EXECUTOR = simulate_interaction_power
 _SMOKE_CHAT_TEMPLATE_SHA256 = SMOKE_CHAT_TEMPLATE_SHA256
@@ -2452,7 +2468,8 @@ def _build_same_string_confirmatory(
             row.example_id for row in rows if row.split == "behavior_test"
         ),
     )
-    amendment_sha256 = hashlib.sha256(_SAME_STRING_AMENDMENT_PATH.read_bytes()).hexdigest()
+    amendment_path = _same_string_amendment_path(config)
+    amendment_sha256 = hashlib.sha256(amendment_path.read_bytes()).hexdigest()
     index_row = _same_string_confirmatory_index_record(
         store=store,
         config=config,
@@ -2534,7 +2551,9 @@ def _same_string_confirmatory_index_record(
         "config_sha256": config.config_hash,
         "full_manifest_sha256": full_manifest_sha256,
         "amendment_path": str(
-            _SAME_STRING_AMENDMENT_PATH.relative_to(Path(__file__).resolve().parents[2])
+            _same_string_amendment_path(config).relative_to(
+                Path(__file__).resolve().parents[2]
+            )
         ),
         "amendment_sha256": _required_sha256(amendment_sha256, "amendment sha256"),
         "pilot_gate_evidence_sha256": _required_sha256(
@@ -2619,9 +2638,10 @@ def _load_same_string_confirmatory_index_for_audit(
     full_hash = _required_sha256(
         row.get("full_manifest_sha256"), "same-string full manifest sha256"
     )
-    amendment_hash = hashlib.sha256(_SAME_STRING_AMENDMENT_PATH.read_bytes()).hexdigest()
+    amendment_path = _same_string_amendment_path(config)
+    amendment_hash = hashlib.sha256(amendment_path.read_bytes()).hexdigest()
     expected_amendment_path = str(
-        _SAME_STRING_AMENDMENT_PATH.relative_to(Path(__file__).resolve().parents[2])
+        amendment_path.relative_to(Path(__file__).resolve().parents[2])
     )
     if (
         row.get("amendment_path") != expected_amendment_path
@@ -2850,7 +2870,7 @@ def _behavior_selection_record(
     source: _BehaviorEvaluationSource,
 ) -> dict[str, Any]:
     preregistration_path = (
-        _SAME_STRING_AMENDMENT_PATH
+        _same_string_amendment_path(config)
         if source.is_same_string_primary
         else _PREREGISTRATION_PATH
     )
