@@ -107,6 +107,11 @@ from trajectory_extractor.fa_pilot_analysis import (
     analyze_pilot_rows,
     build_pilot_analysis_rows,
 )
+from trajectory_extractor.fa_same_string_representation import (
+    REPRESENTATION_PERMUTATION_SEEDS,
+    analyze_same_string_representations,
+    build_same_string_representation_rows,
+)
 from trajectory_extractor.fa_naturalness import (
     compile_adjudication_response_from_issuance,
     compile_initial_responses_from_issuance,
@@ -124,7 +129,7 @@ from trajectory_extractor.fa_naturalness import (
 FA_COMMANDS = (
     "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-same-string-v2-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-build-same-string-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
-    "fa-extract-activations", "fa-analyze-pilot-activations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
+    "fa-extract-activations", "fa-analyze-pilot-activations", "fa-analyze-same-string-representations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
@@ -146,6 +151,7 @@ _IMPLEMENTED = frozenset(
         "fa-score-behavior",
         "fa-extract-activations",
         "fa-analyze-pilot-activations",
+        "fa-analyze-same-string-representations",
         "fa-materialize-probe-rows",
         "fa-fit-probes",
         "fa-seal-behavior-test",
@@ -217,6 +223,12 @@ _PILOT_ANALYSIS_AMENDMENTS = (
     / "docs"
     / "amendments"
     / "2026-07-23-fa-pilot-analysis-v13.md",
+)
+_SAME_STRING_REPRESENTATION_SPEC_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-08-02-fa-same-string-representation-pilot.md"
 )
 
 
@@ -387,11 +399,19 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     activations.add_argument("--namespace", choices=_GENERATION_NAMESPACES, required=True)
     activations.add_argument("--layers")
     activations.add_argument("--resume", action="store_true")
+    activations.add_argument(
+        "--exploratory-representation-only", action="store_true"
+    )
     pilot_analysis = parsers["fa-analyze-pilot-activations"]
     pilot_analysis.add_argument("--manifest", required=True)
     pilot_analysis.add_argument("--activation-manifest", required=True)
     pilot_analysis.add_argument("--pilot-gate-manifest", required=True)
     pilot_analysis.add_argument("--shard-id", required=True)
+    representation = parsers["fa-analyze-same-string-representations"]
+    for split in ("train", "validation", "test"):
+        representation.add_argument(f"--{split}-manifest", required=True)
+        representation.add_argument(f"--{split}-activation-manifest", required=True)
+    representation.add_argument("--shard-id", required=True)
     materialize = parsers["fa-materialize-probe-rows"]
     materialize.add_argument("--manifest", required=True)
     materialize.add_argument("--metadata-manifest", required=True)
@@ -480,6 +500,8 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _extract_activations(config, root, args)
         elif command == "fa-analyze-pilot-activations":
             payload = _analyze_pilot_activations(config, root, args)
+        elif command == "fa-analyze-same-string-representations":
+            payload = _analyze_same_string_representations(config, root, args)
         elif command == "fa-materialize-probe-rows":
             payload = _materialize_probe_rows(config, root, args)
         elif command == "fa-fit-probes":
@@ -3209,9 +3231,19 @@ def _run_generation(config: FAConfig, root: Path, args: argparse.Namespace) -> d
 def _extract_activations(
     config: FAConfig, root: Path, args: argparse.Namespace
 ) -> dict[str, Any]:
-    if args.namespace in _PROTECTED:
+    exploratory_probe_test = (
+        args.namespace == "probe_test"
+        and bool(args.exploratory_representation_only)
+        and config.run_id == FEASIBILITY_SAME_STRING_RUN_ID
+        and _SAME_STRING_REPRESENTATION_SPEC_PATH.is_file()
+    )
+    if args.namespace in _PROTECTED and not exploratory_probe_test:
         raise ValueError(
             "fa-extract-activations is generic-only and cannot evaluate protected test namespaces"
+        )
+    if args.exploratory_representation_only and not exploratory_probe_test:
+        raise ValueError(
+            "exploratory representation extraction is limited to the v2 probe_test split"
         )
     store = FAArtifactStore(root)
     manifest = _load_manifest(store, args.manifest, config)
@@ -3364,6 +3396,121 @@ def _analyze_pilot_activations(
         "group_count": result.group_count,
         "metric_count": len(result.metric_records),
         "prediction_count": len(result.prediction_records),
+        "analysis_sha256": result.analysis_sha256,
+        "predictions_manifest": str(predictions.manifest_path),
+        "metrics_manifest": str(metrics.manifest_path),
+    }
+
+
+def _analyze_same_string_representations(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Run the frozen exploratory v2 representation-only analysis."""
+
+    if config.run_id != FEASIBILITY_SAME_STRING_RUN_ID:
+        raise ValueError("Same-String representation analysis requires the v2 config")
+    if not _SAME_STRING_REPRESENTATION_SPEC_PATH.is_file():
+        raise ValueError("Same-String representation analysis spec is missing")
+    store = FAArtifactStore(root)
+    supplied = (
+        ("mechanism_train", args.train_manifest, args.train_activation_manifest),
+        (
+            "locked_validation",
+            args.validation_manifest,
+            args.validation_activation_manifest,
+        ),
+        ("probe_test", args.test_manifest, args.test_activation_manifest),
+    )
+    examples: list[FAExample] = []
+    activation_records = []
+    lineage: dict[str, Any] = {
+        "config_sha256": config.config_hash,
+        "analysis_spec": str(
+            _SAME_STRING_REPRESENTATION_SPEC_PATH.relative_to(
+                Path(__file__).resolve().parents[2]
+            )
+        ),
+        "analysis_spec_sha256": _file_sha256(
+            _SAME_STRING_REPRESENTATION_SPEC_PATH
+        ),
+        "analysis_implementation_sha256": _file_sha256(
+            Path(inspect.getfile(analyze_same_string_representations))
+        ),
+        "permutation_seed_sha256": _sha256_json(
+            REPRESENTATION_PERMUTATION_SEEDS
+        ),
+    }
+    full_manifest_sha256: str | None = None
+    for namespace, prompt_value, activation_value in supplied:
+        prompt = _load_manifest(store, prompt_value, config)
+        if prompt.namespace != namespace:
+            raise ValueError("representation prompt manifest uses another namespace")
+        if full_manifest_sha256 is None:
+            full_manifest_sha256 = prompt.full_manifest_sha256
+        elif prompt.full_manifest_sha256 != full_manifest_sha256:
+            raise ValueError("representation prompt manifests do not share one source")
+        activation_path = Path(activation_value).absolute()
+        if not activation_path.is_relative_to(store.root):
+            raise ValueError("representation activation manifest must stay under the root")
+        npz_name = _read_json_object(activation_path).get("npz_file")
+        if not isinstance(npz_name, str) or Path(npz_name).name != npz_name:
+            raise ValueError("representation activation manifest has no valid NPZ")
+        activation_shard = resume_activation_shard(
+            activation_path.parent / npz_name
+        )
+        if activation_shard.manifest_path != activation_path:
+            raise ValueError("representation activation manifest path does not match")
+        records = load_activation_records(activation_path)
+        if {row.example_id for row in records} != {
+            row.example_id for row in prompt.examples
+        }:
+            raise ValueError("representation activation IDs do not match prompts")
+        examples.extend(prompt.examples)
+        activation_records.extend(records)
+        lineage[f"{namespace}_prompt_manifest_sha256"] = prompt.shard_sha256
+        lineage[f"{namespace}_activation_manifest_sha256"] = _file_sha256(
+            activation_path
+        )
+        lineage[f"{namespace}_activation_request_sha256"] = (
+            activation_shard.request_sha256
+        )
+        lineage[f"{namespace}_activation_npz_sha256"] = activation_shard.npz_sha256
+    rows = build_same_string_representation_rows(examples, activation_records)
+    result = analyze_same_string_representations(rows)
+    lineage["analysis_sha256"] = result.analysis_sha256
+    shard_id = _safe_cli_id(args.shard_id, "representation analysis shard-id")
+    predictions = _write_or_resume_records(
+        store,
+        run_id=config.run_id,
+        namespace="mechanism_train",
+        shard_id=f"{shard_id}-predictions",
+        rows=result.prediction_records,
+        lineage=lineage,
+        record_kind="same_string_representation_predictions",
+        allow_resume=True,
+    )
+    metrics = _write_or_resume_records(
+        store,
+        run_id=config.run_id,
+        namespace="mechanism_train",
+        shard_id=f"{shard_id}-metrics",
+        rows=result.metric_records,
+        lineage={
+            **lineage,
+            "predictions_manifest": str(
+                predictions.manifest_path.relative_to(store.root)
+            ),
+            "predictions_sha256": predictions.sha256,
+        },
+        record_kind="same_string_representation_metrics",
+        allow_resume=True,
+    )
+    return {
+        "status": "analyzed",
+        "claim_scope": "exploratory_representation_only",
+        "example_count": result.example_count,
+        "training_group_count": result.training_group_count,
+        "test_group_count": result.test_group_count,
         "analysis_sha256": result.analysis_sha256,
         "predictions_manifest": str(predictions.manifest_path),
         "metrics_manifest": str(metrics.manifest_path),

@@ -52,11 +52,6 @@ limitations for a larger follow-up.
    than drawing conclusions from individual prompts.
 
 3. **Internal activation analysis (exploratory follow-up in progress)**
-   The plan was to test whether held-out activations decoded exposure and
-   answerability beyond registered controls. The confirmatory gate failed, so
-   no gated mechanistic claim was opened. A smaller representation-only pilot
-   remains planned as a separately labeled exploratory analysis.
-
    Its central hypothesis is that the model may represent exposure and
    answerability differently internally, even though that separation did not
    appear as the hypothesized failure behavior in the small behavioral pilot.
@@ -83,9 +78,9 @@ The registered plan had two gated stages:
    - Test whether they add held-out predictive information beyond surface
      features and output confidence.
 
-The mechanistic pilot was permitted only if the behavioral gate passed.
-Activation interchange and attribution graphs were optional follow-ups; they
-could not rescue a failed behavioral result.
+The confirmatory mechanistic claim was permitted only if the behavioral gate
+passed. The v2 amendment separately permits an exploratory representation-only
+analysis, but no activation result can rescue the failed behavioral gate.
 
 ## Current Status
 
@@ -100,12 +95,6 @@ Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
   code-absent attempt rates were `0.0625` and `0.0000`, respectively.
 - The interaction and capability-preservation gates failed. The gated
   mechanistic pilot was therefore not run.
-- A representation-only pilot is the next planned analysis. It will test for
-  descriptive internal separability without changing the behavioral endpoint
-  or making causal claims. Specifically, it asks whether the model represents
-  exposure and answerability differently internally even though the small
-  behavioral pilot did not show the hypothesized failure behavior.
-  The pilot cannot change or rescue the closed behavioral result.
 - A required pre-outcome power/MDE audit is absent from the verified snapshot.
   This disclosed protocol deviation limits v2 to an imprecise pilot result.
 - The endpoint was opened once and is permanently closed. The downloaded

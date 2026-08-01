@@ -4476,6 +4476,7 @@ def test_generic_generation_rejects_protected_namespaces_before_runner_construct
     ("command", "required_option"),
     [
         ("fa-analyze-pilot-activations", "--manifest"),
+        ("fa-analyze-same-string-representations", "--train-manifest"),
         ("fa-fit-probes", "--train-rows-manifest"),
         ("fa-seal-behavior-test", "--behavior-test-manifest"),
         ("fa-seal-selection", "--selection-manifest"),

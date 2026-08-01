@@ -195,8 +195,8 @@ def test_readme_reports_completed_v2_study_without_rewriting_r11():
     assert "## Compute-Constrained Scope" in text
     assert "## What a Stronger Follow-Up Should Test" in text
     assert "With greater research-compute access" in text
-    assert "representation-only pilot is the next planned analysis" in text
-    assert "cannot change or rescue the closed behavioral result" in text
+    assert "Its central hypothesis is that the model may represent exposure" in text
+    assert "This is a hypothesis to be tested, not a result" in text
     assert "reliability concern" in text
     assert "docs/fa_same_string_primary_runbook.md" in text
     assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text
