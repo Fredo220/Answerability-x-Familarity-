@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -72,3 +73,53 @@ def test_snapshot_restores_consistent_unlocked_endpoint_and_inputs(tmp_path):
     )
     assert input_path.read_text(encoding="utf-8") == '{"source":"fixed"}\n'
     assert archive.exists()
+
+
+def test_restore_publishes_only_after_complete_staging(tmp_path, monkeypatch):
+    snapshot = snapshot_store(tmp_path)
+    input_path = snapshot.artifact_root / "inputs" / "source.json"
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text('{"source":"fixed"}\n', encoding="utf-8")
+    snapshot.checkpoint()
+    clear_local(snapshot)
+
+    original_replace = os.replace
+
+    def interrupt_publish(source, destination):
+        if Path(destination) == snapshot.artifact_root:
+            raise KeyboardInterrupt
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", interrupt_publish)
+    try:
+        snapshot.restore_latest()
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("restore publish was not interrupted")
+
+    assert not snapshot.artifact_root.exists()
+    monkeypatch.setattr(os, "replace", original_replace)
+    assert snapshot.restore_latest() is not None
+    assert input_path.read_text(encoding="utf-8") == '{"source":"fixed"}\n'
+
+
+def test_restore_uses_authenticated_local_archive_copy(tmp_path, monkeypatch):
+    snapshot = snapshot_store(tmp_path)
+    input_path = snapshot.artifact_root / "inputs" / "source.json"
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text('{"source":"fixed"}\n', encoding="utf-8")
+    archive = snapshot.checkpoint()
+    clear_local(snapshot)
+
+    original_copy2 = shutil.copy2
+
+    def copy_then_corrupt_source(source, destination, *args, **kwargs):
+        result = original_copy2(source, destination, *args, **kwargs)
+        if Path(source) == archive:
+            archive.write_bytes(b"changed after local copy")
+        return result
+
+    monkeypatch.setattr(shutil, "copy2", copy_then_corrupt_source)
+    assert snapshot.restore_latest() == archive
+    assert input_path.read_text(encoding="utf-8") == '{"source":"fixed"}\n'

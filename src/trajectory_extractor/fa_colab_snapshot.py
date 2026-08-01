@@ -78,7 +78,7 @@ class VerifiedColabSnapshotStore:
             return destination
 
     def restore_latest(self) -> Path | None:
-        if any(self.artifact_root.iterdir()):
+        if self.artifact_root.exists() and any(self.artifact_root.iterdir()):
             return None
         candidates = sorted(
             self.checkpoint_root.glob("fa-*.zip"),
@@ -87,26 +87,34 @@ class VerifiedColabSnapshotStore:
         )
         for archive in candidates:
             expected = archive.stem.removeprefix("fa-")
-            if _sha256(archive) != expected:
-                continue
             with tempfile.TemporaryDirectory(
-                dir=self.scratch_root, prefix="fa-restore-"
+                dir=self.artifact_root.parent, prefix="fa-restore-"
             ) as temporary:
+                local_archive = Path(temporary) / "snapshot.zip"
+                try:
+                    shutil.copy2(archive, local_archive)
+                except OSError:
+                    continue
+                if _sha256(local_archive) != expected:
+                    continue
                 staging = Path(temporary) / "artifacts"
                 staging.mkdir()
                 try:
-                    self._extract_verified(archive, staging)
+                    self._extract_verified(local_archive, staging)
                     observed = {
                         path.relative_to(staging).as_posix()
                         for path in self._verified_members(staging)
                     }
-                    expected_members = _read_index(archive)["members"]
+                    expected_members = _read_index(local_archive)["members"]
                     if observed != set(expected_members):
                         raise ValueError("snapshot transaction set does not verify")
                 except (OSError, ValueError, zipfile.BadZipFile):
                     continue
-                shutil.copytree(staging, self.artifact_root, dirs_exist_ok=True)
+                if self.artifact_root.exists():
+                    self.artifact_root.rmdir()
+                os.replace(staging, self.artifact_root)
                 return archive
+        self.artifact_root.mkdir(parents=True, exist_ok=True)
         return None
 
     def _extract_verified(self, archive: Path, staging: Path) -> None:
