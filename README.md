@@ -60,6 +60,11 @@ limitations for a larger follow-up.
    no gated mechanistic claim was opened. A smaller representation-only pilot
    remains planned as a separately labeled exploratory analysis.
 
+   Its central hypothesis is that the model may represent exposure and
+   answerability differently internally, even though that separation did not
+   appear as the hypothesized failure behavior in the small behavioral pilot.
+   This is a hypothesis to be tested, not a result of the completed study.
+
 4. **Local causal validation (future work outside v2)**
    A future registered study could test matched activation replacement against
    reverse, shuffled, orthogonal, and norm-matched controls. Study v2 contained
@@ -100,7 +105,9 @@ evaluable, and `not_supported`.**
   mechanistic pilot was therefore not run.
 - A representation-only pilot is the next planned analysis. It will test for
   descriptive internal separability without changing the behavioral endpoint
-  or making causal claims.
+  or making causal claims. Specifically, it asks whether the model represents
+  exposure and answerability differently internally even though the small
+  behavioral pilot did not show the hypothesized failure behavior.
 - A required pre-outcome power/MDE audit is absent from the verified snapshot.
   This disclosed protocol deviation limits v2 to an imprecise pilot result.
 - The endpoint was opened once and is permanently closed. The downloaded
