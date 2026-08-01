@@ -129,6 +129,8 @@ def test_feasibility_v2_colab_replays_v1_then_allocates_before_model_compute():
     text = v2_notebook_text()
 
     assert re.search(r'PINNED_REPO_COMMIT\s*=\s*"[0-9a-f]{40}"', text)
+    assert "USE_DRIVE_CHECKPOINTS = False" in text
+    assert "if USE_DRIVE_CHECKPOINTS:" in text
     assert 'drive.mount("/content/drive", timeout_ms=60_000)' in text
     assert 'Path("/content/fa-same-string-feasibility-v2-checkpoints")' in text
     assert "Drive unavailable; using local checkpoints" in text
