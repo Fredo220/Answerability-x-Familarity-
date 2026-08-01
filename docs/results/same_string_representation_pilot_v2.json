@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "status": "complete_exploratory",
+  "claim_scope": "exploratory_representation_only",
+  "model": {
+    "id": "google/gemma-2-2b-it",
+    "revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+  },
+  "sample": {
+    "prompt_count": 80,
+    "training_group_count": 16,
+    "test_group_count": 4,
+    "test_prompt_count": 16
+  },
+  "fixed_layers": [0, 6, 12, 18, 25],
+  "results": {
+    "exposure": {
+      "primary_anchor": "target_intro_end",
+      "residual_static_auroc_by_layer": [1.0, 1.0, 1.0, 1.0, 1.0],
+      "residual_static_balanced_accuracy_by_layer": [1.0, 1.0, 1.0, 1.0, 1.0],
+      "mean_layer_auroc": 1.0,
+      "mean_layer_permutation_p": 0.01,
+      "max_layer_adjusted_permutation_p_by_layer": [0.01, 0.01, 0.01, 0.01, 0.01],
+      "surface_baseline_auroc": 0.1875,
+      "surface_baseline_balanced_accuracy": 0.3125
+    },
+    "answerability": {
+      "primary_anchor": "user_prompt_end",
+      "residual_static_auroc_by_layer": [0.921875, 0.96875, 1.0, 1.0, 1.0],
+      "residual_static_balanced_accuracy_by_layer": [0.875, 0.8125, 1.0, 0.875, 1.0],
+      "mean_layer_auroc": 0.978125,
+      "mean_layer_permutation_p": 0.01,
+      "max_layer_adjusted_permutation_p_by_layer": [0.01, 0.01, 0.01, 0.01, 0.01],
+      "early_anchor_auroc_by_layer": [0.5, 0.5, 0.5, 0.5, 0.5],
+      "surface_baseline_auroc": 1.0,
+      "surface_baseline_balanced_accuracy": 0.9375
+    }
+  },
+  "interpretation": "Exploratory position-dependent separability; no behavioral rescue or causal claim.",
+  "provenance": {
+    "analysis_sha256": "d904abe2942c30aea1616c082aa6d9e03cfe86f7fbe4d8a66c019e5395448d3e",
+    "analysis_spec_sha256": "341ea830c9907a80f60da30f0650fddd36c06a1ddc71d1fe216f41820f184a94",
+    "analysis_implementation_sha256": "9ba8371979589e1b0a39aa698e28dd5492b0732dde0727f52f54916fe01733d8",
+    "metrics_sha256": "69eb9a2badc054c9f67dbd02eb6031d93488f3db78d7e006dd70ef6cc5538664",
+    "predictions_sha256": "15ed2a2347e8825436d4955c017f67b1b4cd0452ffb3a45adfc52b7c6fd133ee",
+    "mechanism_train_activation_npz_sha256": "94f35f3a14c04c710413f7956f1cf483163de7f43bc1bcda9768e7665e0c657b",
+    "locked_validation_activation_npz_sha256": "ab6bdb1c4707be14372d9dd74eff2c9e42ec3dd6658a0f58a6e4a22de74e4820",
+    "probe_test_activation_npz_sha256": "c6a2b4766eab406a4c59ef8e06ab85ff35e808053e4becf8b8b0fd66c89de623"
+  },
+  "limitations": [
+    "Only four independent held-out test units.",
+    "One small open-weight model and one synthetic task.",
+    "Answerability was perfectly predictable from the morphology baseline.",
+    "No activation intervention or causal evidence."
+  ]
+}

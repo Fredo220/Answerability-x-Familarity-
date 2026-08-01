@@ -6,7 +6,7 @@ exposure to a target, even when the information needed to answer is missing?
 This project investigates whether language models internally distinguish
 between familiarity with a target and having enough evidence to answer a
 question about it. It combines a controlled behavioral experiment on Gemma 2
-2B with a planned representation-level analysis of the model's internal
+2B with an exploratory representation-level analysis of the model's internal
 activations.
 
 ## The Idea
@@ -51,7 +51,7 @@ limitations for a larger follow-up.
    We evaluate the interaction across multiple entities and domains rather
    than drawing conclusions from individual prompts.
 
-3. **Internal activation analysis (exploratory follow-up in progress)**
+3. **Internal activation analysis (exploratory follow-up complete)**
    Its central hypothesis is that the model may represent exposure and
    answerability differently internally, even though that separation did not
    appear as the hypothesized failure behavior in the small behavioral pilot.
@@ -103,6 +103,8 @@ Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
 
 See the [behavioral result report](docs/results/same_string_feasibility_v2_behavior_result.md)
 and its [machine-readable record](docs/results/same_string_feasibility_v2_behavior_result.json).
+The separate [representation-only result](docs/results/same_string_representation_pilot_v2.md)
+reports the exploratory activation analysis without changing that decision.
 
 ## How to Interpret the Result
 

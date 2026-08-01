@@ -13,6 +13,12 @@ V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
 V2_RESULT = ROOT / "docs" / "results" / "same_string_feasibility_v2_behavior_result.json"
+REPRESENTATION_RESULT = (
+    ROOT / "docs" / "results" / "same_string_representation_pilot_v2.json"
+)
+REPRESENTATION_RELEASE = (
+    ROOT / "release" / "familiarity_answerability" / "representation_pilot_v2"
+)
 V2_SNAPSHOT = (
     ROOT
     / "release"
@@ -197,11 +203,57 @@ def test_readme_reports_completed_v2_study_without_rewriting_r11():
     assert "With greater research-compute access" in text
     assert "Its central hypothesis is that the model may represent exposure" in text
     assert "This is a hypothesis to be tested, not a result" in text
+    assert "representation-only result" in text
     assert "reliability concern" in text
     assert "docs/fa_same_string_primary_runbook.md" in text
     assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text
     assert "docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md" in text
     assert "R11" in text
+
+
+def test_representation_result_is_exploratory_and_matches_released_artifacts():
+    result = json.loads(REPRESENTATION_RESULT.read_text(encoding="utf-8"))
+
+    assert result["status"] == "complete_exploratory"
+    assert result["claim_scope"] == "exploratory_representation_only"
+    assert result["sample"] == {
+        "prompt_count": 80,
+        "training_group_count": 16,
+        "test_group_count": 4,
+        "test_prompt_count": 16,
+    }
+    assert result["fixed_layers"] == [0, 6, 12, 18, 25]
+    assert result["results"]["exposure"]["residual_static_auroc_by_layer"] == [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    ]
+    assert result["results"]["answerability"]["early_anchor_auroc_by_layer"] == [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+    ]
+    assert result["results"]["answerability"]["surface_baseline_auroc"] == 1.0
+
+    for artifact, provenance_key in (
+        ("same-string-v2-representation-pilot-metrics.jsonl", "metrics_sha256"),
+        (
+            "same-string-v2-representation-pilot-predictions.jsonl",
+            "predictions_sha256",
+        ),
+    ):
+        data_path = REPRESENTATION_RELEASE / artifact
+        manifest_path = REPRESENTATION_RELEASE / f"{artifact}.manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        digest = hashlib.sha256(data_path.read_bytes()).hexdigest()
+
+        assert manifest["data_file"] == artifact
+        assert manifest["sha256"] == digest
+        assert result["provenance"][provenance_key] == digest
 
 
 def test_v2_public_result_records_closed_endpoint_and_failed_gate():
