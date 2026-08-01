@@ -2221,6 +2221,39 @@ def test_confirmatory_reserve_selection_is_balanced_deterministic_and_excludes_r
         }
 
 
+def test_naturalness_quota_summary_distinguishes_compilation_from_gate_passage():
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    matches = confirmatory_reserve_matches(config, reserve_per_cell=0)
+    rejected = matches[0].pair_id
+    audit = NaturalnessAudit(
+        accepted_pair_ids=tuple(
+            match.pair_id for match in matches if match.pair_id != rejected
+        ),
+        excluded_pair_ids=(rejected,),
+        third_rater_pair_ids=(),
+        decisions={
+            match.pair_id: (
+                "excluded_naturalness_gap"
+                if match.pair_id == rejected
+                else "accepted"
+            )
+            for match in matches
+        },
+    )
+
+    summary = fa_cli._naturalness_quota_summary(config, matches, audit)
+
+    assert summary["status"] == "failed"
+    assert summary["accepted_pair_count"] == len(matches) - 1
+    assert summary["excluded_pair_count"] == 1
+    assert summary["shortfalls"] == {
+        f"{matches[0].split}/{matches[0].coarse_type}": {
+            "accepted": config.split_counts[matches[0].split] // 4 - 1,
+            "required": config.split_counts[matches[0].split] // 4,
+        }
+    }
+
+
 def sha256_json(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")

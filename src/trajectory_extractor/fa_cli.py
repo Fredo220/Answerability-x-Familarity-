@@ -600,7 +600,8 @@ def _compile_naturalness_ratings(
             "adjudication_issuance_sha256": adjudication.sha256,
         }
 
-    audit_naturalness_manifest(matches, ratings)
+    audit = audit_naturalness_manifest(matches, ratings)
+    quota_summary = _naturalness_quota_summary(config, matches, audit)
     row, lineage = rating_record(
         ratings,
         assignments,
@@ -629,6 +630,7 @@ def _compile_naturalness_ratings(
         "rating_count": len(ratings),
         "initial_submission_manifest": str(submission.manifest_path),
         "ratings_manifest": str(shard.manifest_path),
+        "naturalness_gate": quota_summary,
         "sha256": shard.sha256,
     }
 
@@ -679,7 +681,8 @@ def _finalize_naturalness_adjudication(
         raise ValueError("third rater must be independent")
     ratings = (*initial_ratings, *third_ratings)
     assignments = (*initial_assignments, *third_assignments)
-    audit_naturalness_manifest(matches, ratings)
+    audit = audit_naturalness_manifest(matches, ratings)
+    quota_summary = _naturalness_quota_summary(config, matches, audit)
 
     adjudication_row, adjudication_lineage = submission_record(
         third_ratings,
@@ -736,6 +739,7 @@ def _finalize_naturalness_adjudication(
             adjudication_submission.manifest_path
         ),
         "ratings_manifest": str(shard.manifest_path),
+        "naturalness_gate": quota_summary,
         "sha256": shard.sha256,
     }
 
@@ -2817,6 +2821,38 @@ def _select_confirmatory_matches(
                 )
             selected.extend(candidates[:quota])
     return tuple(sorted(selected, key=lambda match: (match.split, match.pair_id)))
+
+
+def _naturalness_quota_summary(
+    config: FAConfig,
+    matches: Sequence[EntityMatch],
+    audit: NaturalnessAudit,
+) -> dict[str, Any]:
+    """Report whether accepted pairs fill every registered split/domain quota."""
+
+    accepted = frozenset(audit.accepted_pair_ids)
+    counts = Counter(
+        (match.split, match.coarse_type)
+        for match in matches
+        if match.pair_id in accepted
+    )
+    shortfalls: dict[str, dict[str, int]] = {}
+    accepted_counts: dict[str, int] = {}
+    for split, split_count in sorted(config.split_counts.items()):
+        required = split_count // len(REGISTERED_ENTITY_DOMAINS)
+        for domain in REGISTERED_ENTITY_DOMAINS:
+            key = f"{split}/{domain}"
+            observed = counts[(split, domain)]
+            accepted_counts[key] = observed
+            if observed < required:
+                shortfalls[key] = {"accepted": observed, "required": required}
+    return {
+        "status": "failed" if shortfalls else "passed",
+        "accepted_pair_count": len(audit.accepted_pair_ids),
+        "excluded_pair_count": len(audit.excluded_pair_ids),
+        "accepted_split_domain_counts": accepted_counts,
+        "shortfalls": shortfalls,
+    }
 
 
 def _run_generation(config: FAConfig, root: Path, args: argparse.Namespace) -> dict[str, Any]:

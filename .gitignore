@@ -19,6 +19,10 @@ graphify-out/
 human_ratings/**/private/
 human_ratings/**/*-response.csv
 
+# The completed Same-String audit is public and contains no personal identifiers.
+!data/fa/human_ratings/same_string_primary_v1/
+!data/fa/human_ratings/same_string_primary_v1/*-response.csv
+
 # Superseded pre-screening v1 snapshot; v2 is the frozen confirmatory source.
 data/fa/confirmatory_source/
 

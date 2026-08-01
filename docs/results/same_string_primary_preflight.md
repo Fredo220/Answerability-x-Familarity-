@@ -1,6 +1,6 @@
 # Same-String Primary Preflight
 
-**Status:** `naturalness_passed_awaiting_runtime_smoke`
+**Status:** `ratings_compiled_naturalness_quota_failed`
 **Execution commit:** `151f818cb51b7782ad4b32c36b9cebfd06a7a499`  
 **Protected behavior endpoint:** closed  
 **Empirical model claim:** none
@@ -39,17 +39,29 @@ eligible, and the next deterministic reserve fills the unchanged domain
 quota. No source record, sample size, threshold, estimand, or endpoint was
 edited. The repeated preflight then passed all checks.
 
-## Human gate
+## Human audit
 
-The independent human gate passed. Raters A and B completed all 192 blinded
-pairs. Their registered binary decisions differed for 68 pairs, so the sealed
-workflow issued only those disagreements to an independent rater C. The final
-artifact contains 452 ratings: 384 initial ratings and 68 adjudications.
+The independent human ratings compiled successfully. Raters A and B completed
+all 192 blinded pairs. Their registered binary decisions differed for 68
+pairs, so the sealed workflow issued only those disagreements to an independent
+rater C. The final artifact contains 452 ratings: 384 initial ratings and 68
+adjudications.
 
 The compiler verified packet identities, blinded item mappings, unchanged
 stimuli, rating ranges, distinct rater identities, independence attestations,
 and the registered naturalness thresholds. The final ratings artifact has data
 SHA-256 `78872ca0b1dce1def5ee841556b953ddda0b8d14b286676f2cf1ba2e51b208be`.
+The three anonymized response files are published under
+`data/fa/human_ratings/same_string_primary_v1/`; a clean replay from those
+files reproduced the same final data hash, all 192 finalized pair decisions,
+and all 68 third-rater adjudications.
+
+Compilation is not the confirmatory naturalness gate. Applying the registered
+rule accepted 73 pairs and excluded 119. Those accepted pairs do not fill the
+frozen per-split, per-domain quotas; for example, `behavior_test/person` has 8
+accepted pairs but requires 12, and `intervention_test/person` has none but
+requires 6. The frozen Same-String v1 confirmatory corpus is therefore not
+evaluable and must not proceed to its protected endpoint.
 
 During finalization, a code defect was found in which a disagreement-only
 issuance was compared against the full match-set hash. A regression test first
@@ -57,9 +69,11 @@ reproduced the defect; the fix validates the issuance against exactly the
 registered disagreement subset. No rating, stimulus, threshold, exclusion, or
 protected endpoint was changed.
 
-The next gate is the unprotected runtime smoke. The confirmatory index,
-protected Gemma evaluation, and mechanistic follow-up remain closed. Passing
-the human gate is dataset-quality evidence, not evidence for the behavioral
+The next action is a separately frozen pre-outcome redesign or a new additive
+reserve audit. The unprotected runtime smoke may be exercised for infrastructure
+development, but it cannot make v1 evaluable. The confirmatory index, protected
+Gemma evaluation, and mechanistic follow-up remain closed. Compiled human
+ratings are dataset-quality evidence, not evidence for the behavioral
 hypothesis.
 
 ## Machine-readable record

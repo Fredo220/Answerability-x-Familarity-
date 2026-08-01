@@ -97,6 +97,12 @@ Expected artifacts:
 - optional adjudication issuance and submission manifests;
 - final compiled naturalness-ratings manifest.
 
+For the completed registered audit, the anonymized A/B responses and the
+disagreement-only C response are published under
+`data/fa/human_ratings/same_string_primary_v1/`. The Colab launcher consumes
+these files directly and still regenerates and verifies the issuance,
+submission, and final manifests; it does not trust a hand-edited aggregate.
+
 ### 3. Pass the unprotected runtime smoke
 
 Use the registered `Qwen/Qwen3-1.7B` smoke configuration. On a new artifact

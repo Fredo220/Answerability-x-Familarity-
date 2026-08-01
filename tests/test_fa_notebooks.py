@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -92,6 +93,28 @@ def test_same_string_colab_separates_compilation_from_resumable_adjudication():
 
     assert compile_cell < adjudication_cell
     assert 'load_state("naturalness_ratings")' in cells[adjudication_cell]
+
+
+def test_same_string_colab_uses_published_anonymous_ratings():
+    text = notebook_text()
+    ratings_root = ROOT / "data/fa/human_ratings/same_string_primary_v1"
+    expected_hashes = {
+        "rater-a-response.csv": "aed43152d66555d3546bf24ced1ea0f075ed2accfc4378050d6d1ff1ed773614",
+        "rater-b-response.csv": "bee9d6ad5f6fef140264450dccaf5869634dd077c04670aa6dfda60d2220efa8",
+        "rater-c-response.csv": "d1b26fb6681a3d08872545d1c45b978880ad663c1c34d5a0e1a06ae0296b8784",
+    }
+
+    assert "data/fa/human_ratings/same_string_primary_v1" in text
+    for name, expected_hash in expected_hashes.items():
+        path = ratings_root / name
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected_hash
+        assert f'"{name}"' in text
+        assert expected_hash in text
+    assert "FA_ADJUDICATION_RESPONSE" not in text
+    assert text.index('ratings["naturalness_gate"]["status"]') < text.index(
+        "fa-run-screening"
+    )
 
 
 def test_same_string_runbook_states_counts_gates_and_claim_boundary():
