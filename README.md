@@ -84,7 +84,7 @@ analysis, but no activation result can rescue the failed behavioral gate.
 
 ## Current Status
 
-**Status as of 2026-08-01: the protected behavioral endpoint for the
+**Status as of 2026-08-02: the protected behavioral endpoint for the
 Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
 
 - All 128 generations completed with 100% format validity.
@@ -93,8 +93,9 @@ Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
 - The answerability manipulation worked behaviorally: target-bound attempt
   rates were `0.9063` under high exposure and `0.7500` under low exposure;
   code-absent attempt rates were `0.0625` and `0.0000`, respectively.
-- The interaction and capability-preservation gates failed. The gated
-  mechanistic pilot was therefore not run.
+- The interaction and capability-preservation gates failed. The registered
+  gated mechanistic pilot was therefore not run. A separately frozen
+  exploratory representation-only pilot was completed later.
 - A required pre-outcome power/MDE audit is absent from the verified snapshot.
   This disclosed protocol deviation limits v2 to an imprecise pilot result.
 - The endpoint was opened once and is permanently closed. The downloaded
@@ -105,6 +106,20 @@ See the [behavioral result report](docs/results/same_string_feasibility_v2_behav
 and its [machine-readable record](docs/results/same_string_feasibility_v2_behavior_result.json).
 The separate [representation-only result](docs/results/same_string_representation_pilot_v2.md)
 reports the exploratory activation analysis without changing that decision.
+
+### Representation-Only Pilot
+
+The exploratory pilot found a simple position-dependent pattern:
+
+- Contextual exposure was detectable internally after the target introduction.
+- Answerability was at chance there and became detectable only after the model
+  received the evidence-bearing question.
+- Prompt surface features already predicted answerability perfectly. The pilot
+  therefore does not show that internal activations add unique answerability
+  information beyond the prompt itself.
+
+This result used only four held-out units. It is exploratory, non-causal, and
+does not establish metacognition or general hallucination detection.
 
 ## How to Interpret the Result
 

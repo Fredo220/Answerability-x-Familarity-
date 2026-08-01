@@ -204,6 +204,10 @@ def test_readme_reports_completed_v2_study_without_rewriting_r11():
     assert "Its central hypothesis is that the model may represent exposure" in text
     assert "This is a hypothesis to be tested, not a result" in text
     assert "representation-only result" in text
+    assert "### Representation-Only Pilot" in text
+    assert "Contextual exposure was detectable internally" in text
+    assert "Prompt surface features already predicted answerability perfectly" in text
+    assert "exploratory, non-causal" in text
     assert "reliability concern" in text
     assert "docs/fa_same_string_primary_runbook.md" in text
     assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text
