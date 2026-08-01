@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "study_id": "familiarity-answerability-same-string-feasibility-v2",
+  "run_id": "same-string-feasibility-v2",
+  "model": {
+    "id": "google/gemma-2-2b-it",
+    "revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+    "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+  },
+  "decision": {
+    "endpoint_status": "evaluable",
+    "endpoint_state": "closed",
+    "registered_gate": "not_supported",
+    "gate_reasons": [
+      "interaction_point_estimate_below_minimum",
+      "interaction_interval_not_positive",
+      "capability_noninferiority_lower_bound"
+    ],
+    "mechanistic_followup": "not_run_behavior_gate_failed"
+  },
+  "protocol_deviations": [
+    {
+      "id": "missing_preoutcome_power_or_mde_audit",
+      "description": "The amendment required a pre-outcome power or minimum-detectable-effect audit, but no such artifact is present in the verified snapshot.",
+      "impact": "The machine-evaluated endpoint and registered gate remain not_supported because the amendment made power descriptive rather than decision-changing and did not list it as an endpoint-opening hard stop. The omission materially limits the strength of inference from this small pilot and is not repaired post hoc."
+    }
+  ],
+  "sample": {
+    "complete_units": 32,
+    "prompt_rows": 128,
+    "units_per_domain": 8
+  },
+  "registered_effects": {
+    "exposure_by_answerability_interaction": {
+      "estimate": -0.09375,
+      "confidence_interval_95": {
+        "lower": -0.39999999999999997,
+        "upper": 0.18181818181818177
+      },
+      "minimum_registered_effect": 0.05
+    },
+    "target_bound_capability_difference": {
+      "estimate": 0.15625,
+      "confidence_interval_95": {
+        "lower": -0.07692307692307698,
+        "upper": 0.43333333333333335
+      },
+      "noninferiority_margin": -0.05
+    }
+  },
+  "cell_metrics": {
+    "high_exposure_code_absent": {
+      "n": 32,
+      "attempt_rate": 0.0625,
+      "abstention_rate": 0.9375,
+      "exact_target_rate": 0.0,
+      "completion_rate": 1.0,
+      "format_validity_rate": 1.0
+    },
+    "low_exposure_code_absent": {
+      "n": 32,
+      "attempt_rate": 0.0,
+      "abstention_rate": 1.0,
+      "exact_target_rate": 0.0,
+      "completion_rate": 1.0,
+      "format_validity_rate": 1.0
+    },
+    "high_exposure_target_bound": {
+      "n": 32,
+      "attempt_rate": 0.90625,
+      "abstention_rate": 0.09375,
+      "exact_target_rate": 0.90625,
+      "completion_rate": 1.0,
+      "format_validity_rate": 1.0
+    },
+    "low_exposure_target_bound": {
+      "n": 32,
+      "attempt_rate": 0.75,
+      "abstention_rate": 0.25,
+      "exact_target_rate": 0.75,
+      "completion_rate": 1.0,
+      "format_validity_rate": 1.0
+    }
+  },
+  "bootstrap": {
+    "method": "crossed",
+    "resampling_unit": [
+      "entity_unit_id",
+      "template_family"
+    ],
+    "seed": 20260722,
+    "requested_draws": 10000,
+    "valid_draws": 10000,
+    "discarded_draws": 0,
+    "alpha": 0.05
+  },
+  "interpretation": {
+    "measured_result": "Contextual exposure did not produce the registered positive exposure-by-answerability interaction.",
+    "answerability_check": "Target-bound prompts produced far more answer attempts than code-absent prompts, so the answerability manipulation separated the intended conditions.",
+    "plausible_noncausal_explanations": [
+      "The code-absent cells were near the floor for answer attempts, leaving little room for a positive exposure effect.",
+      "The manipulation measured short-term contextual exposure to synthetic names, not general pretrained familiarity.",
+      "The 32-unit pilot produced a wide confidence interval and cannot rule out modest effects.",
+      "The result may be specific to the synthetic archive-code task or the pinned 2B model."
+    ],
+    "recommended_next_step": "Preserve v2 as a negative pilot. Register a new study using unseen units, a pre-outcome power and MDE simulation, development-only calibration that avoids floor and ceiling behavior, and at least one larger or independent model replication."
+  },
+  "provenance": {
+    "runtime_code_commit": "08085e77e153a5314e9ac7698ff9999a7bea8bbc",
+    "colab_launcher_commit": "df405c6dd073d721ef5a09ad834137e778a2fe90",
+    "amendment_sha256": "f6e1c26c1e3cac853c06b9d97eef559ea1143ff5253af81c7d9a0e1e0ec26d0c",
+    "confirmatory_manifest_sha256": "6efc3cd428ed1795191a86342b6daec76eded0bed4908ec9848604a818f6e173",
+    "same_string_index_sha256": "a0ac487ddf41c18c2379ccab12235ab9b9ff1cc8c2380db7b61f6a3d78bf0f49",
+    "same_string_seal_sha256": "430c91c048b3a4e9cb6be0e137f4b90e0cf44e578a1b16844b085d3d1443f126",
+    "behavior_selection_sha256": "701664cfb7c9809880709b71f67fae641333af9f9ed70a3c9693fd1039627140",
+    "evidence_sha256": "0b53629677888308f19f4ef183e260d9affd82e0b427459172c96250d8b05173",
+    "metrics_data_sha256": "beba778e3cdc7f36d7e33132ea6d06f63f59b7f9bb6336b7a88b46d4338e41b6",
+    "snapshot_filename": "fa-58f1f069cb6a1906ff17a0282805f859675ae80b0f707fc0f768fc7a956178e3.zip",
+    "snapshot_sha256": "58f1f069cb6a1906ff17a0282805f859675ae80b0f707fc0f768fc7a956178e3"
+  }
+}

@@ -3,14 +3,16 @@
 Does a language model answer more readily after receiving unrelated contextual
 exposure to a target, even when the information needed to answer is missing?
 
-This repository contains a controlled behavioral experiment and a gated small
-mechanistic-interpretability follow-up on `google/gemma-2-2b-it`. The active
-study is the **Same-String Primary Study**. It tests contextual familiarization
-without depending on the failed real-entity R11 screening instrument.
+This repository contains a controlled behavioral experiment and a
+preregistered gate for a small mechanistic-interpretability follow-up on
+`google/gemma-2-2b-it`. The completed study is the
+**Same-String Balanced Pilot v2**. It tests contextual familiarization without
+depending on the failed real-entity R11 screening instrument. The behavioral
+gate did not pass, so the mechanistic follow-up was not run.
 
 ## The Idea
 
-The active experiment separates two factors while keeping the target string
+The completed experiment separated two factors while keeping the target string
 identical within every four-prompt unit:
 
 - **Contextual exposure:** Has the prompt introduced several unrelated facts
@@ -35,11 +37,10 @@ A model may confuse **having seen more context about a target** with **having
 enough evidence to answer a question about it**. This distinction matters for
 hallucination detection, uncertainty calibration, and reliable abstention.
 
-This study is deliberately scoped so it can be completed reproducibly with
-limited compute. It serves as a concrete demonstration of controlled
-hypothesis testing, scientific integrity, and research execution. I plan to
-complete it independently; with Fellowship mentorship and compute, I would
-pursue a more ambitious research question aligned with Anthropic's priorities.
+This study was deliberately scoped for reproducible execution with limited
+compute. It demonstrates controlled hypothesis testing, scientific integrity,
+and research execution. The completed pilot also exposes concrete design
+limitations for a larger follow-up.
 
 ## Research Approach
 
@@ -51,22 +52,23 @@ pursue a more ambitious research question aligned with Anthropic's priorities.
    We evaluate the interaction across multiple entities and domains rather
    than drawing conclusions from individual prompts.
 
-3. **Internal activation analysis (gated follow-up)**
-   We test whether held-out activations decode exposure and answerability and
-   predict unsupported answer attempts beyond registered controls.
+3. **Internal activation analysis (gated follow-up, not run in v2)**
+   The plan was to test whether held-out activations decoded exposure and
+   answerability beyond registered controls. The behavioral gate failed, so
+   this stage was not run.
 
-4. **Local causal validation (gated follow-up)**
-   If the behavioral and probe gates pass, we test matched activation
-   replacement against reverse, shuffled, orthogonal, and norm-matched
-   controls in the original model.
+4. **Local causal validation (future work outside v2)**
+   A future registered study could test matched activation replacement against
+   reverse, shuffled, orthogonal, and norm-matched controls. Study v2 contained
+   no intervention split and supports no causal claim.
 
 Our primary contribution is the controlled Same-String exposure ×
 answerability experiment. Attribution graphs are an unregistered future
-possibility, not part of the active confirmatory study.
+possibility, not part of the completed confirmatory pilot.
 
-## Active Experiment
+## Experiment
 
-The planned Fellowship artifact has two gated stages:
+The registered plan had two gated stages:
 
 1. **Primary behavior study**
    - Cross high and low contextual exposure with present and absent evidence.
@@ -76,22 +78,31 @@ The planned Fellowship artifact has two gated stages:
    - Test whether they add held-out predictive information beyond surface
      features and output confidence.
 
-The mechanistic pilot runs only after the behavioral endpoint is complete.
-Activation interchange and attribution graphs are optional follow-ups; they
-cannot rescue a failed behavioral result.
+The mechanistic pilot was permitted only if the behavioral gate passed.
+Activation interchange and attribution graphs were optional follow-ups; they
+could not rescue a failed behavioral result.
 
 ## Current Status
 
-**Status as of 2026-08-01: the Same-String implementation is pre-outcome. It is
-not yet an empirical result.**
+**Status as of 2026-08-01: the protected behavioral endpoint is complete,
+evaluable, and `not_supported`.**
 
-- The Same-String design, amendment, direct matching path, sealed-manifest
-  construction, estimator, bootstrap, and behavior gate are implemented.
-- The model-independent preflight passed all ten prompt audits. Two sealed,
-  blinded naturalness packets now await independent human ratings; the runtime
-  smoke and one-shot protected Gemma behavior run remain closed.
-- R11 remains immutable and `not_evaluable`; it is preserved as a negative
-  instrument-development result and is not repaired by this study.
+- All 128 generations completed with 100% format validity.
+- The registered exposure-by-answerability interaction was `-0.09375`, with a
+  crossed-bootstrap 95% interval of `[-0.4000, 0.1818]`.
+- The answerability manipulation worked behaviorally: target-bound attempt
+  rates were `0.9063` under high exposure and `0.7500` under low exposure;
+  code-absent attempt rates were `0.0625` and `0.0000`, respectively.
+- The interaction and capability-preservation gates failed. The gated
+  mechanistic pilot was therefore not run.
+- A required pre-outcome power/MDE audit is absent from the verified snapshot.
+  This disclosed protocol deviation limits v2 to an imprecise pilot result.
+- The endpoint was opened once and is permanently closed. The downloaded
+  content-addressed snapshot was restored and verified locally.
+- R11 and Same-String v1 remain immutable `not_evaluable` instrument records.
+
+See the [behavioral result report](docs/results/same_string_feasibility_v2_behavior_result.md)
+and its [machine-readable record](docs/results/same_string_feasibility_v2_behavior_result.json).
 
 ### Preserved R11 record
 
@@ -164,7 +175,7 @@ python -m pytest -q \
 The 8 GB local machine is suitable for tests, audits, analysis, and reporting.
 The pinned Gemma generation requires a Colab GPU in the current setup.
 
-## Run the Active Same-String Pilot
+## Reproduce the Same-String Pilot
 
 Read the frozen
 [v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
@@ -191,6 +202,9 @@ Active pilot:
 
 - [Balanced feasibility v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
 - [Balanced feasibility v2 Colab](notebooks/fa_same_string_feasibility_v2_colab.ipynb)
+- [Balanced feasibility v2 behavioral result](docs/results/same_string_feasibility_v2_behavior_result.md)
+- [Balanced feasibility v2 machine-readable result](docs/results/same_string_feasibility_v2_behavior_result.json)
+- [Content-addressed v2 evidence snapshot](release/familiarity_answerability/README.md)
 
 Preserved Same-String v1 record:
 

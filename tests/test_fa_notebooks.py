@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import zipfile
 from pathlib import Path
 
 
@@ -11,6 +12,13 @@ NOTEBOOK = ROOT / "notebooks" / "fa_same_string_primary_colab.ipynb"
 V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
+V2_RESULT = ROOT / "docs" / "results" / "same_string_feasibility_v2_behavior_result.json"
+V2_SNAPSHOT = (
+    ROOT
+    / "release"
+    / "familiarity_answerability"
+    / "fa-58f1f069cb6a1906ff17a0282805f859675ae80b0f707fc0f768fc7a956178e3.zip"
+)
 
 
 def notebook_text() -> str:
@@ -176,12 +184,99 @@ def test_same_string_runbook_states_counts_gates_and_claim_boundary():
     assert "not empirical evidence" in text
 
 
-def test_readme_points_to_active_same_string_study_without_rewriting_r11():
+def test_readme_reports_completed_v2_study_without_rewriting_r11():
     text = README.read_text(encoding="utf-8")
 
-    assert "Same-String Primary Study" in text
+    assert "Same-String Balanced Pilot v2" in text
+    assert "evaluable, and `not_supported`" in text
+    assert "same_string_feasibility_v2_behavior_result.md" in text
+    assert "same_string_feasibility_v2_behavior_result.json" in text
     assert "docs/fa_same_string_primary_runbook.md" in text
     assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text
     assert "docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md" in text
     assert "R11" in text
-    assert "not yet an empirical result" in text
+
+
+def test_v2_public_result_records_closed_endpoint_and_failed_gate():
+    result = json.loads(V2_RESULT.read_text(encoding="utf-8"))
+
+    assert result["decision"]["endpoint_status"] == "evaluable"
+    assert result["decision"]["endpoint_state"] == "closed"
+    assert result["decision"]["registered_gate"] == "not_supported"
+    assert result["decision"]["mechanistic_followup"] == "not_run_behavior_gate_failed"
+    assert result["sample"] == {
+        "complete_units": 32,
+        "prompt_rows": 128,
+        "units_per_domain": 8,
+    }
+    assert (
+        result["registered_effects"]["exposure_by_answerability_interaction"]["estimate"]
+        == -0.09375
+    )
+    assert result["bootstrap"]["valid_draws"] == 10_000
+    assert result["bootstrap"]["discarded_draws"] == 0
+    assert result["registered_effects"]["exposure_by_answerability_interaction"] == {
+        "estimate": -0.09375,
+        "confidence_interval_95": {
+            "lower": -0.39999999999999997,
+            "upper": 0.18181818181818177,
+        },
+        "minimum_registered_effect": 0.05,
+    }
+    assert result["registered_effects"]["target_bound_capability_difference"] == {
+        "estimate": 0.15625,
+        "confidence_interval_95": {
+            "lower": -0.07692307692307698,
+            "upper": 0.43333333333333335,
+        },
+        "noninferiority_margin": -0.05,
+    }
+    assert {
+        cell: metrics["attempt_rate"]
+        for cell, metrics in result["cell_metrics"].items()
+    } == {
+        "high_exposure_code_absent": 0.0625,
+        "low_exposure_code_absent": 0.0,
+        "high_exposure_target_bound": 0.90625,
+        "low_exposure_target_bound": 0.75,
+    }
+    assert result["decision"]["gate_reasons"] == [
+        "interaction_point_estimate_below_minimum",
+        "interaction_interval_not_positive",
+        "capability_noninferiority_lower_bound",
+    ]
+    assert result["model"]["revision"] == (
+        "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
+    )
+    assert result["provenance"]["snapshot_sha256"] == (
+        "58f1f069cb6a1906ff17a0282805f859675ae80b0f707fc0f768fc7a956178e3"
+    )
+    assert result["protocol_deviations"] == [
+        {
+            "id": "missing_preoutcome_power_or_mde_audit",
+            "description": (
+                "The amendment required a pre-outcome power or minimum-detectable-effect "
+                "audit, but no such artifact is present in the verified snapshot."
+            ),
+            "impact": (
+                "The machine-evaluated endpoint and registered gate remain not_supported "
+                "because the amendment made power descriptive rather than decision-changing "
+                "and did not list it as an endpoint-opening hard stop. The omission materially "
+                "limits the strength of inference from this small pilot and is not repaired "
+                "post hoc."
+            ),
+        }
+    ]
+
+
+def test_v2_released_snapshot_matches_declared_hash_and_index():
+    result = json.loads(V2_RESULT.read_text(encoding="utf-8"))
+
+    assert hashlib.sha256(V2_SNAPSHOT.read_bytes()).hexdigest() == (
+        result["provenance"]["snapshot_sha256"]
+    )
+    with zipfile.ZipFile(V2_SNAPSHOT) as archive:
+        assert archive.testzip() is None
+        index = json.loads(archive.read("_snapshot_index.json"))
+    assert index["schema_version"] == 1
+    assert len(index["members"]) == 729
