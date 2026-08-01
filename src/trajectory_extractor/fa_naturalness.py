@@ -31,6 +31,35 @@ _RATING_FIELDS = (
     "candidate_b_malformed",
     "independence_attested",
 )
+_STIMULUS_FIELDS = (
+    "coarse_type",
+    "candidate_a",
+    "candidate_b",
+    "sentence_a",
+    "sentence_b",
+)
+_RATING_QUESTION = (
+    "Rate candidates A and B: naturalness 1-5, type fit 1-5, "
+    "and malformed true/false."
+)
+_WORKSHEET_FIELDS = (
+    "packet_id",
+    "rater_id",
+    "item_id",
+    "rating_question",
+    "coarse_type",
+    "candidate_a",
+    "sentence_a",
+    "candidate_a_naturalness",
+    "candidate_a_type_fit",
+    "candidate_a_malformed",
+    "candidate_b",
+    "sentence_b",
+    "candidate_b_naturalness",
+    "candidate_b_type_fit",
+    "candidate_b_malformed",
+    "independence_attested",
+)
 _PRIVATE_ITEM_FIELDS = {
     "packet_id",
     "item_id",
@@ -628,6 +657,16 @@ def _responses_to_ratings(
             response = observed[item_id]
             if response["packet_id"] != mapping["packet_id"]:
                 raise ValueError("response packet ID does not match the private key")
+            if set(_STIMULUS_FIELDS).issubset(response):
+                displayed = {
+                    field: response[field]
+                    for field in ("item_id", *_STIMULUS_FIELDS)
+                }
+                if (
+                    response.get("rating_question") != _RATING_QUESTION
+                    or _sha256_json(displayed) != mapping["packet_item_sha256"]
+                ):
+                    raise ValueError("human-facing rating stimulus was edited")
             if not _rating_bool(response["independence_attested"]):
                 raise ValueError("rater independence must be explicitly attested")
             values = {
@@ -682,7 +721,9 @@ def _responses_to_ratings(
                         {
                             "packet_item_sha256": mapping["packet_item_sha256"],
                             "private_mapping": dict(mapping),
-                            "response": dict(response),
+                            "response": {
+                                field: response[field] for field in _RATING_FIELDS
+                            },
                         }
                     ),
                 }
@@ -936,7 +977,7 @@ def _response_evidence(
     return tuple(
         sorted(
             (
-                dict(row)
+                {field: row[field] for field in _RATING_FIELDS}
                 for rater_rows in responses.values()
                 for row in rater_rows.values()
             ),
@@ -955,7 +996,7 @@ def _load_responses(
                 rows = tuple(csv.DictReader(handle))
         except (OSError, UnicodeDecodeError, csv.Error) as error:
             raise ValueError("naturalness response file is unreadable") from error
-        if not rows or set(rows[0]) != set(_RATING_FIELDS):
+        if not rows or set(rows[0]) != set(_WORKSHEET_FIELDS):
             raise ValueError("naturalness response file has an invalid schema")
         rater_ids = {row.get("rater_id") for row in rows}
         if len(rater_ids) != 1:
@@ -1035,7 +1076,7 @@ def _write_response_template(
     entries: Sequence[Mapping[str, str]],
 ) -> None:
     with path.open("x", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=_RATING_FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=_WORKSHEET_FIELDS)
         writer.writeheader()
         for item in entries:
             writer.writerow(
@@ -1043,6 +1084,8 @@ def _write_response_template(
                     "packet_id": packet_id,
                     "rater_id": rater_id,
                     "item_id": item["item_id"],
+                    "rating_question": _RATING_QUESTION,
+                    **{field: item[field] for field in _STIMULUS_FIELDS},
                 }
             )
 

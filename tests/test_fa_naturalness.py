@@ -147,6 +147,23 @@ def test_rating_packets_are_deterministic_blinded_and_counterbalanced(
         assert "pair_id" not in serialized
         assert "real_name" not in serialized
         assert "synthetic_name" not in serialized
+        with (
+            outputs[0] / "public" / f"{rater}-response.csv"
+        ).open(newline="", encoding="utf-8") as handle:
+            worksheet = list(csv.DictReader(handle))
+        first_by_id = {row["item_id"]: row for row in first["items"]}
+        assert {
+            "coarse_type",
+            "candidate_a",
+            "candidate_b",
+            "sentence_a",
+            "sentence_b",
+        }.issubset(worksheet[0])
+        for row in worksheet:
+            item = first_by_id[row["item_id"]]
+            assert row["coarse_type"] == item["coarse_type"]
+            assert row["candidate_a"] == item["candidate_a"]
+            assert row["candidate_b"] == item["candidate_b"]
 
     key = json.loads(
         (outputs[0] / "private" / "unblinding-key.json").read_text(
@@ -228,7 +245,6 @@ def test_compiler_writes_verifiable_ratings_artifact(tmp_path, capsys):
     assert audit.accepted_pair_ids == tuple(
         sorted(value.pair_id for value in _matches())
     )
-
     ratings_manifest = json.loads(
         Path(payload["ratings_manifest"]).read_text(encoding="utf-8")
     )
@@ -278,6 +294,72 @@ def test_compiler_writes_verifiable_ratings_artifact(tmp_path, capsys):
     submission["responses"].append(extra_response)
     with pytest.raises(ValueError, match="raters do not match"):
         verify_submission_record(issuance, submission)
+
+
+def test_compiler_rejects_edited_human_facing_stimulus(tmp_path, capsys):
+    matches_path = tmp_path / "matches.json"
+    _write_matches(matches_path)
+    packet_dir = tmp_path / "packets"
+    assert cli.main(
+        [
+            "fa-prepare-naturalness-ratings",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--matches-manifest",
+            str(matches_path),
+            "--output-dir",
+            str(packet_dir),
+            "--rater-id",
+            "rater-a",
+            "--rater-id",
+            "rater-b",
+            "--shard-id",
+            "packet-issuance",
+        ]
+    ) == 0
+    prepared = json.loads(capsys.readouterr().out)
+    key_path = packet_dir / "private" / "unblinding-key.json"
+    responses = [
+        packet_dir / "public" / "rater-a-response.csv",
+        packet_dir / "public" / "rater-b-response.csv",
+    ]
+    for response in responses:
+        _fill_response(response, key_path=key_path)
+    with responses[0].open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+        fields = tuple(rows[0])
+    rows[0]["candidate_a"] = "Edited Name"
+    with responses[0].open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    exit_code = cli.main(
+        [
+            "fa-compile-naturalness-ratings",
+            "--config",
+            str(CONFIG_PATH),
+            "--root",
+            str(tmp_path),
+            "--matches-manifest",
+            str(matches_path),
+            "--issuance-manifest",
+            prepared["issuance_manifest"],
+            "--response",
+            str(responses[0]),
+            "--response",
+            str(responses[1]),
+            "--shard-id",
+            "human-ratings-v1",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "stimulus was edited" in json.loads(capsys.readouterr().out)["error"][
+        "message"
+    ]
 
 
 def test_compiler_uses_sealed_issuance_after_packet_file_is_modified(

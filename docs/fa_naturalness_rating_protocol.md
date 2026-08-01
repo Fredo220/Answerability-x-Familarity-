@@ -29,7 +29,12 @@ verify real-world identity behind a rater ID.
 
 ## Rating Fields
 
-Each candidate receives:
+Each rater receives a separate JSON reference packet and a separate CSV
+worksheet. Every CSV row already shows the entity type, candidate A and B, and
+one neutral sentence for each candidate. The rater works only in their own CSV
+and does not need to copy values from the JSON file.
+
+For each candidate, fill in:
 
 - `naturalness`: integer 1 to 5, where 1 is clearly malformed, 3 is plausible,
   and 5 is fully natural;
@@ -39,6 +44,11 @@ Each candidate receives:
   `false`.
 
 No field may be left blank.
+
+Set `independence_attested` to `true` on every row. Do not edit `packet_id`,
+`rater_id`, `item_id`, the question, entity type, names, or sentences. The
+compiler verifies those displayed stimuli against the sealed JSON packet and
+rejects edited worksheets.
 
 ## Registered Decision Rule
 
