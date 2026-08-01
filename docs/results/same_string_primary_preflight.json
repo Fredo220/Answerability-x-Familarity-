@@ -17,7 +17,7 @@
     "violations": []
   },
   "development_history": {
-    "human_packets_distributed": false,
+    "human_packets_distributed": true,
     "initial_preflight_commit": "40f010964076d7f59e188f86c3d3ce71c7c2ad39",
     "initial_preflight_status": "failed_model_independent_audit",
     "initial_violations": [
@@ -33,7 +33,7 @@
     "confirmatory_index": "not_built",
     "deterministic_prompt_audit": "passed",
     "direct_matching": "passed",
-    "independent_naturalness": "awaiting_independent_ratings",
+    "independent_naturalness": "passed",
     "runtime_smoke": "not_run"
   },
   "git_commit": "151f818cb51b7782ad4b32c36b9cebfd06a7a499",
@@ -146,6 +146,24 @@
   },
   "model_id": "google/gemma-2-2b-it",
   "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "naturalness_result": {
+    "adjudication_issuance_data_sha256": "e3ddb7eba938cb9fa121fbd14f4c6ba1279c1a31c65f77be1bf25abf5497c6df",
+    "adjudication_submission_data_sha256": "0e7b218fb9f18afa316cf5b39c1e00e9d1b8de473c1a251b82a1f465b6461ab5",
+    "final_data_sha256": "78872ca0b1dce1def5ee841556b953ddda0b8d14b286676f2cf1ba2e51b208be",
+    "final_manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-naturalness-final-v2.jsonl.manifest.json",
+    "final_manifest_sha256": "be9e7cd2efff8d3c0f578166a619ff8d3b0eb59bbd86564860f08a015c040482",
+    "initial_disagreement_pair_count": 68,
+    "initial_submission_data_sha256": "b497d606da6eda3cfd7bef0a3417c5856104f7427a601e519e27086df912404a",
+    "pair_count": 192,
+    "rater_count": 3,
+    "rating_count": 452,
+    "response_sha256s": {
+      "rater-a": "aed43152d66555d3546bf24ced1ea0f075ed2accfc4378050d6d1ff1ed773614",
+      "rater-b": "bee9d6ad5f6fef140264450dccaf5869634dd077c04670aa6dfda60d2220efa8",
+      "rater-c": "d1b26fb6681a3d08872545d1c45b978880ad663c1c34d5a0e1a06ae0296b8784"
+    },
+    "status": "compiled"
+  },
   "rating_issuance": {
     "git_commit": "8d08f3fbcade196d830cae4c4d6cabf06e14ce69",
     "manifest": "runs/familiarity_answerability/same-string-primary-v1/shards/mechanism_train/same-string-naturalness-issuance-v2.jsonl.manifest.json",
@@ -161,7 +179,7 @@
   },
   "run_id": "same-string-primary-v1",
   "schema_version": 1,
-  "status": "awaiting_independent_ratings",
+  "status": "naturalness_passed_awaiting_runtime_smoke",
   "study_id": "familiarity-answerability-same-string-gemma2-2b-v1",
   "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8"
 }

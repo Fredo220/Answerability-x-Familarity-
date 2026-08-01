@@ -12,7 +12,12 @@ from trajectory_extractor import fa_cli, main as cli
 from trajectory_extractor.fa_artifacts import FAArtifactStore
 from trajectory_extractor.fa_config import FAConfig
 from trajectory_extractor.fa_entities import EntityMatch, audit_naturalness_manifest
-from trajectory_extractor.fa_naturalness import verify_submission_record
+from trajectory_extractor.fa_naturalness import (
+    compile_adjudication_response_from_issuance,
+    packet_issuance_record,
+    prepare_adjudication_packet,
+    verify_submission_record,
+)
 
 
 CONFIG_PATH = (
@@ -90,6 +95,44 @@ def _fill_response(
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def test_adjudication_issuance_accepts_registered_subset_of_matches(tmp_path):
+    matches = (*_matches(), _match(3, "Tara Lane", "Lena Lane"))
+    disagreement = matches[0].pair_id
+    packet = prepare_adjudication_packet(
+        matches,
+        pair_ids=(disagreement,),
+        config_sha256="a" * 64,
+        protocol_sha256="b" * 64,
+        rating_protocol_sha256="c" * 64,
+        output_dir=tmp_path / "adjudication",
+        adjudicator_id="rater-c",
+    )
+    issuance, _ = packet_issuance_record(packet["private_key"])
+    response = (
+        tmp_path / "adjudication" / "public" / "rater-c-response.csv"
+    )
+    _fill_response(
+        response,
+        key_path=tmp_path
+        / "adjudication"
+        / "private"
+        / "unblinding-key.json",
+    )
+
+    ratings, assignments, responses = compile_adjudication_response_from_issuance(
+        matches,
+        issuance=issuance,
+        response_path=response,
+        expected_pair_ids=(disagreement,),
+        config_sha256="a" * 64,
+        protocol_sha256="b" * 64,
+        rating_protocol_sha256="c" * 64,
+    )
+
+    assert len(ratings) == len(assignments) == len(responses) == 1
+    assert ratings[0].pair_id == disagreement
 
 
 def test_rating_packets_are_deterministic_blinded_and_counterbalanced(

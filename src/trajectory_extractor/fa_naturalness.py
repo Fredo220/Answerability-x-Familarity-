@@ -317,9 +317,12 @@ def compile_adjudication_response_from_issuance(
     """Compile a third-rater response from an immutable issuance."""
 
     expected = frozenset(expected_pair_ids)
+    selected = tuple(match for match in matches if match.pair_id in expected)
+    if not expected or {match.pair_id for match in selected} != expected:
+        raise ValueError("adjudication requires known registered disagreement pairs")
     key = _validate_issuance(
         issuance,
-        matches,
+        selected,
         expected_purpose="adjudication",
         config_sha256=config_sha256,
         protocol_sha256=protocol_sha256,

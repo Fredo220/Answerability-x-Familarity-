@@ -1,6 +1,6 @@
 # Same-String Primary Preflight
 
-**Status:** `awaiting_independent_ratings`  
+**Status:** `naturalness_passed_awaiting_runtime_smoke`
 **Execution commit:** `151f818cb51b7782ad4b32c36b9cebfd06a7a499`  
 **Protected behavior endpoint:** closed  
 **Empirical model claim:** none
@@ -41,25 +41,26 @@ edited. The repeated preflight then passed all checks.
 
 ## Human gate
 
-Two independent blinded packet/worksheet pairs are sealed under the ignored
-artifact root. Each CSV is self-contained and shows the rating question,
-entity type, both candidate names, and both neutral example sentences:
+The independent human gate passed. Raters A and B completed all 192 blinded
+pairs. Their registered binary decisions differed for 68 pairs, so the sealed
+workflow issued only those disagreements to an independent rater C. The final
+artifact contains 452 ratings: 384 initial ratings and 68 adjudications.
 
-- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-a-packet.json`
-- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-a-response.csv`
-- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-b-packet.json`
-- `runs/same-string-primary-preflight-v2/rater-worksheets/public/rater-b-response.csv`
+The compiler verified packet identities, blinded item mappings, unchanged
+stimuli, rating ranges, distinct rater identities, independence attestations,
+and the registered naturalness thresholds. The final ratings artifact has data
+SHA-256 `78872ca0b1dce1def5ee841556b953ddda0b8d14b286676f2cf1ba2e51b208be`.
 
-Each rater receives only their own packet and response template and follows
-[`fa_naturalness_rating_protocol.md`](../fa_naturalness_rating_protocol.md).
-The raters must work independently, must not use search or a language model,
-and must attest independence in every row. Only disagreements may be sent to a
-third independent adjudicator.
+During finalization, a code defect was found in which a disagreement-only
+issuance was compared against the full match-set hash. A regression test first
+reproduced the defect; the fix validates the issuance against exactly the
+registered disagreement subset. No rating, stimulus, threshold, exclusion, or
+protected endpoint was changed.
 
-Until the two response files compile successfully, the runtime smoke,
-confirmatory index, protected Gemma evaluation, and mechanistic follow-up
-remain blocked. This preflight is dataset-quality evidence, not evidence for
-the behavioral hypothesis.
+The next gate is the unprotected runtime smoke. The confirmatory index,
+protected Gemma evaluation, and mechanistic follow-up remain closed. Passing
+the human gate is dataset-quality evidence, not evidence for the behavioral
+hypothesis.
 
 ## Machine-readable record
 
