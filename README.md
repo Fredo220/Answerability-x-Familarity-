@@ -213,6 +213,11 @@ Supporting protocols:
 - [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
 - [Main execution runbook](docs/familiarity_answerability_runbook.md)
 - [Implementation plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
+- [SkillOpt development runbook](docs/fa_skillopt_runbook.md)
+
+SkillOpt is available only as a gated development aid for improving the agent's
+research workflow instructions. It never consumes protected study artifacts and
+is not part of the scientific method or evidence.
 
 Historical corrections and failed instrument attempts are retained under
 [`docs/amendments`](docs/amendments) and [`docs/results`](docs/results).

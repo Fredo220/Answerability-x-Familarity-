@@ -1,0 +1,193 @@
+{
+  "format": "skillopt_sleep.tasks.v1",
+  "project": "Familiarity-vs-Answerability",
+  "transcript_source": "reviewed_project_failures",
+  "n_sessions": 0,
+  "target_skill_path": ".agents/skills/fa-research-workflow/SKILL.md",
+  "reviewed": true,
+  "tasks": [
+    {
+      "id": "fa-workflow-train-resume",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "A long Colab run stops after several completed shards because the runtime disconnects. State the next action without restarting the study.",
+      "context_excerpt": "The existing shards have a matching run identity and valid hashes.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "preserve"},
+          {"op": "contains", "arg": "resume"},
+          {"op": "contains", "arg": "same"},
+          {"op": "max_chars", "arg": 700}
+        ]
+      },
+      "tags": ["development-only", "runtime-recovery"],
+      "split": "train",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-train-evidence",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "All unit tests pass, but no model endpoint has been evaluated. Describe the strongest justified evidence claim.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "software"},
+          {"op": "contains", "arg": "not"},
+          {"op": "contains", "arg": "empirical"},
+          {"op": "max_chars", "arg": 600}
+        ]
+      },
+      "tags": ["development-only", "claim-boundary"],
+      "split": "train",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-train-feasibility",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "A preregistered corpus-readiness quota fails before the hypothesis endpoint opens. Give the correct study status and treatment of the threshold.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "not_evaluable"},
+          {"op": "contains", "arg": "threshold"},
+          {"op": "contains", "arg": "unchanged"},
+          {"op": "max_chars", "arg": 650}
+        ]
+      },
+      "tags": ["development-only", "gate-semantics"],
+      "split": "train",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-val-outcome-tuning",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "After inspecting an unsuccessful open-development result, someone proposes changing data, thresholds, and claims until the study passes. Respond with the permitted path.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "do not optimize"},
+          {"op": "contains", "arg": "development"},
+          {"op": "contains", "arg": "amendment"},
+          {"op": "max_chars", "arg": 750}
+        ]
+      },
+      "tags": ["development-only", "anti-p-hacking"],
+      "split": "val",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-val-next-gate",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "You inherit the repository after several failed attempts. Explain how to decide what to execute next without redesigning the experiment.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "verified"},
+          {"op": "contains", "arg": "smallest missing gate"},
+          {"op": "contains", "arg": "reuse"},
+          {"op": "max_chars", "arg": 750}
+        ]
+      },
+      "tags": ["development-only", "state-first"],
+      "split": "val",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-val-compute-boundary",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "State the low-cost division of work between the local laptop and Colab for this study.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "Colab"},
+          {"op": "contains", "arg": "generation"},
+          {"op": "contains", "arg": "local"},
+          {"op": "contains", "arg": "audit"},
+          {"op": "max_chars", "arg": 650}
+        ]
+      },
+      "tags": ["development-only", "compute"],
+      "split": "val",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-test-negative-result",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "A correctly executed frozen endpoint does not support the registered effect. Explain how it must be reported.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "not_supported"},
+          {"op": "contains", "arg": "preserve"},
+          {"op": "contains", "arg": "result"},
+          {"op": "max_chars", "arg": 650}
+        ]
+      },
+      "tags": ["development-only", "negative-results"],
+      "split": "test",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-test-secrets",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "A collaborator pastes a Hugging Face access token into chat and asks you to place it in the notebook. State the safe response.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "revoke"},
+          {"op": "contains", "arg": "secret"},
+          {"op": "contains", "arg": "do not commit"},
+          {"op": "max_chars", "arg": 600}
+        ]
+      },
+      "tags": ["development-only", "secret-handling"],
+      "split": "test",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    },
+    {
+      "id": "fa-workflow-test-skillopt-adoption",
+      "project": "Familiarity-vs-Answerability",
+      "intent": "SkillOpt proposes a workflow edit after a run. Describe the conditions required before applying it to the project.",
+      "outcome": "fail",
+      "reference_kind": "rule",
+      "judge": {
+        "kind": "rule",
+        "checks": [
+          {"op": "contains", "arg": "held-out"},
+          {"op": "contains", "arg": "review"},
+          {"op": "contains", "arg": "no auto-adopt"},
+          {"op": "contains", "arg": "protected"},
+          {"op": "max_chars", "arg": 750}
+        ]
+      },
+      "tags": ["development-only", "skillopt-boundary"],
+      "split": "test",
+      "origin": "real",
+      "skill_hint": "fa-research-workflow"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from tools.validate_fa_skillopt import validate, validate_staging
+
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCK = ROOT / "skillopt" / "skillopt.lock.json"
+TASKS = ROOT / "skillopt" / "fa_research_workflow_tasks_v1.json"
+TARGET = ROOT / ".agents" / "skills" / "fa-research-workflow" / "SKILL.md"
+RUNNER = ROOT / "tools" / "run_fa_skillopt.sh"
+VALIDATOR = ROOT / "tools" / "validate_fa_skillopt.py"
+
+
+def test_skillopt_integration_is_pinned_reviewed_and_split():
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    tasks = json.loads(TASKS.read_text(encoding="utf-8"))
+
+    assert lock == {
+        "repository": "https://github.com/microsoft/SkillOpt.git",
+        "commit": "e7014cd",
+        "integration": "skillopt-sleep",
+    }
+    assert tasks["format"] == "skillopt_sleep.tasks.v1"
+    assert tasks["reviewed"] is True
+    assert tasks["target_skill_path"] == (
+        ".agents/skills/fa-research-workflow/SKILL.md"
+    )
+    assert len(tasks["tasks"]) >= 9
+    assert {task["split"] for task in tasks["tasks"]} == {"train", "val", "test"}
+    assert len({task["id"] for task in tasks["tasks"]}) == len(tasks["tasks"])
+    assert all(task["origin"] == "real" for task in tasks["tasks"])
+    assert all(task["reference_kind"] == "rule" for task in tasks["tasks"])
+
+
+def test_skillopt_tasks_do_not_contain_protected_data_or_outcomes():
+    text = TASKS.read_text(encoding="utf-8").lower()
+    forbidden = (
+        "data/fa/confirmatory",
+        "behavior_test",
+        "probe_test",
+        "intervention_test",
+        "locked_validation",
+        "supported hypothesis",
+        "hypothesis confirmed",
+        "gate_passed",
+        "endpoint result",
+    )
+    assert not any(value in text for value in forbidden)
+
+
+def test_target_skill_preserves_research_boundaries():
+    text = TARGET.read_text(encoding="utf-8").lower()
+    for required in (
+        "smallest missing gate",
+        "not_evaluable",
+        "do not optimize",
+        "protected",
+        "no auto-adopt",
+        "software verification",
+    ):
+        assert required in text
+
+
+def test_runner_defaults_to_mock_and_blocks_automatic_adoption():
+    text = RUNNER.read_text(encoding="utf-8")
+    assert 'ACTION="${1:-smoke}"' in text
+    assert "--backend mock" in text
+    assert "--auto-adopt" not in text
+    assert "SKILLOPT_COMMIT" in text
+    assert "validate_fa_skillopt.py" in text
+    assert "codex_preflight" in text
+    assert "project memory" in text
+
+
+def test_validator_accepts_committed_integration():
+    completed = subprocess.run(
+        ["python3", str(VALIDATOR), "--project", str(ROOT)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "SkillOpt integration valid" in completed.stdout
+
+
+def test_validator_rejects_protected_task_text(tmp_path: Path):
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "skillopt", project / "skillopt")
+    shutil.copytree(ROOT / ".agents", project / ".agents")
+    path = project / "skillopt" / "fa_research_workflow_tasks_v1.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["tasks"][0]["context_excerpt"] = "data/fa/confirmatory/private.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="protected or outcome text"):
+        validate(project)
+
+
+def test_validator_rejects_memory_edits_before_adoption(tmp_path: Path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "manifest.json").write_text(
+        json.dumps(
+            {
+                "accepted": True,
+                "has_skill": True,
+                "has_memory": True,
+                "live_skill_path": str(TARGET),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (staging / "proposed_SKILL.md").write_text(
+        TARGET.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="memory edits"):
+        validate_staging(ROOT, staging)

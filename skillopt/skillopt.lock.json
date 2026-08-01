@@ -1,0 +1,5 @@
+{
+  "repository": "https://github.com/microsoft/SkillOpt.git",
+  "commit": "e7014cd",
+  "integration": "skillopt-sleep"
+}
