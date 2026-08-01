@@ -194,7 +194,9 @@ def test_readme_reports_completed_v2_study_without_rewriting_r11():
     assert "## How to Interpret the Result" in text
     assert "## Compute-Constrained Scope" in text
     assert "## What a Stronger Follow-Up Should Test" in text
-    assert "illustrative expansion budget" in text
+    assert "With greater research-compute access" in text
+    assert "representation-only pilot is the next planned analysis" in text
+    assert "cannot change or rescue the closed behavioral result" in text
     assert "reliability concern" in text
     assert "docs/fa_same_string_primary_runbook.md" in text
     assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text

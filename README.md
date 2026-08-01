@@ -9,6 +9,8 @@ preregistered gate for a small mechanistic-interpretability follow-up on
 **Same-String Balanced Pilot v2**. It tests contextual familiarization without
 depending on the failed real-entity R11 screening instrument. The behavioral
 gate did not pass, so the mechanistic follow-up was not run.
+An exploratory representation-only pilot is planned next. It will be reported
+separately and cannot change or rescue the closed behavioral result.
 
 ## The Idea
 
@@ -52,10 +54,11 @@ limitations for a larger follow-up.
    We evaluate the interaction across multiple entities and domains rather
    than drawing conclusions from individual prompts.
 
-3. **Internal activation analysis (gated follow-up, not run in v2)**
+3. **Internal activation analysis (exploratory follow-up in progress)**
    The plan was to test whether held-out activations decoded exposure and
-   answerability beyond registered controls. The behavioral gate failed, so
-   this stage was not run.
+   answerability beyond registered controls. The confirmatory gate failed, so
+   no gated mechanistic claim was opened. A smaller representation-only pilot
+   remains planned as a separately labeled exploratory analysis.
 
 4. **Local causal validation (future work outside v2)**
    A future registered study could test matched activation replacement against
@@ -95,6 +98,9 @@ evaluable, and `not_supported`.**
   code-absent attempt rates were `0.0625` and `0.0000`, respectively.
 - The interaction and capability-preservation gates failed. The gated
   mechanistic pilot was therefore not run.
+- A representation-only pilot is the next planned analysis. It will test for
+  descriptive internal separability without changing the behavioral endpoint
+  or making causal claims.
 - A required pre-outcome power/MDE audit is absent from the verified snapshot.
   This disclosed protocol deviation limits v2 to an imprecise pilot result.
 - The endpoint was opened once and is permanently closed. The downloaded
@@ -135,12 +141,10 @@ confound, preregister a decision rule, preserve failed instruments, open a
 protected endpoint once, publish a negative result, and make the evidence
 auditable. It is not presented as the largest experiment the question merits.
 
-With a research-compute budget on the order of USD 15,000, a substantially more
-ambitious study could test several model families and scales, increase the
-number of unseen units and templates, run multiple registered seeds, and add
-properly powered activation and causal-intervention studies. USD 15,000 is an
-illustrative expansion budget, not an estimate of the minimum cost required to
-replicate this pilot.
+With greater research-compute access, a substantially more ambitious study
+could test several model families and scales, increase the number of unseen
+units and templates, run multiple registered seeds, and add properly powered
+activation and causal-intervention studies.
 
 ## What a Stronger Follow-Up Should Test
 
