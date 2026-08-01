@@ -40,6 +40,7 @@ from trajectory_extractor.fa_data import (
     build_manifest,
     build_same_string_examples,
     build_same_string_manifest,
+    same_string_name_is_task_neutral,
     simulate_interaction_power,
 )
 from trajectory_extractor.fa_entities import (
@@ -984,8 +985,18 @@ def _derive_same_string_matches(
 ) -> tuple[EntityMatch, ...]:
     matches: list[EntityMatch] = []
     for split in sorted(config.split_counts):
+        neutral_candidates = tuple(
+            row
+            for row in candidates_by_split[split]
+            if same_string_name_is_task_neutral(row.name)
+        )
+        neutral_synthetic = tuple(
+            row
+            for row in synthetic_by_split[split]
+            if same_string_name_is_task_neutral(row.name)
+        )
         matchable = _matchable_screening_candidates(
-            candidates_by_split[split], synthetic_by_split[split], tokenizer
+            neutral_candidates, neutral_synthetic, tokenizer
         )
         selected = _select_domain_balanced_candidates(
             sorted(
@@ -1000,7 +1011,7 @@ def _derive_same_string_matches(
             required_count=config.split_counts[split],
         )
         matches.extend(
-            match_synthetic_entities(selected, synthetic_by_split[split], tokenizer)
+            match_synthetic_entities(selected, neutral_synthetic, tokenizer)
         )
     ordered = tuple(
         sorted(
@@ -1934,6 +1945,7 @@ def _same_string_matching_policy_sha256() -> str:
             "derivation": inspect.getsource(_derive_same_string_matches),
             "matchable": inspect.getsource(_matchable_screening_candidates),
             "domain_selection": inspect.getsource(_select_domain_balanced_candidates),
+            "name_neutrality": inspect.getsource(same_string_name_is_task_neutral),
             "match": inspect.getsource(fa_entities.match_synthetic_entities),
             "assignment": inspect.getsource(fa_entities._deterministic_assignment),
             "surface": inspect.getsource(fa_entities._surface_compatible),

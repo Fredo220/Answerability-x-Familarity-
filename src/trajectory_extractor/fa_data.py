@@ -193,6 +193,14 @@ _PROHIBITED_EXPOSURE_CONCEPTS = frozenset(
 )
 
 
+def same_string_name_is_task_neutral(name: str) -> bool:
+    """Return whether a stimulus name avoids registered task vocabulary."""
+    if not isinstance(name, str) or not name.strip():
+        return False
+    words = {word.casefold().strip(".,:;?!") for word in name.split()}
+    return words.isdisjoint(_PROHIBITED_EXPOSURE_CONCEPTS)
+
+
 @dataclass(frozen=True)
 class RegisteredPowerGrid:
     absent_attempt_rates: tuple[float, ...]

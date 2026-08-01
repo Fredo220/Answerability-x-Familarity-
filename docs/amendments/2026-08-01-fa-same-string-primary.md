@@ -32,7 +32,25 @@ study and its behavioral gates. All causal work is additionally gated behind
 the registered behavioral and probe gates. These follow-ups cannot alter or
 rescue the primary Same-String result.
 
+## Pre-outcome name-neutrality repair
+
+The first model-independent local preflight, run at commit
+`40f010964076d7f59e188f86c3d3ce71c7c2ad39`, found one selected real title
+containing the registered task word `code`. This caused the frozen
+`relation_code_leakage` and `same_string_token_budget` audits to fail. No model
+output or protected endpoint had been opened, and the generated human packets
+had not been distributed.
+
+Before rerunning the preflight, matching therefore excludes any real or
+synthetic name containing a registered prohibited task concept. The rule is
+applied symmetrically before deterministic hash selection; the next eligible
+reserve candidate fills the unchanged split/domain quota. No source row,
+endpoint, outcome threshold, estimand, or sample size is edited. The failed
+packet issuance remains development-only and cannot be used as confirmatory
+evidence.
+
 ## Identity boundary
 
 Only the `study_id` and `run_id` differ from the existing confirmatory Gemma
-configuration. This amendment changes no R11 artifact and no code behavior.
+configuration. The pre-outcome repair above changes only Same-String direct
+matching; it changes no R11 artifact or protected endpoint.

@@ -423,6 +423,48 @@ def test_same_string_matches_are_source_order_invariant_and_hash_selected(
             assert observed == expected
 
 
+def test_same_string_matches_exclude_names_that_leak_task_vocabulary(
+    tmp_path, capsys, monkeypatch
+):
+    config = FAConfig.from_json(SAME_STRING_CONFIG_PATH)
+    sources = same_string_source_manifests(tmp_path, config)
+    candidate_path = next(
+        path for path, _ in sources if "mechanism_train" in path.stem
+    )
+    candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
+    creative = sorted(
+        (row for row in candidates if row["coarse_type"] == "creative_work"),
+        key=lambda row: (
+            hashlib.sha256(
+                (
+                    f"mechanism_train\0creative_work\0"
+                    f"{row['entity_id']}\0{row['qid']}"
+                ).encode()
+            ).hexdigest(),
+            row["entity_id"],
+        ),
+    )
+    excluded_id = creative[0]["entity_id"]
+    creative[0]["name"] = creative[0]["name"].replace("Name", "Code")
+    candidate_path.write_text(json.dumps(candidates), encoding="utf-8")
+    monkeypatch.setattr(
+        fa_cli,
+        "load_pinned_tokenizer",
+        lambda *args, **kwargs: SimpleNamespace(tokenizer=FakeTokenizer()),
+    )
+
+    assert cli.main(same_string_command_args(tmp_path, sources)) == 0
+    manifest = json.loads(capsys.readouterr().out)["manifest"]
+    collection = fa_cli._load_verified_same_string_match_collection(
+        FAArtifactStore(tmp_path), manifest, config
+    )
+
+    assert excluded_id not in {row.real_entity_id for row in collection}
+    assert Counter(
+        row.coarse_type for row in collection if row.split == "mechanism_train"
+    )["creative_work"] == config.split_counts["mechanism_train"] // 4
+
+
 def test_same_string_matches_reject_missing_source_schema(
     tmp_path, capsys, monkeypatch
 ):
