@@ -3,14 +3,11 @@
 Does a language model answer more readily after receiving unrelated contextual
 exposure to a target, even when the information needed to answer is missing?
 
-This repository contains a controlled behavioral experiment and a
-preregistered gate for a small mechanistic-interpretability follow-up on
-`google/gemma-2-2b-it`. The completed study is the
-**Same-String Balanced Pilot v2**. It tests contextual familiarization without
-depending on the failed real-entity R11 screening instrument. The behavioral
-gate did not pass, so the mechanistic follow-up was not run.
-An exploratory representation-only pilot is planned next. It will be reported
-separately and cannot change or rescue the closed behavioral result.
+This project investigates whether language models internally distinguish
+between familiarity with a target and having enough evidence to answer a
+question about it. It combines a controlled behavioral experiment on Gemma 2
+2B with a planned representation-level analysis of the model's internal
+activations.
 
 ## The Idea
 
@@ -92,8 +89,8 @@ could not rescue a failed behavioral result.
 
 ## Current Status
 
-**Status as of 2026-08-01: the protected behavioral endpoint is complete,
-evaluable, and `not_supported`.**
+**Status as of 2026-08-01: the protected behavioral endpoint for the
+Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
 
 - All 128 generations completed with 100% format validity.
 - The registered exposure-by-answerability interaction was `-0.09375`, with a
@@ -108,6 +105,7 @@ evaluable, and `not_supported`.**
   or making causal claims. Specifically, it asks whether the model represents
   exposure and answerability differently internally even though the small
   behavioral pilot did not show the hypothesized failure behavior.
+  The pilot cannot change or rescue the closed behavioral result.
 - A required pre-outcome power/MDE audit is absent from the verified snapshot.
   This disclosed protocol deviation limits v2 to an imprecise pilot result.
 - The endpoint was opened once and is permanently closed. The downloaded
