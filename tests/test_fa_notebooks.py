@@ -201,8 +201,11 @@ def test_readme_reports_completed_v2_study_without_rewriting_r11():
     assert "## Compute-Constrained Scope" in text
     assert "## What a Stronger Follow-Up Should Test" in text
     assert "With greater research-compute access" in text
-    assert "Its central hypothesis is that the model may represent exposure" in text
-    assert "This is a hypothesis to be tested, not a result" in text
+    assert "We tested whether the model represents exposure" in text
+    assert "did not establish a distinct internal answerability signal" in text
+    assert "The registered mechanistic pilot required the behavioral gate" in text
+    assert "separately permitted the completed" in text
+    assert "exploratory representation-only analysis" in text
     assert "representation-only result" in text
     assert "### Representation-Only Pilot" in text
     assert "Contextual exposure was detectable internally" in text

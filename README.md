@@ -52,10 +52,10 @@ limitations for a larger follow-up.
    than drawing conclusions from individual prompts.
 
 3. **Internal activation analysis (exploratory follow-up complete)**
-   Its central hypothesis is that the model may represent exposure and
-   answerability differently internally, even though that separation did not
-   appear as the hypothesized failure behavior in the small behavioral pilot.
-   This is a hypothesis to be tested, not a result of the completed study.
+   We tested whether the model represents exposure and answerability
+   differently internally. The pilot found a position-dependent activation
+   pattern, but it did not establish a distinct internal answerability signal
+   beyond information already available from prompt surface features.
 
 4. **Local causal validation (future work outside v2)**
    A future registered study could test matched activation replacement against
@@ -73,14 +73,15 @@ The registered plan had two gated stages:
 1. **Primary behavior study**
    - Cross high and low contextual exposure with present and absent evidence.
    - Estimate the registered difference-in-differences in answer attempts.
-2. **Gated mechanistic pilot**
+2. **Registered gated mechanistic pilot**
    - Extract internal activations before the answer is produced.
    - Test whether they add held-out predictive information beyond surface
      features and output confidence.
 
-The confirmatory mechanistic claim was permitted only if the behavioral gate
-passed. The v2 amendment separately permits an exploratory representation-only
-analysis, but no activation result can rescue the failed behavioral gate.
+The registered mechanistic pilot required the behavioral gate to pass and was
+therefore not run. A later amendment separately permitted the completed
+exploratory representation-only analysis. Its results cannot change or rescue
+the failed behavioral result.
 
 ## Current Status
 
