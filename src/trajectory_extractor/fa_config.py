@@ -29,6 +29,14 @@ FEASIBILITY_SAME_STRING_SPLIT_COUNTS = {
     "locked_validation": 4,
     "probe_test": 4,
 }
+REPRESENTATION_REPLICATION_V3_STUDY_ID = "same-string-representation-replication-v3"
+REPRESENTATION_REPLICATION_V3_RUN_ID = "same-string-representation-replication-v3"
+REPRESENTATION_REPLICATION_V3_SPLIT_COUNTS = {
+    "representation_train": 32,
+    "representation_validation": 8,
+    "entity_test": 20,
+    "template_test": 20,
+}
 NON_CONFIRMATORY_NAMESPACES = frozenset({"pilot", "circuit_dev"})
 REGISTERED_ANCHORS = (
     "target_intro_end",
@@ -188,16 +196,20 @@ class FAConfig:
                 raise ValueError("confirmatory tokenizer_revision must match the official pin")
             if self.chat_template_sha256 != CONFIRMATORY_CHAT_TEMPLATE_SHA256:
                 raise ValueError("confirmatory chat_template_sha256 must match the official pin")
-            registered_split_counts = (
-                FEASIBILITY_SAME_STRING_SPLIT_COUNTS
-                if (
-                    self.study_id == FEASIBILITY_SAME_STRING_STUDY_ID
-                    and self.run_id == FEASIBILITY_SAME_STRING_RUN_ID
-                )
-                else CONFIRMATORY_SPLIT_COUNTS
-            )
+            if (
+                self.study_id == REPRESENTATION_REPLICATION_V3_STUDY_ID
+                and self.run_id == REPRESENTATION_REPLICATION_V3_RUN_ID
+            ):
+                registered_split_counts = REPRESENTATION_REPLICATION_V3_SPLIT_COUNTS
+            elif (
+                self.study_id == FEASIBILITY_SAME_STRING_STUDY_ID
+                and self.run_id == FEASIBILITY_SAME_STRING_RUN_ID
+            ):
+                registered_split_counts = FEASIBILITY_SAME_STRING_SPLIT_COUNTS
+            else:
+                registered_split_counts = CONFIRMATORY_SPLIT_COUNTS
             if dict(self.split_counts) != registered_split_counts:
-                unknown = set(self.split_counts) - set(CONFIRMATORY_SPLIT_COUNTS)
+                unknown = set(self.split_counts) - set(registered_split_counts)
                 if unknown:
                     raise ValueError("split_counts contains an unregistered split")
                 raise ValueError("confirmatory split_counts must match the preregistration")
@@ -236,11 +248,16 @@ class FAConfig:
             if not isinstance(name, str) or type(value) not in {int, float} or not math.isfinite(value):
                 raise ValueError("thresholds must contain finite numeric values")
         if self.profile == "confirmatory":
-            if self.split_seed != CONFIRMATORY_SPLIT_SEED:
+            expected_seed = (
+                20260803
+                if self.study_id == REPRESENTATION_REPLICATION_V3_STUDY_ID
+                else CONFIRMATORY_SPLIT_SEED
+            )
+            if self.split_seed != expected_seed:
                 raise ValueError("confirmatory split_seed must match the preregistration")
             if self.bootstrap_replicates != CONFIRMATORY_BOOTSTRAP_REPLICATES:
                 raise ValueError("confirmatory bootstrap_replicates must match the preregistration")
-            if self.bootstrap_seed != CONFIRMATORY_BOOTSTRAP_SEED:
+            if self.bootstrap_seed != expected_seed:
                 raise ValueError("confirmatory bootstrap_seed must match the preregistration")
             if self.anchors != REGISTERED_ANCHORS:
                 raise ValueError("confirmatory anchors must match the preregistration order")

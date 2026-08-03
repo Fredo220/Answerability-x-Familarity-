@@ -122,6 +122,36 @@ The exploratory pilot found a simple position-dependent pattern:
 This result used only four held-out units. It is exploratory, non-causal, and
 does not establish metacognition or general hallucination detection.
 
+### Representation Replication v3
+
+To address the four-unit pilot's weak statistical resolution and possible
+template overfitting, a separately frozen replication used 80 complete 2x2
+units (320 prompts): 32 training units, 8 validation units, 20 new-entity test
+units, and 20 test units from two entirely unseen template families.
+
+- Every within-factor pair had an identical rendered Gemma-token multiset.
+- The registered character/token TF-IDF surface baseline remained at AUROC
+  `0.50` for answerability on both test splits.
+- Fixed residual-stream features improved mean paired log loss over that
+  baseline on `entity_test` by `0.4717` (95% CI `[0.3593, 0.5474]`) and on
+  `template_test` by `0.3029` (95% CI `[0.0884, 0.4749]`).
+- Mean AUROC improvements were `0.4050` and `0.3831`; both fixed permutation
+  tests returned `p=0.001` with 999 permutations.
+- The pre-evidence temporal control stayed at AUROC `0.50` at every fixed
+  layer on both test splits.
+
+The preregistered v3 decision is `supported`: on this controlled Gemma 2 2B
+task, fixed residual activations contain held-out answerability information
+that the registered bag-of-ngrams surface baseline does not recover. The answer
+is still explicitly encoded in the prompt sequence, and a symbolic binding
+parser could solve the task directly. This is therefore correlational,
+model-specific representation evidence, not evidence of information absent
+from the input, causality, general metacognition, truth detection, or
+hallucination prevention.
+
+See the [v3 result report](release/familiarity_answerability/representation_replication_v3/analysis/result.md)
+and [machine-readable result](release/familiarity_answerability/representation_replication_v3/analysis/result.json).
+
 ## How to Interpret the Result
 
 In this task, Gemma behaved more selectively than the original risk hypothesis

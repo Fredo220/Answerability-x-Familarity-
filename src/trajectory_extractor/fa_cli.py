@@ -114,6 +114,20 @@ from trajectory_extractor.fa_same_string_representation import (
     analyze_same_string_representations,
     build_same_string_representation_rows,
 )
+from trajectory_extractor.fa_same_string_replication_v3 import (
+    REP_V3_SPLIT_COUNTS,
+    REP_V3_STUDY_ID,
+    build_replication_corpus,
+    verify_replication_corpus,
+    write_replication_corpus,
+)
+from trajectory_extractor.fa_same_string_replication_v3_analysis import (
+    REP_V3_LAYERS,
+    analyze_replication_v3,
+    build_replication_analysis_rows,
+    simulate_replication_sensitivity,
+    write_replication_analysis,
+)
 from trajectory_extractor.fa_naturalness import (
     compile_adjudication_response_from_issuance,
     compile_initial_responses_from_issuance,
@@ -133,6 +147,7 @@ FA_COMMANDS = (
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-analyze-same-string-representations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
     "fa-evaluate-behavior-test", "fa-evaluate-probe-test", "fa-evaluate-intervention-test",
+    "fa-prepare-same-string-replication-v3", "fa-extract-same-string-replication-v3", "fa-analyze-same-string-replication-v3",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
 _IMPLEMENTED = frozenset(
@@ -162,6 +177,9 @@ _IMPLEMENTED = frozenset(
         "fa-evaluate-behavior-test",
         "fa-evaluate-probe-test",
         "fa-build-report",
+        "fa-prepare-same-string-replication-v3",
+        "fa-extract-same-string-replication-v3",
+        "fa-analyze-same-string-replication-v3",
     )
 )
 _GENERATION_NAMESPACES = ("pilot", "mechanism_train", "locked_validation", "circuit_dev", "behavior_test", "probe_test", "intervention_test")
@@ -231,6 +249,19 @@ _SAME_STRING_REPRESENTATION_SPEC_PATH = (
     / "docs"
     / "amendments"
     / "2026-08-02-fa-same-string-representation-pilot.md"
+)
+_REP_V3_SPEC_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "superpowers"
+    / "specs"
+    / "2026-08-03-same-string-representation-replication-v3-design.md"
+)
+_REP_V3_EXECUTION_RECORD_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "amendments"
+    / "2026-08-03-fa-representation-replication-v3-execution.md"
 )
 
 
@@ -414,6 +445,20 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
         representation.add_argument(f"--{split}-manifest", required=True)
         representation.add_argument(f"--{split}-activation-manifest", required=True)
     representation.add_argument("--shard-id", required=True)
+    replication_prepare = parsers["fa-prepare-same-string-replication-v3"]
+    replication_prepare.add_argument("--output-dir", required=True)
+    replication_extract = parsers["fa-extract-same-string-replication-v3"]
+    replication_extract.add_argument("--corpus-manifest", required=True)
+    replication_extract.add_argument("--sensitivity-manifest", required=True)
+    replication_extract.add_argument(
+        "--split", choices=(*tuple(REP_V3_SPLIT_COUNTS), "all"), required=True
+    )
+    replication_extract.add_argument("--output-dir", required=True)
+    replication_analyze = parsers["fa-analyze-same-string-replication-v3"]
+    replication_analyze.add_argument("--corpus-manifest", required=True)
+    replication_analyze.add_argument("--sensitivity-manifest", required=True)
+    replication_analyze.add_argument("--activation-manifest", action="append", required=True)
+    replication_analyze.add_argument("--output-dir", required=True)
     materialize = parsers["fa-materialize-probe-rows"]
     materialize.add_argument("--manifest", required=True)
     materialize.add_argument("--metadata-manifest", required=True)
@@ -504,6 +549,12 @@ def dispatch_fa(args: argparse.Namespace) -> int | None:
             payload = _analyze_pilot_activations(config, root, args)
         elif command == "fa-analyze-same-string-representations":
             payload = _analyze_same_string_representations(config, root, args)
+        elif command == "fa-prepare-same-string-replication-v3":
+            payload = _prepare_replication_v3(config, root, args)
+        elif command == "fa-extract-same-string-replication-v3":
+            payload = _extract_replication_v3(config, root, args)
+        elif command == "fa-analyze-same-string-replication-v3":
+            payload = _analyze_replication_v3(config, root, args)
         elif command == "fa-materialize-probe-rows":
             payload = _materialize_probe_rows(config, root, args)
         elif command == "fa-fit-probes":
@@ -3286,6 +3337,212 @@ def _extract_activations(
         "manifest": str(shard.manifest_path),
         "request_sha256": shard.request_sha256,
         "row_count": shard.row_count,
+    }
+
+
+def _require_replication_v3_config(config: FAConfig) -> None:
+    if (
+        config.study_id != REP_V3_STUDY_ID
+        or config.run_id != REP_V3_STUDY_ID
+        or dict(config.split_counts) != dict(REP_V3_SPLIT_COUNTS)
+    ):
+        raise ValueError("operation requires the frozen representation replication v3 config")
+    if not _REP_V3_SPEC_PATH.is_file():
+        raise ValueError("representation replication v3 design spec is missing")
+
+
+def _write_frozen_json(path: Path, value: Mapping[str, Any]) -> None:
+    payload = json.dumps(
+        dict(value), sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8") + b"\n"
+    if path.exists():
+        if path.read_bytes() != payload:
+            raise FileExistsError(f"frozen artifact differs: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def _prepare_replication_v3(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    del root
+    _require_replication_v3_config(config)
+    prepared = load_pinned_tokenizer(config)
+    corpus = build_replication_corpus(prepared.tokenizer)
+    if not corpus.audit.passed:
+        raise ValueError(
+            "representation replication v3 corpus audit failed: "
+            + ",".join(corpus.audit.violations)
+        )
+    destination = Path(args.output_dir).absolute()
+    paths = write_replication_corpus(corpus, destination)
+    manifest_file_sha256 = _file_sha256(paths.manifest)
+    sensitivity = {
+        **simulate_replication_sensitivity(),
+        "config_sha256": config.config_hash,
+        "corpus_manifest_sha256": manifest_file_sha256,
+        "design_spec_sha256": _file_sha256(_REP_V3_SPEC_PATH),
+        "chat_template_sha256": prepared.chat_template_sha256,
+    }
+    sensitivity_path = destination / "same_string_replication_v3_sensitivity.json"
+    _write_frozen_json(sensitivity_path, sensitivity)
+    return {
+        "status": "frozen",
+        "row_count": len(corpus.prompts),
+        "unit_count": len({row.entity_unit_id for row in corpus.prompts}),
+        "corpus_manifest": str(paths.manifest),
+        "corpus_manifest_sha256": manifest_file_sha256,
+        "sensitivity_manifest": str(sensitivity_path),
+        "sensitivity_manifest_sha256": _file_sha256(sensitivity_path),
+    }
+
+
+def _verify_replication_v3_inputs(
+    config: FAConfig,
+    corpus_manifest: str | Path,
+    sensitivity_manifest: str | Path,
+):
+    _require_replication_v3_config(config)
+    prepared = load_pinned_tokenizer(config)
+    corpus_path = Path(corpus_manifest).absolute()
+    corpus = verify_replication_corpus(corpus_path, prepared.tokenizer)
+    sensitivity_path = Path(sensitivity_manifest).absolute()
+    sensitivity = _read_json_object(sensitivity_path)
+    expected = {
+        "kind": "same_string_replication_v3_sensitivity",
+        "outcomes_opened": False,
+        "config_sha256": config.config_hash,
+        "corpus_manifest_sha256": _file_sha256(corpus_path),
+        "design_spec_sha256": _file_sha256(_REP_V3_SPEC_PATH),
+        "chat_template_sha256": prepared.chat_template_sha256,
+    }
+    if any(sensitivity.get(key) != value for key, value in expected.items()):
+        raise ValueError("v3 sensitivity artifact does not bind the frozen study")
+    return prepared, corpus, sensitivity_path
+
+
+def _extract_replication_v3(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    del root
+    prepared, corpus, sensitivity_path = _verify_replication_v3_inputs(
+        config, args.corpus_manifest, args.sensitivity_manifest
+    )
+    splits = tuple(REP_V3_SPLIT_COUNTS) if args.split == "all" else (args.split,)
+    model_runner = HFModelRunner(config)
+    validate_runner_binding(
+        model_runner,
+        config,
+        expected_chat_template_sha256=prepared.chat_template_sha256,
+    )
+    runner = _ACTIVATION_RUNNER_FACTORY(
+        model_runner.model,
+        model_runner.tokenizer,
+        model_id=config.model_id,
+        model_revision=config.model_revision,
+        tokenizer_revision=config.tokenizer_revision,
+    )
+    extracted = []
+    for split in splits:
+        examples = tuple(
+            sorted(
+                (row for row in corpus.prompts if row.split == split),
+                key=lambda row: (len(row.rendered_token_ids), row.example_id),
+            )
+        )
+        if len(examples) != 4 * REP_V3_SPLIT_COUNTS[split]:
+            raise ValueError("v3 extraction split is incomplete")
+        destination = Path(args.output_dir).absolute() / f"activations-{split}.npz"
+        shard = _ACTIVATION_SHARD_WRITER(
+            runner,
+            examples,
+            REP_V3_LAYERS,
+            destination=destination,
+        )
+        extracted.append(
+            {
+                "split": split,
+                "row_count": shard.row_count,
+                "activation_manifest": str(shard.manifest_path),
+                "activation_manifest_sha256": _file_sha256(shard.manifest_path),
+                "activation_request_sha256": shard.request_sha256,
+            }
+        )
+    return {
+        "status": "extracted",
+        "split": args.split,
+        "row_count": sum(item["row_count"] for item in extracted),
+        "splits": extracted,
+        "sensitivity_manifest_sha256": _file_sha256(sensitivity_path),
+    }
+
+
+def _analyze_replication_v3(
+    config: FAConfig, root: Path, args: argparse.Namespace
+) -> dict[str, Any]:
+    del root
+    _prepared, corpus, sensitivity_path = _verify_replication_v3_inputs(
+        config, args.corpus_manifest, args.sensitivity_manifest
+    )
+    if len(args.activation_manifest) != len(REP_V3_SPLIT_COUNTS):
+        raise ValueError("v3 analysis requires exactly four activation manifests")
+    records = []
+    activation_hashes = {}
+    for value in args.activation_manifest:
+        manifest_path = Path(value).absolute()
+        shard = resume_activation_shard(manifest_path.with_name(
+            _read_json_object(manifest_path)["npz_file"]
+        ))
+        split_records = load_activation_records(manifest_path)
+        split_names = {
+            row.split
+            for row in corpus.prompts
+            if row.example_id in {record.example_id for record in split_records}
+        }
+        if len(split_names) != 1:
+            raise ValueError("v3 activation manifest does not map to exactly one split")
+        split = next(iter(split_names))
+        if split in activation_hashes:
+            raise ValueError("v3 activation split is duplicated")
+        activation_hashes[split] = {
+            "manifest_sha256": _file_sha256(manifest_path),
+            "request_sha256": shard.request_sha256,
+            "npz_sha256": shard.npz_sha256,
+        }
+        records.extend(split_records)
+    if set(activation_hashes) != set(REP_V3_SPLIT_COUNTS):
+        raise ValueError("v3 activation manifests do not cover all frozen splits")
+    rows = build_replication_analysis_rows(corpus.prompts, records)
+    result = analyze_replication_v3(rows)
+    paths = write_replication_analysis(
+        result,
+        args.output_dir,
+        lineage={
+            "config_sha256": config.config_hash,
+            "corpus_manifest_sha256": _file_sha256(args.corpus_manifest),
+            "sensitivity_manifest_sha256": _file_sha256(sensitivity_path),
+            "design_spec_sha256": _file_sha256(_REP_V3_SPEC_PATH),
+            "execution_record_sha256": _file_sha256(
+                _REP_V3_EXECUTION_RECORD_PATH
+            ),
+            "analysis_implementation_sha256": _file_sha256(
+                Path(inspect.getfile(analyze_replication_v3))
+            ),
+            "activation_implementation_sha256": _file_sha256(
+                Path(inspect.getfile(write_activation_shard))
+            ),
+            "activation_batch_size": 4,
+            "activation_splits": activation_hashes,
+        },
+    )
+    return {
+        "status": "analyzed",
+        "decision": result.decision,
+        "analysis_sha256": result.analysis_sha256,
+        "result": str(paths.result),
+        "report": str(paths.report),
+        "predictions": str(paths.predictions),
     }
 
 

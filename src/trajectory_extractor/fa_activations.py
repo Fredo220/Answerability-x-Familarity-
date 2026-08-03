@@ -178,6 +178,15 @@ class HFSelectedPositionRunner:
     ) -> "_HFSelectedCapture":
         return _HFSelectedCapture(self, tuple(layer_ids), tuple(positions))
 
+    def selected_batch_hooks(
+        self, *, layer_ids: Sequence[int], positions: Sequence[Sequence[int]]
+    ) -> "_HFSelectedBatchCapture":
+        return _HFSelectedBatchCapture(
+            self,
+            tuple(layer_ids),
+            tuple(tuple(int(value) for value in row) for row in positions),
+        )
+
     def run_selected(self, input_ids: Sequence[int]) -> None:
         if self._capture is None:
             raise RuntimeError("selected-position hooks must be active before model execution")
@@ -190,6 +199,25 @@ class HFSelectedPositionRunner:
         except StopIteration:
             device = torch.device("cpu")
         encoded = torch.tensor([list(input_ids)], dtype=torch.long, device=device)
+        with torch.no_grad():
+            self.model(input_ids=encoded, use_cache=False)
+
+    def run_selected_batch(self, input_ids: Sequence[Sequence[int]]) -> None:
+        if self._capture is None:
+            raise RuntimeError("selected-position hooks must be active before model execution")
+        if not input_ids or len({len(row) for row in input_ids}) != 1:
+            raise ValueError("selected activation batches require equal nonempty lengths")
+        try:
+            import torch
+        except ImportError as error:  # pragma: no cover
+            raise ImportError("PyTorch is required for selected-position extraction") from error
+        try:
+            device = next(self.model.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+        encoded = torch.tensor(
+            [list(row) for row in input_ids], dtype=torch.long, device=device
+        )
         with torch.no_grad():
             self.model(input_ids=encoded, use_cache=False)
 
@@ -249,6 +277,77 @@ class _HFSelectedCapture(AbstractContextManager):
         except ImportError as error:  # pragma: no cover
             raise ImportError("PyTorch is required for selected-position extraction") from error
         return torch.stack([self.selected[layer_id] for layer_id in self.layer_ids], dim=0)
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+        self.selected.clear()
+        self.runner._capture = None
+
+
+class _HFSelectedBatchCapture(AbstractContextManager):
+    def __init__(
+        self,
+        runner: HFSelectedPositionRunner,
+        layer_ids: tuple[int, ...],
+        positions: tuple[tuple[int, ...], ...],
+    ):
+        self.runner = runner
+        self.layer_ids = layer_ids
+        self.positions = positions
+        self.handles: list[Any] = []
+        self.selected: dict[int, Any] = {}
+
+    def __enter__(self) -> "_HFSelectedBatchCapture":
+        if self.runner._capture is not None:
+            raise RuntimeError("selected-position capture is already active")
+        if not self.positions or any(len(row) != len(ANCHOR_NAMES) for row in self.positions):
+            raise ValueError("batch positions must contain every registered anchor")
+        layers = _transformer_layers(self.runner.model)
+        if self.layer_ids[-1] >= len(layers):
+            raise ValueError("registered layer ID exceeds the model layer count")
+        self.runner._capture = self
+        try:
+            for layer_id in self.layer_ids:
+                self.handles.append(
+                    layers[layer_id].register_forward_hook(self._hook_for(layer_id))
+                )
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+        return self
+
+    def _hook_for(self, layer_id: int):
+        def capture(_module: Any, _inputs: Any, output: Any) -> None:
+            try:
+                import torch
+            except ImportError as error:  # pragma: no cover
+                raise ImportError("PyTorch is required for selected-position extraction") from error
+            hidden = output[0] if isinstance(output, tuple) else output
+            if (
+                not isinstance(hidden, torch.Tensor)
+                or hidden.ndim != 3
+                or hidden.shape[0] != len(self.positions)
+            ):
+                raise ValueError("batched transformer layer output has an invalid shape")
+            indices = torch.tensor(self.positions, dtype=torch.long, device=hidden.device)
+            if int(indices.max()) >= hidden.shape[1]:
+                raise ValueError("registered position exceeds transformer sequence length")
+            batch = torch.arange(hidden.shape[0], device=hidden.device).unsqueeze(1)
+            self.selected[layer_id] = hidden[batch, indices].detach().cpu()
+
+        return capture
+
+    @property
+    def activations(self) -> Any:
+        if set(self.selected) != set(self.layer_ids):
+            return None
+        try:
+            import torch
+        except ImportError as error:  # pragma: no cover
+            raise ImportError("PyTorch is required for selected-position extraction") from error
+        return torch.stack([self.selected[layer_id] for layer_id in self.layer_ids], dim=1)
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         for handle in self.handles:
@@ -423,6 +522,82 @@ def _extract_with_anchors(
     )
 
 
+def _extract_batch_with_anchors(
+    runner: Any,
+    anchors: Sequence[AnchorRecord],
+    layer_ids: tuple[int, ...],
+    *,
+    model_id: str,
+    model_revision: str,
+) -> tuple[ActivationRecord, ...]:
+    hooks = getattr(runner, "selected_batch_hooks", None)
+    run = getattr(runner, "run_selected_batch", None)
+    if not callable(hooks) or not callable(run):
+        return tuple(
+            _extract_with_anchors(
+                runner,
+                anchor,
+                layer_ids,
+                model_id=model_id,
+                model_revision=model_revision,
+            )
+            for anchor in anchors
+        )
+    with hooks(
+        layer_ids=layer_ids,
+        positions=[anchor.anchor_indices for anchor in anchors],
+    ) as capture:
+        run([anchor.input_ids for anchor in anchors])
+        raw = capture.activations
+    array = _to_numpy(raw)
+    if array.ndim != 4 or array.shape[:3] != (
+        len(anchors),
+        len(layer_ids),
+        len(ANCHOR_NAMES),
+    ):
+        raise ValueError(
+            "batched runner activations must be [batch, layer, registered_position, hidden]"
+        )
+    records = []
+    for index, anchor in enumerate(anchors):
+        selected = np.ascontiguousarray(array[index].transpose(1, 0, 2))
+        digest = hashlib.sha256(
+            _activation_hash_payload(anchor.example_id, layer_ids, ANCHOR_NAMES, selected)
+        ).hexdigest()
+        records.append(
+            ActivationRecord(
+                example_id=anchor.example_id,
+                anchors=anchor,
+                layer_ids=layer_ids,
+                activations=selected,
+                dtype=selected.dtype.name,
+                shape=selected.shape,
+                activation_sha256=digest,
+                model_id=model_id,
+                model_revision=model_revision,
+            )
+        )
+    return tuple(records)
+
+
+def _activation_batches(
+    anchors: Sequence[AnchorRecord], batch_size: int = 4
+) -> tuple[tuple[AnchorRecord, ...], ...]:
+    batches: list[tuple[AnchorRecord, ...]] = []
+    current: list[AnchorRecord] = []
+    current_length: int | None = None
+    for anchor in anchors:
+        length = len(anchor.input_ids)
+        if current and (length != current_length or len(current) == batch_size):
+            batches.append(tuple(current))
+            current = []
+        current.append(anchor)
+        current_length = length
+    if current:
+        batches.append(tuple(current))
+    return tuple(batches)
+
+
 def write_activation_shard(
     runner: Any,
     examples: Sequence[Any],
@@ -481,22 +656,25 @@ def write_activation_shard(
             model_id, model_revision, _tokenizer_id, _tokenizer_revision, _config_hash = (
                 extraction_provenance
             )
-            for row_number, anchors in enumerate(resolved_anchors):
-                record = _extract_with_anchors(
+            row_number = 0
+            for batch in _activation_batches(resolved_anchors):
+                records = _extract_batch_with_anchors(
                     runner,
-                    anchors,
+                    batch,
                     layer_ids,
                     model_id=model_id,
                     model_revision=model_revision,
                 )
-                member = f"{row_number:06d}-{hashlib.sha256(record.example_id.encode('utf-8')).hexdigest()[:16]}.npy"
-                array_path = work / member
-                np.save(array_path, record.activations, allow_pickle=False)
-                members.append((member, array_path))
-                index_file.write(_canonical_json_line(_activation_index_row(record, member)))
-                del record
-                # CPython normally releases immediately; explicit collection also
-                # bounds alternate runtimes before the next model prompt.
+                for record in records:
+                    member = f"{row_number:06d}-{hashlib.sha256(record.example_id.encode('utf-8')).hexdigest()[:16]}.npy"
+                    array_path = work / member
+                    np.save(array_path, record.activations, allow_pickle=False)
+                    members.append((member, array_path))
+                    index_file.write(
+                        _canonical_json_line(_activation_index_row(record, member))
+                    )
+                    row_number += 1
+                del records
                 gc.collect()
             index_file.flush()
             os.fsync(index_file.fileno())

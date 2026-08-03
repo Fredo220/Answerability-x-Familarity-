@@ -355,6 +355,60 @@ class FakeRunner:
         self.active_capture.activations = np.arange(np.prod(shape), dtype=np.float16).reshape(shape)
 
 
+class _BatchCapture(AbstractContextManager):
+    def __init__(self, runner, layer_ids, positions):
+        self.runner = runner
+        self.layer_ids = tuple(layer_ids)
+        self.positions = tuple(tuple(row) for row in positions)
+        self.activations = None
+
+    def __enter__(self):
+        self.runner.batch_capture = self
+        return self
+
+    def __exit__(self, *_args):
+        self.runner.batch_capture = None
+
+
+class FakeBatchRunner(FakeRunner):
+    def __init__(self):
+        super().__init__()
+        self.batch_capture = None
+        self.batch_calls = 0
+
+    def selected_batch_hooks(self, *, layer_ids, positions):
+        return _BatchCapture(self, layer_ids, positions)
+
+    def run_selected_batch(self, input_ids):
+        self.batch_calls += 1
+        assert self.batch_capture is not None
+        self.batch_capture.activations = np.ones(
+            (
+                len(input_ids),
+                len(self.batch_capture.layer_ids),
+                3,
+                self.hidden_size,
+            ),
+            dtype=np.float32,
+        )
+
+
+def test_activation_shard_batches_equal_length_prompts(tmp_path):
+    runner = FakeBatchRunner()
+    examples = tuple(example(example_id=f"batch-{index}") for index in range(8))
+
+    shard = write_activation_shard(
+        runner,
+        examples,
+        (0, 1),
+        destination=tmp_path / "batched.npz",
+    )
+
+    assert shard.row_count == 8
+    assert runner.batch_calls == 2
+    assert len(load_activation_records(shard.manifest_path)) == 8
+
+
 def test_activation_extraction_stores_only_registered_positions_and_selected_layers():
     runner = FakeRunner()
     anchors = resolve_registered_anchors(example(), runner.tokenizer)

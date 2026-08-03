@@ -6,6 +6,7 @@ import pytest
 from trajectory_extractor.fa_config import (
     CONFIRMATORY_SPLIT_COUNTS,
     FEASIBILITY_SAME_STRING_SPLIT_COUNTS,
+    REPRESENTATION_REPLICATION_V3_SPLIT_COUNTS,
     NON_CONFIRMATORY_NAMESPACES,
     FAConfig,
 )
@@ -22,6 +23,11 @@ FEASIBILITY_SAME_STRING_CONFIG = (
     REPO_ROOT
     / "configs"
     / "familiarity_answerability_same_string_feasibility_v2.json"
+)
+REPRESENTATION_V3_CONFIG = (
+    REPO_ROOT
+    / "configs"
+    / "familiarity_answerability_same_string_replication_v3.json"
 )
 SMOKE_CONFIG = REPO_ROOT / "configs" / "familiarity_answerability_qwen06b_smoke.json"
 ACTIVE_SMOKE_CONFIG = (
@@ -113,6 +119,16 @@ def test_feasibility_same_string_v2_has_separate_identity_and_registered_counts(
         "probe_test": 4,
     }
     assert "intervention_test" not in config.split_counts
+
+
+def test_representation_v3_config_has_separate_identity_and_frozen_counts():
+    config = FAConfig.from_json(REPRESENTATION_V3_CONFIG)
+
+    assert config.study_id == "same-string-representation-replication-v3"
+    assert config.run_id == "same-string-representation-replication-v3"
+    assert dict(config.split_counts) == REPRESENTATION_REPLICATION_V3_SPLIT_COUNTS
+    assert config.split_seed == 20260803
+    assert config.bootstrap_seed == 20260803
 
 
 def test_feasibility_counts_are_allowed_only_for_the_registered_v2_identity():
