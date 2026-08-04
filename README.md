@@ -1,266 +1,221 @@
 # Familiarity vs. Answerability in Language Models
 
-Does a language model answer more readily after receiving unrelated contextual
-exposure to a target, even when the information needed to answer is missing?
+Can a language model tell the difference between **knowing more about a target**
+and **having the evidence needed to answer a specific question**?
 
-This project investigates whether language models internally distinguish
-between familiarity with a target and having enough evidence to answer a
-question about it. It combines a controlled behavioral experiment on Gemma 2
-2B with an exploratory representation-level analysis of the model's internal
-activations.
+This repository contains two completed experiments on the pinned
+`google/gemma-2-2b-it` checkpoint:
 
-## The Idea
+1. a behavioral test of whether unrelated exposure makes the model answer
+   without evidence; and
+2. a representation-level test of whether internal activations encode
+   answerability on the same controlled task.
 
-The completed experiment separated two factors while keeping the target string
-identical within every four-prompt unit:
+## Results at a Glance
 
-- **Contextual exposure:** Has the prompt introduced several unrelated facts
-  about the target string?
-- **Answerability:** Does the prompt contain the evidence required to answer?
+| Experiment | Question | Result |
+|---|---|---|
+| Behavioral pilot | Does unrelated exposure selectively increase unsupported answer attempts? | **Not supported** |
+| Representation replication | Do fixed internal activations predict answerability beyond the registered bag-of-ngrams baseline? | **Supported on this controlled task** |
 
-The prompt either supplies a fictional archive code for the target or leaves
-that code unavailable. High-exposure prompts first provide unrelated facts
-about the same target; low-exposure controls assign matched facts elsewhere.
+These results are compatible. The model did **not** display the predicted
+failure behavior, while its internal activations still contained decodable
+information about whether the prompt supplied the answer.
 
-The primary question is:
+![Summary of the behavioral pilot and representation replication](docs/assets/familiarity_answerability_summary.png)
 
-> Does controlled contextual familiarization selectively increase answer
-> attempts when the required evidence is absent?
+*Figure 1. Left: descriptive answer-attempt rates from the behavioral pilot;
+the registered interaction was not supported. Right: held-out AUROC
+improvement of fixed activation probes over the registered TF-IDF baseline.
+Inferential details and limitations are reported below.*
 
-This distinction matters because confidently completing a pattern is not the
-same as having evidence for the requested answer.
+## The Idea in Plain English
 
-## Why This Matters
+The experiment separates two factors that are easy to confuse:
 
-A model may confuse **having seen more context about a target** with **having
-enough evidence to answer a question about it**. This distinction matters for
-hallucination detection, uncertainty calibration, and reliable abstention.
+- **Familiarity / exposure:** the prompt provides several unrelated facts about
+  a fictional target.
+- **Answerability:** the prompt either provides the target's archive code or
+  states that the code is unavailable.
 
-This study was deliberately scoped for reproducible execution with limited
-compute. It demonstrates controlled hypothesis testing, scientific integrity,
-and research execution. The completed pilot also exposes concrete design
-limitations for a larger follow-up.
+Every experimental unit contains the same target string in all four
+conditions:
 
-## Research Approach
+| | Evidence present | Evidence absent |
+|---|---|---|
+| **High exposure** | Unrelated target facts, then its archive code | Unrelated target facts, but no archive code |
+| **Low exposure** | Matched context elsewhere, then the target's archive code | Matched context elsewhere, but no archive code |
 
-1. **Controlled behavioral test (our contribution)**
-   We use a 2×2 Same-String design that independently varies contextual
-   exposure and answerability. The target string and task remain fixed.
+This 2x2 design asks whether exposure changes behavior differently when the
+answer is available versus unavailable. Keeping the target string fixed helps
+remove a major confound: a familiar-looking name should not be easier merely
+because of its spelling or tokenization.
 
-2. **Population-level validation (our contribution)**
-   We evaluate the interaction across multiple entities and domains rather
-   than drawing conclusions from individual prompts.
+The main methodological contribution is this Same-String control: exposure
+and answerability vary while the target and task remain fixed. Effects are
+estimated across complete experimental units rather than inferred from a few
+selected prompts.
 
-3. **Internal activation analysis (exploratory follow-up complete)**
-   We tested whether the model represents exposure and answerability
-   differently internally. The pilot found a position-dependent activation
-   pattern, but it did not establish a distinct internal answerability signal
-   beyond information already available from prompt surface features.
+## What We Found
 
-4. **Local causal validation (future work outside v2)**
-   A future registered study could test matched activation replacement against
-   reverse, shuffled, orthogonal, and norm-matched controls. Study v2 contained
-   no intervention split and supports no causal claim.
+### 1. Behavioral pilot: the predicted failure did not appear
 
-Our primary contribution is the controlled Same-String exposure ×
-answerability experiment. Attribution graphs are an unregistered future
-possibility, not part of the completed confirmatory pilot.
+The preregistered behavioral study evaluated 32 complete units across four
+registered domains, or 128 model responses. All responses were complete and
+validly formatted.
 
-## Experiment
+When the archive code was absent, the model almost always abstained. Unrelated
+exposure did not produce the predicted selective increase in unsupported
+answer attempts.
 
-The registered plan had two gated stages:
+| Exposure | Evidence | Answer-attempt rate |
+|---|---|---:|
+| High | Absent | 6.25% |
+| Low | Absent | 0.00% |
+| High | Present | 90.63% |
+| Low | Present | 75.00% |
 
-1. **Primary behavior study**
-   - Cross high and low contextual exposure with present and absent evidence.
-   - Estimate the registered difference-in-differences in answer attempts.
-2. **Registered gated mechanistic pilot**
-   - Extract internal activations before the answer is produced.
-   - Test whether they add held-out predictive information beyond surface
-     features and output confidence.
+The `6.25%` versus `0.00%` difference in the absent-evidence cells corresponds
+to only two answer attempts out of 32 versus none out of 32. It is too sparse
+to support a reliable exposure effect by itself. The registered analysis uses
+the full exposure-by-answerability interaction, whose confidence interval
+crosses zero.
 
-The registered mechanistic pilot required the behavioral gate to pass and was
-therefore not run. A later amendment separately permitted the completed
-exploratory representation-only analysis. Its results cannot change or rescue
-the failed behavioral result.
+The preregistered exposure-by-answerability interaction was `-0.09375`, with a
+95% bootstrap interval of `[-0.4000, 0.1818]`. The registered decision was
+therefore **`not_supported`**.
 
-## Current Status
+This is a limited negative result, not proof that familiarity never affects
+LLM behavior. The study used one small model, a synthetic archive-code task,
+and a modest sample. The absent-evidence condition was also close to an
+abstention floor.
 
-**Status as of 2026-08-02: the protected behavioral endpoint for the
-Same-String Balanced Pilot v2 is complete, evaluable, and `not_supported`.**
+[Read the behavioral report](docs/results/same_string_feasibility_v2_behavior_result.md)
+or inspect the
+[machine-readable result](docs/results/same_string_feasibility_v2_behavior_result.json).
 
-- All 128 generations completed with 100% format validity.
-- The registered exposure-by-answerability interaction was `-0.09375`, with a
-  crossed-bootstrap 95% interval of `[-0.4000, 0.1818]`.
-- The answerability manipulation worked behaviorally: target-bound attempt
-  rates were `0.9063` under high exposure and `0.7500` under low exposure;
-  code-absent attempt rates were `0.0625` and `0.0000`, respectively.
-- The interaction and capability-preservation gates failed. The registered
-  gated mechanistic pilot was therefore not run. A separately frozen
-  exploratory representation-only pilot was completed later.
-- A required pre-outcome power/MDE audit is absent from the verified snapshot.
-  This disclosed protocol deviation limits v2 to an imprecise pilot result.
-- The endpoint was opened once and is permanently closed. The downloaded
-  content-addressed snapshot was restored and verified locally.
-- R11 and Same-String v1 remain immutable `not_evaluable` instrument records.
+### 2. Representation replication: answerability was decodable internally
 
-See the [behavioral result report](docs/results/same_string_feasibility_v2_behavior_result.md)
-and its [machine-readable record](docs/results/same_string_feasibility_v2_behavior_result.json).
-The separate [representation-only result](docs/results/same_string_representation_pilot_v2.md)
-reports the exploratory activation analysis without changing that decision.
+An initial four-unit activation pilot was too small for a reliable
+generalization claim. A separately frozen replication therefore used 80
+complete 2x2 units, or 320 prompts:
 
-### Representation-Only Pilot
+- 32 training units;
+- 8 validation units;
+- 20 test units with unseen entities; and
+- 20 test units from two unseen template families.
 
-The exploratory pilot found a simple position-dependent pattern:
+Within-factor prompt pairs had identical rendered Gemma-token multisets. The
+registered character/token TF-IDF baseline stayed at chance for answerability
+on both test splits (`AUROC = 0.50`). Fixed residual-stream activations improved
+held-out prediction. In plain language, the activation-based probe could
+distinguish whether the prompt contained the required answer much more
+reliably than the registered word-statistics baseline, including for unseen
+entities and unseen prompt templates.
 
-- Contextual exposure was detectable internally after the target introduction.
-- Answerability was at chance there and became detectable only after the model
-  received the evidence-bearing question.
-- Prompt surface features already predicted answerability perfectly. The pilot
-  therefore does not show that internal activations add unique answerability
-  information beyond the prompt itself.
+| Test split | Units | Paired log-loss improvement | 95% CI | AUROC improvement | Permutation p |
+|---|---:|---:|---:|---:|---:|
+| Unseen entities | 20 | 0.4717 | [0.3593, 0.5474] | 0.4050 | 0.001 |
+| Unseen templates | 20 | 0.3029 | [0.0884, 0.4749] | 0.3831 | 0.001 |
 
-This result used only four held-out units. It is exploratory, non-causal, and
-does not establish metacognition or general hallucination detection.
+A pre-evidence control remained at chance at every fixed layer. This supports
+the narrow conclusion that, on this controlled Gemma 2 2B task, internal
+activations contain held-out answerability information that the registered
+bag-of-ngrams baseline does not recover.
 
-### Representation Replication v3
+Prompt-final activations containing prompt information is not surprising by
+itself. The informative part is the controlled transfer result: the fixed
+activation probes generalized beyond the registered bag-of-ngrams comparator
+to unseen entities and two unseen template families, while the pre-evidence
+control remained at chance. This narrows the plausible explanation beyond
+simple token-frequency or template memorization, although it does not rule out
+a stronger symbolic or sequence-aware prompt baseline.
 
-To address the four-unit pilot's weak statistical resolution and possible
-template overfitting, a separately frozen replication used 80 complete 2x2
-units (320 prompts): 32 training units, 8 validation units, 20 new-entity test
-units, and 20 test units from two entirely unseen template families.
+The answerability information is still explicitly present in the prompt. A
+symbolic parser could solve the task. The result therefore concerns
+**internal representation and decodability**, not hidden knowledge or
+information absent from the input.
 
-- Every within-factor pair had an identical rendered Gemma-token multiset.
-- The registered character/token TF-IDF surface baseline remained at AUROC
-  `0.50` for answerability on both test splits.
-- Fixed residual-stream features improved mean paired log loss over that
-  baseline on `entity_test` by `0.4717` (95% CI `[0.3593, 0.5474]`) and on
-  `template_test` by `0.3029` (95% CI `[0.0884, 0.4749]`).
-- Mean AUROC improvements were `0.4050` and `0.3831`; both fixed permutation
-  tests returned `p=0.001` with 999 permutations.
-- The pre-evidence temporal control stayed at AUROC `0.50` at every fixed
-  layer on both test splits.
+[Read the v3 representation report](release/familiarity_answerability/representation_replication_v3/analysis/result.md)
+or inspect its
+[machine-readable result](release/familiarity_answerability/representation_replication_v3/analysis/result.json).
 
-The preregistered v3 decision is `supported`: on this controlled Gemma 2 2B
-task, fixed residual activations contain held-out answerability information
-that the registered bag-of-ngrams surface baseline does not recover. The answer
-is still explicitly encoded in the prompt sequence, and a symbolic binding
-parser could solve the task directly. This is therefore correlational,
-model-specific representation evidence, not evidence of information absent
-from the input, causality, general metacognition, truth detection, or
-hallucination prevention.
+## What the Results Do and Do Not Mean
 
-See the [v3 result report](release/familiarity_answerability/representation_replication_v3/analysis/result.md)
-and [machine-readable result](release/familiarity_answerability/representation_replication_v3/analysis/result.json).
+The completed evidence supports two scoped statements:
 
-## How to Interpret the Result
+1. In the small behavioral pilot, unrelated contextual exposure did not cause
+   the preregistered increase in unsupported answer attempts.
+2. In the larger representation study, fixed activations predicted
+   answerability beyond the registered bag-of-ngrams baseline across unseen
+   entities and unseen prompt templates.
 
-In this task, Gemma behaved more selectively than the original risk hypothesis
-predicted. Answerability dominated the manipulation: the model usually returned
-the archive code when the prompt supplied it and usually answered `UNKNOWN`
-when the code was absent. Unrelated exposure did not produce the registered
-positive increase in unsupported answer attempts.
+The project does **not** establish:
 
-This is a limited but directionally encouraging result for the tested model and
-task. It does not prove that LLMs generally understand answerability, reason
-reliably, or avoid hallucinations. The interval is wide, the absent-evidence
-cells were near the abstention floor, and only one small checkpoint was tested.
+- a general mechanism of familiarity or hallucination;
+- metacognition, human-like knowledge, or intuition;
+- causal influence of the decoded activation patterns;
+- information not already present in the prompt;
+- generalization to larger models or natural factual questions; or
+- a hallucination detector or prevention method.
 
-Had the hypothesis been supported, the interpretation would have been a
-reliability concern rather than evidence of a desirable capability: it would
-suggest that merely making a target feel more familiar can make a model answer
-without the information required to do so.
+## Why This Matters for AI Safety
 
-## Compute-Constrained Scope
+For systems expected to abstain when required evidence is missing, confusing
+"this target feels familiar" with "the required evidence is available" would
+be a reliability failure. The behavioral pilot did not find that failure in
+this setting.
 
-This was intentionally built as a low-compute portfolio study. Development,
-auditing, and analysis ran on a computer with 8 GB RAM; protected model
-generation used only free-tier Google Colab capacity. Those constraints made a
-small, reproducible behavioral pilot more responsible than an under-resourced
-claim about frontier-model cognition.
+Unsupported but confident answers can undermine human oversight and become a
+safety concern in high-stakes settings. Understanding whether models track
+evidence availability internally may eventually support better uncertainty
+monitoring, but this study does not yet provide such a detector.
 
-The project is therefore meant to demonstrate research practice: isolate a
-confound, preregister a decision rule, preserve failed instruments, open a
-protected endpoint once, publish a negative result, and make the evidence
-auditable. It is not presented as the largest experiment the question merits.
+The representation result asks a different question: whether answerability is
+tracked internally even when the tested failure behavior is absent. That is a
+useful first step toward studying how models represent evidence availability,
+but causal interventions and broader replications are required before making
+stronger claims.
 
-With greater research-compute access, a substantially more ambitious study
-could test several model families and scales, increase the number of unseen
-units and templates, run multiple registered seeds, and add properly powered
-activation and causal-intervention studies.
+## Research Standards
 
-## What a Stronger Follow-Up Should Test
+The project was designed to make negative and positive results equally
+auditable:
 
-A new study should preserve v2 unchanged and register a new endpoint before
-generating outputs:
+- hypotheses and decision rules were frozen before protected outcomes opened;
+- model revision, prompts, parser, seeds, and thresholds are hash-bound;
+- training, validation, and test units are separated;
+- protected endpoints open once and fail closed on incomplete evidence;
+- failed instruments and negative results remain in the public record; and
+- the representation result cannot retroactively rescue the behavioral result.
 
-1. Calibrate prompts on open development data to avoid near-zero unsupported
-   attempt rates and near-one answerable attempt rates.
-2. Publish a power and minimum-detectable-effect analysis before freezing the
-   sample size.
-3. Add an independent manipulation check showing that high exposure actually
-   changed the intended familiarity proxy.
-4. Replicate the same 2x2 estimand on at least one larger model and one
-   independent model family.
-5. Use held-out activation probes to test whether familiarity and
-   answerability are internally separable before the answer is produced.
-6. If the behavioral and probe gates pass, use controlled activation patching
-   with shuffled, reversed, orthogonal, and norm-matched controls to test local
-   causal influence.
+The originally registered mechanistic pilot was gated on a positive behavioral
+result and was therefore not run. The later representation pilot and v3
+replication were frozen as separate analyses. They answer a different question
+and cannot change the closed behavioral decision.
 
-The decisive next question is not whether v2 can be made positive. It is
-whether a better-powered, multi-model design can distinguish a genuine absence
-of the effect from floor behavior, limited manipulation strength, and
-model-specific behavior.
+One protocol deviation is disclosed: the behavioral v2 snapshot lacks its
+required pre-outcome power/minimum-detectable-effect artifact. This does not
+change the registered endpoint decision, but it limits v2 to an imprecise
+pilot rather than a definitive null result.
 
-### Preserved R11 record
+## Limitations and Next Steps
 
-- The original Source-v5 corpus was `not_evaluable` because too few entities
-  passed its frozen familiarity screen.
-- R9 and R10 also failed their registered instrument-readiness gates. These
-  feasibility outcomes remain preserved.
-- R11 used a larger candidate pool and five preregistered relation questions
-  per domain. Development data selected three relations deterministically.
-- The strict-score yield was sufficient, but an independent human audit found
-  14 disallowed ambiguity, granularity, or alias defects in its 24-item packet.
-- R11 is therefore `not_evaluable`. Construction validation and confirmatory
-  endpoints were not opened, so this outcome is not evidence for or against
-  the main hypothesis.
-- The familiarity rule remains unchanged: an entity must be answered
-  correctly on at least two of three selected questions.
+The most useful follow-up would:
 
-The committed R11 source contains:
+1. repeat the design on larger and independent model families;
+2. increase the number of unseen entities and prompt templates;
+3. publish a power analysis before opening model outcomes;
+4. compare activations with stronger symbolic and sequence-aware baselines;
+5. test whether the representation result survives multiple seeds; and
+6. use controlled activation replacement with shuffled, reversed, orthogonal,
+   and norm-matched controls to test local causal influence.
 
-| Split | Entities per domain | Relations per entity |
-|---|---:|---:|
-| Open instrument development | 32 | 5 |
-| Construction validation | 16 | 5 |
+The current study was intentionally scoped for an 8 GB local machine and
+free-tier Colab compute. Local hardware handled tests, audits, analysis, and
+reporting; Colab handled pinned Gemma generation and activation extraction.
 
-The four registered domains are creative works, business enterprises, people,
-and countries. Development and validation share no entity IDs.
-
-The full R11 outcome and auditable artifacts are published in
-[the R11 outcome report](docs/results/source_v6_r11_instrument_development_outcome.md).
-
-## What R11 Can Show
-
-A passing R11 gate shows only that the familiarity-screening instrument is
-feasible and stable on fresh entities.
-
-It does **not** show that:
-
-- familiarity causes hallucinations;
-- the main Familiarity-by-Answerability hypothesis is true;
-- Gemma represents human-like belief, knowledge, or intuition;
-- the result generalizes to other tasks or models.
-
-The original Same-String v1 corpus is also `not_evaluable`: its ratings
-compiled, but only 73 of 192 pairs passed the frozen naturalness rule and the
-registered split/domain quotas could not be filled. The separately registered
-balanced feasibility pilot v2 can provide limited evidence for the
-contextual-exposure interaction. It cannot reinterpret R11 or v1. Null and
-`not_evaluable` outcomes remain valid reportable results.
-
-## Reproduce Locally
+## Reproduce
 
 Use Python 3.12:
 
@@ -280,61 +235,65 @@ python -m pytest -q \
   -k "same_string or notebook"
 ```
 
-The 8 GB local machine is suitable for tests, audits, analysis, and reporting.
-The pinned Gemma generation requires a Colab GPU in the current setup.
+The local workflow covers tests, audits, analysis, and reporting. Regenerating
+Gemma outputs and activations requires a suitable Colab GPU and a Hugging Face
+token stored through Colab Secrets. Never paste or commit access tokens.
 
-## Reproduce the Same-String Pilot
+Regenerate the README figure from the published result JSON files with:
 
-Read the frozen
-[v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
-and open the thin
-[v2 Colab launcher](notebooks/fa_same_string_feasibility_v2_colab.ipynb). The
-notebook first reproduces the immutable v1 ratings, then deterministically
-allocates 52 accepted pairs before any model compute. It uses only repository
-CLI commands, a pinned commit, Colab Secrets, and a persistent Drive
-checkpoint.
+```bash
+python tools/plot_readme_summary.py
+```
 
-## Research Integrity
+## Key Evidence
 
-- The Gemma model, tokenizer, chat template, parser, seeds, and thresholds are
-  pinned and hash-bound.
-- Development, validation, and confirmatory entities are separated.
-- Protected endpoints open once and fail closed on incomplete evidence.
-- Instrument changes are documented before new model outputs are inspected.
-- Negative runs remain part of the public record.
-- No access token should ever be pasted into code or committed.
+| Artifact | Purpose |
+|---|---|
+| [Behavioral amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md) | Frozen v2 design and decision rules |
+| [Behavioral Colab launcher](notebooks/fa_same_string_feasibility_v2_colab.ipynb) | Thin launcher for the pinned, resumable model run |
+| [Behavioral result](docs/results/same_string_feasibility_v2_behavior_result.md) | Human-readable behavioral outcome |
+| [Behavioral result JSON](docs/results/same_string_feasibility_v2_behavior_result.json) | Machine-readable behavioral outcome |
+| [Behavioral evidence snapshot](release/familiarity_answerability/README.md) | Content-addressed protected evidence record |
+| [Representation pilot](docs/results/same_string_representation_pilot_v2.md) | Exploratory four-unit activation study |
+| [Representation v3 result](release/familiarity_answerability/representation_replication_v3/analysis/result.md) | Larger held-out representation replication |
+| [Representation v3 JSON](release/familiarity_answerability/representation_replication_v3/analysis/result.json) | Machine-readable replication outcome |
+| [Claim boundaries](docs/familiarity_answerability_claims.md) | Registered limits on interpretation |
 
-## Key Documents
+<details>
+<summary><strong>Technical history and preserved failed instruments</strong></summary>
 
-Active pilot:
+### Earlier real-entity instrument
 
-- [Balanced feasibility v2 amendment](docs/amendments/2026-08-01-fa-same-string-balanced-pilot-v2.md)
-- [Balanced feasibility v2 Colab](notebooks/fa_same_string_feasibility_v2_colab.ipynb)
-- [Balanced feasibility v2 behavioral result](docs/results/same_string_feasibility_v2_behavior_result.md)
-- [Balanced feasibility v2 machine-readable result](docs/results/same_string_feasibility_v2_behavior_result.json)
-- [Content-addressed v2 evidence snapshot](release/familiarity_answerability/README.md)
+The original Source-v5 corpus and later R9/R10 runs did not satisfy their
+registered readiness gates. R11 produced enough strictly scored candidates,
+but an independent audit found 14 disallowed ambiguity, granularity, or alias
+defects in its 24-item packet. R11 is therefore `not_evaluable`.
 
-Preserved Same-String v1 record:
+These runs tested whether the measurement instrument was ready. Their failure
+is not evidence for or against the familiarity-by-answerability hypothesis.
+Their records remain public so that corpus changes and stopping decisions are
+auditable:
 
-- [Same-String primary runbook](docs/fa_same_string_primary_runbook.md)
-- [Same-String design](docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md)
-- [Same-String amendment](docs/amendments/2026-08-01-fa-same-string-primary.md)
-- [Same-String implementation plan](docs/superpowers/plans/2026-08-01-same-string-primary-hybrid-implementation.md)
-- [Same-String preflight result](docs/results/same_string_primary_preflight.md)
-
-Preserved R11 record:
-
+- [R11 outcome report](docs/results/source_v6_r11_instrument_development_outcome.md)
 - [R11 runbook](docs/fa_source_v6_r11_runbook.md)
-- [R11 instrument amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
-- [R11 negative result](docs/results/source_v6_r11_instrument_development_outcome.md)
-- [Preregistration](docs/familiarity_answerability_preregistration.md)
-- [Claim boundaries](docs/familiarity_answerability_claims.md)
+- [R11 amendment](docs/amendments/2026-07-28-fa-source-v6-r11-surplus-instrument-development.md)
 
-Supporting protocols:
+### Same-String v1
 
-- [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
+The first Same-String corpus was also `not_evaluable`: only 73 of 192 pairs
+passed the frozen naturalness rule, so registered split and domain quotas could
+not be filled. It was preserved rather than silently repaired after the fact.
+
+- [Same-String v1 runbook](docs/fa_same_string_primary_runbook.md)
+- [Same-String v1 design](docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md)
+- [Same-String v1 amendment](docs/amendments/2026-08-01-fa-same-string-primary.md)
+
+### Full protocol record
+
+- [Original preregistration](docs/familiarity_answerability_preregistration.md)
 - [Main execution runbook](docs/familiarity_answerability_runbook.md)
-- [Implementation plan](docs/superpowers/plans/2026-07-22-familiarity-answerability-implementation.md)
+- [Human naturalness protocol](docs/fa_naturalness_rating_protocol.md)
+- [Historical amendments](docs/amendments)
+- [Historical results](docs/results)
 
-Historical corrections and failed instrument attempts are retained under
-[`docs/amendments`](docs/amendments) and [`docs/results`](docs/results).
+</details>
