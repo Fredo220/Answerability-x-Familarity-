@@ -245,6 +245,15 @@ Regenerate the README figure from the published result JSON files with:
 python tools/plot_readme_summary.py
 ```
 
+## Acknowledgments
+
+**Sameh Aburadi** supported the independent execution and quality-control work
+for this project. His contributions included assistance with the pinned
+Gemma/Colab runs and artifact review, candidate and ground-truth quality checks,
+human-rating and audit materials, and identifying ambiguity, granularity, and
+alias defects in the evaluated corpus. These checks helped prevent instrument
+problems from being misreported as evidence about the research hypothesis.
+
 ## Key Evidence
 
 | Artifact | Purpose |
