@@ -254,7 +254,7 @@ def test_readme_separates_completed_results_from_pending_causal_followup():
     assert "Supported on this controlled task" in text
     assert "Causal follow-up: execution-ready, no result yet" in text
     assert "Software verified; live run pending" in text
-    assert "quantized Gemma forward pass has not been run" in text
+    assert re.search(r"quantized Gemma forward pass has\s+not been run", text)
     assert "432 atomic receipts" in text
     assert "fa_answerability_causal_pilot_colab.ipynb" in text
     assert "fa_answerability_causal_pilot_runbook.md" in text
