@@ -287,6 +287,54 @@ class VerifiedV3TrainingInputs:
 
 
 @dataclass(frozen=True)
+class LabelShuffledDirectionArtifact:
+    """A unit-label-shuffled direction reproducible from bound v3 training bytes."""
+
+    v3_manifest_path: Path
+    activation_manifest_path: Path
+    expected_model_id: str
+    expected_model_revision: str
+    expected_tokenizer_id: str
+    expected_tokenizer_revision: str
+    expected_chat_template_sha256: str
+    source: V3DirectionProvenance
+    layer_id: int
+    unit_permutation: tuple[str, ...]
+    vector: np.ndarray
+    artifact_sha256: str
+
+    def __post_init__(self) -> None:
+        if self.layer_id not in CAUSAL_VALIDATION_LAYERS:
+            raise ValueError("label shuffle artifact layer is not registered")
+        if not isinstance(self.source, V3DirectionProvenance):
+            raise ValueError("label shuffle artifact requires verified v3 provenance")
+        vector = np.array(self.vector, dtype=np.float64, copy=True, order="C")
+        if vector.ndim != 1 or not vector.size or not np.isfinite(vector).all():
+            raise ValueError("label shuffle artifact vector must be finite")
+        if not np.isclose(np.linalg.norm(vector), 1.0, rtol=1e-9, atol=1e-9):
+            raise ValueError("label shuffle artifact vector must have unit L2 norm")
+        permutation = tuple(str(unit_id) for unit_id in self.unit_permutation)
+        if not permutation or len(set(permutation)) != len(permutation):
+            raise ValueError("label shuffle artifact permutation must be unique")
+        for value, name in (
+            (self.expected_model_id, "expected model ID"),
+            (self.expected_model_revision, "expected model revision"),
+            (self.expected_tokenizer_id, "expected tokenizer ID"),
+            (self.expected_tokenizer_revision, "expected tokenizer revision"),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be nonempty")
+        _require_sha256(self.expected_chat_template_sha256, "expected chat template hash")
+        vector.setflags(write=False)
+        object.__setattr__(self, "v3_manifest_path", Path(self.v3_manifest_path).absolute())
+        object.__setattr__(self, "activation_manifest_path", Path(self.activation_manifest_path).absolute())
+        object.__setattr__(self, "unit_permutation", permutation)
+        object.__setattr__(self, "vector", vector)
+        if self.artifact_sha256 != _sha256(_label_shuffle_record(self, include_hash=False)):
+            raise ValueError("label shuffle artifact hash does not match content")
+
+
+@dataclass(frozen=True)
 class CausalExpectedProvenance:
     corpus_sha256: str
     direction_bundle_sha256: str
@@ -929,6 +977,139 @@ def fit_train_only_directions(source: VerifiedV3TrainingInputs) -> DirectionBund
         _activations_at_user_prompt_end(source.records),
         source.source,
     )
+
+
+def build_label_shuffled_direction(
+    source: VerifiedV3TrainingInputs,
+    *,
+    layer_id: int,
+    unit_permutation: Sequence[str],
+) -> LabelShuffledDirectionArtifact:
+    """Build one frozen unit-label-shuffled control from verified v3 training inputs."""
+    if not isinstance(source, VerifiedV3TrainingInputs):
+        raise ValueError("label shuffle artifact requires verified v3 training inputs")
+    verified = load_v3_training_direction_inputs(
+        v3_manifest_path=source.v3_manifest_path,
+        activation_manifest_path=source.activation_manifest_path,
+        expected_model_id=source.expected_model_id,
+        expected_model_revision=source.expected_model_revision,
+        expected_tokenizer_id=source.expected_tokenizer_id,
+        expected_tokenizer_revision=source.expected_tokenizer_revision,
+        expected_chat_template_sha256=source.expected_chat_template_sha256,
+    )
+    return _build_label_shuffled_direction_from_verified(
+        verified, layer_id=layer_id, unit_permutation=unit_permutation
+    )
+
+
+def verify_label_shuffled_direction(
+    artifact: LabelShuffledDirectionArtifact,
+) -> LabelShuffledDirectionArtifact:
+    """Recompute a shuffle artifact from its bound v3 bytes before execution."""
+    if not isinstance(artifact, LabelShuffledDirectionArtifact):
+        raise ValueError("label shuffle artifact must be typed")
+    verified = load_v3_training_direction_inputs(
+        v3_manifest_path=artifact.v3_manifest_path,
+        activation_manifest_path=artifact.activation_manifest_path,
+        expected_model_id=artifact.expected_model_id,
+        expected_model_revision=artifact.expected_model_revision,
+        expected_tokenizer_id=artifact.expected_tokenizer_id,
+        expected_tokenizer_revision=artifact.expected_tokenizer_revision,
+        expected_chat_template_sha256=artifact.expected_chat_template_sha256,
+    )
+    rebuilt = _build_label_shuffled_direction_from_verified(
+        verified,
+        layer_id=artifact.layer_id,
+        unit_permutation=artifact.unit_permutation,
+    )
+    if rebuilt.artifact_sha256 != artifact.artifact_sha256:
+        raise ValueError("label shuffle artifact does not reproduce from bound v3 bytes")
+    return rebuilt
+
+
+def _build_label_shuffled_direction_from_verified(
+    source: VerifiedV3TrainingInputs,
+    *,
+    layer_id: int,
+    unit_permutation: Sequence[str],
+) -> LabelShuffledDirectionArtifact:
+    if layer_id not in CAUSAL_VALIDATION_LAYERS:
+        raise ValueError("label shuffle artifact layer is not registered")
+    by_unit: dict[str, list[ReplicationPromptV3]] = {}
+    for row in source.prompts:
+        by_unit.setdefault(row.entity_unit_id, []).append(row)
+    unit_ids = tuple(sorted(by_unit))
+    permutation = tuple(str(unit_id) for unit_id in unit_permutation)
+    if len(permutation) != len(unit_ids) or set(permutation) != set(unit_ids):
+        raise ValueError("label shuffle artifact permutation must cover each training unit exactly once")
+    activations = _activations_at_user_prompt_end(source.records)
+    layer_index = CAUSAL_VALIDATION_LAYERS.index(layer_id)
+    deltas = []
+    for destination_unit, source_unit in zip(unit_ids, permutation):
+        destination_cells = {
+            (row.exposure, row.answerability): row for row in by_unit[destination_unit]
+        }
+        source_cells = {
+            (row.exposure, row.answerability): row for row in by_unit[source_unit]
+        }
+        for exposure in CAUSAL_EXPOSURES:
+            deltas.append(
+                activations[source_cells[(exposure, "target_bound")].example_id][layer_index]
+                - activations[destination_cells[(exposure, "target_unbound")].example_id][layer_index]
+            )
+    raw = np.mean(np.stack(deltas), axis=0, dtype=np.float64)
+    norm = float(np.linalg.norm(raw))
+    if not np.isfinite(norm) or norm == 0.0:
+        raise ValueError("label shuffle artifact vector has zero norm")
+    vector = np.asarray(raw / norm, dtype=np.float64)
+    record = {
+        "v3_manifest_path": str(source.v3_manifest_path),
+        "activation_manifest_path": str(source.activation_manifest_path),
+        "expected_model_id": source.expected_model_id,
+        "expected_model_revision": source.expected_model_revision,
+        "expected_tokenizer_id": source.expected_tokenizer_id,
+        "expected_tokenizer_revision": source.expected_tokenizer_revision,
+        "expected_chat_template_sha256": source.expected_chat_template_sha256,
+        "source": _v3_source_record(source.source),
+        "layer_id": layer_id,
+        "unit_permutation": list(permutation),
+        "vector": vector.tolist(),
+    }
+    return LabelShuffledDirectionArtifact(
+        v3_manifest_path=source.v3_manifest_path,
+        activation_manifest_path=source.activation_manifest_path,
+        expected_model_id=source.expected_model_id,
+        expected_model_revision=source.expected_model_revision,
+        expected_tokenizer_id=source.expected_tokenizer_id,
+        expected_tokenizer_revision=source.expected_tokenizer_revision,
+        expected_chat_template_sha256=source.expected_chat_template_sha256,
+        source=source.source,
+        layer_id=layer_id,
+        unit_permutation=permutation,
+        vector=vector,
+        artifact_sha256=_sha256(record),
+    )
+
+
+def _label_shuffle_record(
+    artifact: LabelShuffledDirectionArtifact, *, include_hash: bool = True
+) -> dict[str, Any]:
+    record = {
+        "v3_manifest_path": str(artifact.v3_manifest_path),
+        "activation_manifest_path": str(artifact.activation_manifest_path),
+        "expected_model_id": artifact.expected_model_id,
+        "expected_model_revision": artifact.expected_model_revision,
+        "expected_tokenizer_id": artifact.expected_tokenizer_id,
+        "expected_tokenizer_revision": artifact.expected_tokenizer_revision,
+        "expected_chat_template_sha256": artifact.expected_chat_template_sha256,
+        "source": _v3_source_record(artifact.source),
+        "layer_id": artifact.layer_id,
+        "unit_permutation": list(artifact.unit_permutation),
+        "vector": artifact.vector.tolist(),
+    }
+    if include_hash:
+        record["artifact_sha256"] = artifact.artifact_sha256
+    return record
 
 
 def _fit_train_only_directions_from_arrays(

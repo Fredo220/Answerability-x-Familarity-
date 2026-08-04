@@ -144,3 +144,13 @@ Two further P1 review findings required public-boundary changes:
 The new regressions initially failed because construction and audit did not
 accept a bound manifest path and fitting preserved a forged activation-index
 hash. After the fixes, the focused causal suite passed (`5 passed in 2.59s`).
+
+## Fix Round 2 Interface
+
+Added `LabelShuffledDirectionArtifact` plus builder and verifier APIs for the
+Task 3 label-shuffled control. The artifact records the exact ordered
+unit-level permutation, selected layer, recomputed normalized vector, complete
+v3 training provenance, and an artifact hash. Verification reloads the bound
+v3 prompt and activation artifacts through `load_v3_training_direction_inputs`
+and recomputes the vector before accepting it. This is infrastructure only: no
+causal validation or test output was opened.

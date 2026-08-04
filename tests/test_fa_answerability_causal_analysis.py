@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from functools import lru_cache
+import os
 
 import numpy as np
 import pytest
@@ -9,6 +11,9 @@ from trajectory_extractor.fa_answerability_causal import (
     CAUSAL_VALIDATION_LAYERS,
     CausalExpectedProvenance,
     ValidationSelection,
+    build_label_shuffled_direction,
+    fit_train_only_directions,
+    load_v3_training_direction_inputs,
 )
 from trajectory_extractor.fa_answerability_causal_analysis import (
     BOOTSTRAP_DRAWS,
@@ -46,12 +51,46 @@ RANDOM_VECTORS = tuple(
 )
 
 
+@lru_cache(maxsize=1)
+def _frozen_vectors():
+    root = "release/familiarity_answerability/representation_replication_v3"
+    source = load_v3_training_direction_inputs(
+        v3_manifest_path=f"{root}/same_string_replication_v3_manifest.json",
+        activation_manifest_path=f"{root}/activations/activations-representation_train.manifest.json",
+        expected_model_id="google/gemma-2-2b-it",
+        expected_model_revision="299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+        expected_tokenizer_id="google/gemma-2-2b-it",
+        expected_tokenizer_revision="299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+        expected_chat_template_sha256="ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+    )
+    primary = next(direction for direction in fit_train_only_directions(source).directions if direction.layer_id == 6)
+    units = tuple(sorted({row.entity_unit_id for row in source.prompts}))
+    artifact = build_label_shuffled_direction(
+        source,
+        layer_id=6,
+        unit_permutation=units[1:] + units[:1],
+    )
+    return primary, artifact
+
+
+def _random_vectors(primary):
+    vectors = []
+    for index in range(5):
+        basis = np.zeros_like(primary)
+        basis[index] = 1.0
+        residual = basis - primary * float(basis @ primary)
+        residual /= np.linalg.norm(residual)
+        vectors.append(tuple((residual * np.linalg.norm(primary)).tolist()))
+    return tuple(vectors)
+
+
 def _selection() -> ValidationSelection:
+    primary, _artifact = _frozen_vectors()
     payload = {
         "layer_id": 6,
         "multiplier": 0.5,
         "mean_bidirectional_effect": 0.1,
-        "direction_sha256": "b" * 64,
+        "direction_sha256": primary.direction_sha256,
         "corpus_sha256": "c" * 64,
         "direction_bundle_sha256": "d" * 64,
         "model_sha256": "e" * 64,
@@ -76,6 +115,7 @@ def _provenance(selection: ValidationSelection) -> CausalExpectedProvenance:
 
 
 def _seal(*, runtime_sha256="1" * 64):
+    primary, artifact = _frozen_vectors()
     return seal_causal_evaluation(
         selection=_selection(),
         expected_provenance=_provenance(_selection()),
@@ -83,10 +123,9 @@ def _seal(*, runtime_sha256="1" * 64):
         output_contract_sha256="2" * 64,
         random_seeds=(11, 12, 13, 14, 15),
         expected_unit_ids_by_split=EXPECTED_UNITS,
-        primary_vector=PRIMARY_VECTOR,
-        shuffled_vector=SHUFFLED_VECTOR,
-        frozen_label_permutation_sha256="3" * 64,
-        random_vectors=RANDOM_VECTORS,
+        primary_vector=primary.vector,
+        label_shuffle_artifact=artifact,
+        random_vectors=_random_vectors(primary.vector),
     )
 
 
@@ -288,7 +327,7 @@ def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
         "wrong_layer",
         *(f"norm_matched_random:{index}" for index in range(5)),
     }
-    assert seal.frozen_label_permutation_sha256 == "3" * 64
+    assert seal.label_shuffle_artifact.layer_id == seal.layer_id
     for vector in seal.random_vectors:
         assert np.isclose(np.linalg.norm(vector), np.linalg.norm(seal.primary_vector))
         assert np.isclose(np.dot(vector, seal.primary_vector), 0.0, atol=1e-12)
@@ -301,10 +340,9 @@ def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
             output_contract_sha256="2" * 64,
             random_seeds=(11, 12, 13, 14, 15),
             expected_unit_ids_by_split=EXPECTED_UNITS,
-            primary_vector=PRIMARY_VECTOR,
-            shuffled_vector=SHUFFLED_VECTOR,
-            frozen_label_permutation_sha256="3" * 64,
-            random_vectors=((2.0, 0.0, 0.0, 0.0, 0.0, 0.0), *RANDOM_VECTORS[1:]),
+            primary_vector=seal.primary_vector,
+            label_shuffle_artifact=seal.label_shuffle_artifact,
+            random_vectors=(tuple(2.0 * value for value in seal.primary_vector), *seal.random_vectors[1:]),
         )
 
     evidence = _evidence()
@@ -315,6 +353,19 @@ def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
         replace(
             evidence,
             control_scores=(replace(evidence.control_scores[0], audit=changed), *evidence.control_scores[1:]),
+        )
+    )
+    assert result.status == "not_evaluable"
+    assert "execution_identity_mismatch" in result.reasons
+
+
+def test_analysis_recomputes_runtime_source_and_applied_vector_hashes():
+    evidence = _evidence()
+    changed = replace(evidence.primary_scores[0].audit, applied_vector_sha256="9" * 64)
+    result = analyze_causal_evidence(
+        replace(
+            evidence,
+            primary_scores=(replace(evidence.primary_scores[0], audit=changed), *evidence.primary_scores[1:]),
         )
     )
     assert result.status == "not_evaluable"
@@ -450,6 +501,19 @@ def test_store_uses_an_atomic_exclusive_lease_for_competing_callers(tmp_path):
         with pytest.raises(RuntimeError, match="lease"):
             store.acquire(evidence.seal, SPLIT)
     assert lease.closed is True
+    with store.acquire(evidence.seal, SPLIT):
+        pass
+
+
+def test_store_flock_recovers_after_process_exit(tmp_path):
+    evidence = _evidence()
+    store = CausalAnalysisStore(tmp_path)
+    child = os.fork()
+    if child == 0:
+        store.acquire(evidence.seal, SPLIT)
+        os._exit(0)
+    _pid, status = os.waitpid(child, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
     with store.acquire(evidence.seal, SPLIT):
         pass
 

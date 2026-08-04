@@ -77,3 +77,11 @@ protected execution.
 - The pinned `google/gemma-2-2b-it` weights and tokenizer were not run locally;
   live-model compatibility remains gated on the required Colab smoke.
 - Ruff could not be run because it is absent from the checked-in environment.
+
+## Fix Round 2 Interface
+
+Exposed `vector_audit_hashes` as the public canonical source/applied vector
+hash helper. It uses the same dtype-and-shape-prefixed tensor-byte hashing as
+the temporary residual hook and computes the applied hash after the recorded
+runtime dtype cast. The Task 3 seal and analysis audit now use this exact
+format; no model was loaded for this change.

@@ -10,6 +10,7 @@ import torch
 from torch import nn
 
 from trajectory_extractor.fa_answerability_causal_runtime import (
+    vector_audit_hashes,
     generate_causal_completion,
     resolve_causal_anchor,
     score_answerability_candidates,
@@ -183,6 +184,16 @@ def test_temporary_hook_adds_once_and_preserves_decoder_output_container(output_
     assert intervention.applied_vector_sha256
     assert intervention.removed is True
     assert not layer._forward_hooks
+
+
+def test_public_vector_hashes_match_runtime_source_and_dtype_cast_bytes():
+    source = torch.tensor([0.1, -0.2, 3.0], dtype=torch.float64)
+    expected = vector_audit_hashes(source, represented_dtype="torch.float16")
+    runtime = vector_audit_hashes(source.to(torch.float16), represented_dtype="torch.float16")
+
+    assert expected.represented_dtype == "torch.float16"
+    assert expected.applied_vector_sha256 == runtime.applied_vector_sha256
+    assert expected.source_vector_sha256 != expected.applied_vector_sha256
 
 
 @pytest.mark.parametrize(

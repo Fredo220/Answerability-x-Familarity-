@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import secrets
+import fcntl
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,8 +26,11 @@ from trajectory_extractor.fa_answerability_causal import (
     CAUSAL_SPLIT_COUNTS,
     CAUSAL_VALIDATION_LAYERS,
     CausalExpectedProvenance,
+    LabelShuffledDirectionArtifact,
     ValidationSelection,
+    verify_label_shuffled_direction,
 )
+from trajectory_extractor.fa_answerability_causal_runtime import vector_audit_hashes
 
 
 BOOTSTRAP_DRAWS = 10_000
@@ -96,7 +99,6 @@ def _control_vector_artifact_hashes(
     primary: np.ndarray,
     shuffled: np.ndarray,
     random_vectors: Sequence[np.ndarray],
-    frozen_label_permutation_sha256: str,
 ) -> dict[str, str]:
     vectors = {
         "primary": primary,
@@ -111,18 +113,25 @@ def _control_vector_artifact_hashes(
         },
     }
     return {
-        name: _sha256(
-            {
-                "control": name,
-                "vector": vector.tolist(),
-                "frozen_label_permutation_sha256": (
-                    frozen_label_permutation_sha256
-                    if name == "label_shuffled_direction"
-                    else None
-                ),
-            }
-        )
+        name: vector_audit_hashes(vector, represented_dtype="torch.float64").source_vector_sha256
         for name, vector in vectors.items()
+    }
+
+
+def _control_vectors(
+    *, primary: np.ndarray, shuffled: np.ndarray, random_vectors: Sequence[np.ndarray]
+) -> dict[str, np.ndarray]:
+    return {
+        "primary": primary,
+        "no_intervention": np.zeros_like(primary),
+        "sign_reversed": primary,
+        "label_shuffled_direction": shuffled,
+        "wrong_anchor": primary,
+        "wrong_layer": primary,
+        **{
+            f"norm_matched_random:{member}": vector
+            for member, vector in enumerate(random_vectors)
+        },
     }
 
 
@@ -187,6 +196,9 @@ class ExecutionAuditHashes:
     anchor: str
     random_seeds: tuple[int, ...]
     control_vector_artifact_sha256: str = "0" * 64
+    source_vector_sha256: str = "0" * 64
+    represented_dtype: str = "torch.float64"
+    applied_vector_sha256: str = "0" * 64
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -207,6 +219,9 @@ class ExecutionAuditHashes:
         if not isinstance(self.anchor, str) or not self.anchor:
             raise ValueError("execution anchor must be nonempty")
         _require_sha256(self.control_vector_artifact_sha256, "control vector artifact hash")
+        _require_sha256(self.source_vector_sha256, "source vector hash")
+        _require_sha256(self.applied_vector_sha256, "applied vector hash")
+        vector_audit_hashes(np.array([0.0]), represented_dtype=self.represented_dtype)
         seeds = tuple(self.random_seeds)
         if len(seeds) != 5 or any(type(seed) is not int for seed in seeds):
             raise ValueError("execution random seeds must contain five integers")
@@ -219,6 +234,7 @@ class ExecutionAuditHashes:
         control: str,
         *,
         member: int | None = None,
+        represented_dtype: str = "torch.float64",
     ) -> "ExecutionAuditHashes":
         if control not in ("primary", *CAUSAL_CONTROLS):
             raise ValueError("control is not registered")
@@ -235,6 +251,16 @@ class ExecutionAuditHashes:
             layer = deterministic_farthest_layer(seal.layer_id)
         elif control == "wrong_anchor":
             anchor = "target_intro_end"
+        hashes = vector_audit_hashes(
+            _control_vectors(
+                primary=np.asarray(seal.primary_vector, dtype=np.float64),
+                shuffled=np.asarray(seal.label_shuffle_artifact.vector, dtype=np.float64),
+                random_vectors=tuple(
+                    np.asarray(vector, dtype=np.float64) for vector in seal.random_vectors
+                ),
+            )[artifact_key],
+            represented_dtype=represented_dtype,
+        )
         return cls(
             corpus_sha256=seal.corpus_sha256,
             selection_sha256=seal.selection_sha256,
@@ -249,6 +275,9 @@ class ExecutionAuditHashes:
             anchor=anchor,
             random_seeds=seal.random_seeds,
             control_vector_artifact_sha256=seal.control_vector_artifact_hashes[artifact_key],
+            source_vector_sha256=hashes.source_vector_sha256,
+            represented_dtype=hashes.represented_dtype,
+            applied_vector_sha256=hashes.applied_vector_sha256,
         )
 
 
@@ -341,8 +370,7 @@ class CausalEvaluationSeal:
     random_seeds: tuple[int, ...]
     expected_unit_ids_by_split: Mapping[str, tuple[str, ...]]
     primary_vector: tuple[float, ...]
-    shuffled_vector: tuple[float, ...]
-    frozen_label_permutation_sha256: str
+    label_shuffle_artifact: LabelShuffledDirectionArtifact
     random_vectors: tuple[tuple[float, ...], ...]
     control_vector_artifact_hashes: Mapping[str, str]
     seal_sha256: str
@@ -364,10 +392,14 @@ class CausalEvaluationSeal:
         )
         expected_units = _normalize_expected_unit_ids(self.expected_unit_ids_by_split)
         primary = _vector(self.primary_vector, "primary vector")
-        shuffled = _vector(self.shuffled_vector, "shuffled vector")
+        if not isinstance(self.label_shuffle_artifact, LabelShuffledDirectionArtifact):
+            raise ValueError("seal requires a typed label shuffle artifact")
+        artifact = verify_label_shuffled_direction(self.label_shuffle_artifact)
+        if artifact.layer_id != self.layer_id:
+            raise ValueError("label shuffle artifact layer does not match selection")
+        shuffled = _vector(artifact.vector, "shuffled vector")
         if shuffled.shape != primary.shape:
             raise ValueError("shuffled vector shape does not match primary vector")
-        _require_sha256(self.frozen_label_permutation_sha256, "frozen label permutation hash")
         random_vectors = tuple(_vector(vector, "random vector") for vector in self.random_vectors)
         if len(random_vectors) != len(_RANDOM_CONTROL_MEMBERS):
             raise ValueError("seal requires five random control vectors")
@@ -388,14 +420,13 @@ class CausalEvaluationSeal:
             primary=primary,
             shuffled=shuffled,
             random_vectors=random_vectors,
-            frozen_label_permutation_sha256=self.frozen_label_permutation_sha256,
         )
         if controls != expected_hashes:
             raise ValueError("control vector artifact hashes do not match sealed vectors")
         object.__setattr__(self, "random_seeds", base.random_seeds)
         object.__setattr__(self, "expected_unit_ids_by_split", MappingProxyType(expected_units))
         object.__setattr__(self, "primary_vector", tuple(primary.tolist()))
-        object.__setattr__(self, "shuffled_vector", tuple(shuffled.tolist()))
+        object.__setattr__(self, "label_shuffle_artifact", artifact)
         object.__setattr__(self, "random_vectors", tuple(tuple(vector.tolist()) for vector in random_vectors))
         object.__setattr__(self, "control_vector_artifact_hashes", MappingProxyType(controls))
         if self.seal_sha256 != _sha256(_seal_payload(self, include_hash=False)):
@@ -411,8 +442,7 @@ def seal_causal_evaluation(
     random_seeds: Sequence[int],
     expected_unit_ids_by_split: Mapping[str, Sequence[str]],
     primary_vector: Sequence[float],
-    shuffled_vector: Sequence[float],
-    frozen_label_permutation_sha256: str,
+    label_shuffle_artifact: LabelShuffledDirectionArtifact,
     random_vectors: Sequence[Sequence[float]],
 ) -> CausalEvaluationSeal:
     """Bind selection and execution identity before causal-test score rows exist."""
@@ -435,14 +465,14 @@ def seal_causal_evaluation(
         raise ValueError("random seeds must contain five integers")
     expected_units = _normalize_expected_unit_ids(expected_unit_ids_by_split)
     primary = _vector(primary_vector, "primary vector")
-    shuffled = _vector(shuffled_vector, "shuffled vector")
+    if not isinstance(label_shuffle_artifact, LabelShuffledDirectionArtifact):
+        raise ValueError("sealing requires a typed label shuffle artifact")
+    shuffled = _vector(label_shuffle_artifact.vector, "shuffled vector")
     random = tuple(_vector(vector, "random vector") for vector in random_vectors)
-    _require_sha256(frozen_label_permutation_sha256, "frozen label permutation hash")
     controls = _control_vector_artifact_hashes(
         primary=primary,
         shuffled=shuffled,
         random_vectors=random,
-        frozen_label_permutation_sha256=frozen_label_permutation_sha256,
     )
     record = {
         "corpus_sha256": selection.corpus_sha256,
@@ -459,12 +489,15 @@ def seal_causal_evaluation(
         "random_seeds": seeds,
         "expected_unit_ids_by_split": expected_units,
         "primary_vector": primary.tolist(),
-        "shuffled_vector": shuffled.tolist(),
-        "frozen_label_permutation_sha256": frozen_label_permutation_sha256,
+        "label_shuffle_artifact": label_shuffle_artifact,
         "random_vectors": [vector.tolist() for vector in random],
         "control_vector_artifact_hashes": controls,
     }
-    return CausalEvaluationSeal(seal_sha256=_sha256(record), **record)
+    canonical_record = {
+        **record,
+        "label_shuffle_artifact": label_shuffle_artifact.artifact_sha256,
+    }
+    return CausalEvaluationSeal(seal_sha256=_sha256(canonical_record), **record)
 
 
 @dataclass(frozen=True)
@@ -757,7 +790,12 @@ def _audit_matches(
     member: int | None,
 ) -> bool:
     try:
-        return audit == ExecutionAuditHashes.for_control(seal, control, member=member)
+        return audit == ExecutionAuditHashes.for_control(
+            seal,
+            control,
+            member=member,
+            represented_dtype=audit.represented_dtype,
+        )
     except ValueError:
         return False
 
@@ -843,8 +881,7 @@ def _seal_payload(seal: CausalEvaluationSeal, *, include_hash: bool) -> dict[str
         "random_seeds": seal.random_seeds,
         "expected_unit_ids_by_split": dict(seal.expected_unit_ids_by_split),
         "primary_vector": list(seal.primary_vector),
-        "shuffled_vector": list(seal.shuffled_vector),
-        "frozen_label_permutation_sha256": seal.frozen_label_permutation_sha256,
+        "label_shuffle_artifact": seal.label_shuffle_artifact.artifact_sha256,
         "random_vectors": [list(vector) for vector in seal.random_vectors],
         "control_vector_artifact_hashes": dict(seal.control_vector_artifact_hashes),
     }
@@ -854,11 +891,11 @@ def _seal_payload(seal: CausalEvaluationSeal, *, include_hash: bool) -> dict[str
 
 
 class CausalAnalysisLease:
-    """One atomic, owner-bound lease for the protected analysis critical section."""
+    """One process-crash-safe flock held across the protected critical section."""
 
-    def __init__(self, path: Path, token: str) -> None:
+    def __init__(self, path: Path, handle: Any) -> None:
         self.path = path
-        self.token = token
+        self._handle = handle
         self.closed = False
 
     def __enter__(self) -> "CausalAnalysisLease":
@@ -871,10 +908,9 @@ class CausalAnalysisLease:
         if self.closed:
             return
         try:
-            if self.path.read_text(encoding="utf-8") != self.token:
-                raise RuntimeError("analysis lease ownership changed")
-            self.path.unlink()
+            fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
         finally:
+            self._handle.close()
             self.closed = True
 
 
@@ -914,17 +950,24 @@ class CausalAnalysisStore:
             return decision
 
     def acquire(self, seal: CausalEvaluationSeal, split: str) -> CausalAnalysisLease:
-        """Atomically reserve a split until the returned lease is closed."""
-        self.begin_or_resume(seal, split)
+        """Acquire a nonblocking Unix flock before any endpoint read or analysis."""
+        if split not in CAUSAL_TEST_SPLITS:
+            raise ValueError("causal analysis requires one test split")
         path = self._lease_path(split)
         path.parent.mkdir(parents=True, exist_ok=True)
-        token = secrets.token_hex(32)
+        handle = path.open("a+", encoding="utf-8")
         try:
-            with path.open("x", encoding="utf-8") as handle:
-                handle.write(token)
-        except FileExistsError as error:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            handle.close()
             raise RuntimeError("causal analysis lease is already held") from error
-        return CausalAnalysisLease(path, token)
+        try:
+            self.begin_or_resume(seal, split)
+        except BaseException:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+            raise
+        return CausalAnalysisLease(path, handle)
 
     def _path(self, split: str) -> Path:
         return self.root / f"{split}.json"

@@ -10,6 +10,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, is_dataclass, replace
 from typing import Any
 
+import numpy as np
 import torch
 
 from trajectory_extractor.fa_activations import (
@@ -20,6 +21,38 @@ from trajectory_extractor.fa_answerability_causal import CAUSAL_DIRECTION_ANCHOR
 
 
 TERMINAL_TOKEN_POLICY = "append_eos"
+
+
+@dataclass(frozen=True)
+class VectorAuditHashes:
+    """Canonical source and represented tensor-byte hashes for one vector."""
+
+    source_vector_sha256: str
+    applied_vector_sha256: str
+    represented_dtype: str
+
+
+def vector_audit_hashes(
+    vector: Any,
+    *,
+    represented_dtype: str | torch.dtype,
+) -> VectorAuditHashes:
+    """Hash a source vector and its runtime-dtype representation identically to hooks."""
+    if isinstance(vector, torch.Tensor):
+        source = vector.detach().clone()
+    else:
+        source = torch.from_numpy(np.array(vector, copy=True))
+    if source.ndim != 1 or source.numel() == 0 or not torch.is_floating_point(source):
+        raise ValueError("vector hashes require a nonempty floating-point vector")
+    if not bool(torch.isfinite(source).all()):
+        raise ValueError("vector hashes require finite values")
+    dtype = _runtime_dtype(represented_dtype)
+    represented = source.to(dtype=dtype)
+    return VectorAuditHashes(
+        source_vector_sha256=_tensor_sha256(source),
+        applied_vector_sha256=_tensor_sha256(represented),
+        represented_dtype=str(dtype),
+    )
 
 
 @dataclass(frozen=True)
@@ -111,7 +144,9 @@ class _TemporaryResidualAddition(AbstractContextManager):
         self.layer_id = layer_id
         self.position = position
         self._source_vector = source
-        self.source_vector_sha256 = _tensor_sha256(source)
+        self.source_vector_sha256 = vector_audit_hashes(
+            source, represented_dtype=source.dtype
+        ).source_vector_sha256
         self.applied_vector_sha256: str | None = None
         self.represented_dtype: str | None = None
         self.represented_device: str | None = None
@@ -143,7 +178,9 @@ class _TemporaryResidualAddition(AbstractContextManager):
         )
         self.represented_dtype = str(represented.dtype)
         self.represented_device = str(represented.device)
-        self.applied_vector_sha256 = _tensor_sha256(represented)
+        self.applied_vector_sha256 = vector_audit_hashes(
+            self._source_vector, represented_dtype=represented.dtype
+        ).applied_vector_sha256
         changed = hidden.clone()
         changed[0, self.position, :] = changed[0, self.position, :] + represented
         self.modified_site_count += 1
@@ -733,6 +770,18 @@ def _tensor_sha256(value: torch.Tensor) -> str:
     ).encode("utf-8")
     raw = contiguous.view(torch.uint8).numpy().tobytes(order="C")
     return hashlib.sha256(header + b"\0" + raw).hexdigest()
+
+
+def _runtime_dtype(value: str | torch.dtype) -> torch.dtype:
+    if isinstance(value, torch.dtype):
+        dtype = value
+    elif isinstance(value, str) and value.startswith("torch."):
+        dtype = getattr(torch, value.removeprefix("torch."), None)
+    else:
+        dtype = None
+    if not isinstance(dtype, torch.dtype) or not torch.empty((), dtype=dtype).is_floating_point():
+        raise ValueError("represented dtype must be a floating-point torch dtype")
+    return dtype
 
 
 def _model_device(model: Any) -> torch.device:

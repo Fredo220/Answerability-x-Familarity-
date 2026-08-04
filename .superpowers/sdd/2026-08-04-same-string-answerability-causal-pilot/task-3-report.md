@@ -119,3 +119,25 @@ artifact inputs. Final verification passed:
 
 No model was loaded and no causal validation, causal-test, or closed-study
 outcome was opened or modified during this fix round.
+
+## Fix Round 2
+
+The seal now uses the Task 2 runtime's canonical tensor-byte vector hashes for
+every source vector. Each execution audit records source hash, represented
+dtype, and applied hash; analysis recomputes both hashes from the sealed vector
+and recorded dtype before accepting a row.
+
+The opaque shuffled-label hash was replaced with the typed Task 1
+`LabelShuffledDirectionArtifact`. Sealing accepts only this artifact and
+re-verifies it from bound v3 `representation_train` prompt and activation bytes
+before use. The exact unit permutation, source artifact hashes, selected layer,
+recomputed vector, and artifact hash are all bound.
+
+The store lease now uses a nonblocking Unix `fcntl.flock` on a persistent lock
+file. `complete` acquires it before endpoint-state reads and holds it through
+analysis and the completed-state write. Kernel-managed release on process exit
+permits safe reopen after a crash without trusting a stale lock-file marker.
+
+Focused Task 1–3 verification passed with `43 passed in 37.42s`. These tests
+remain software verification only; no model or protected study outcome was
+opened.

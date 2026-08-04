@@ -11,12 +11,14 @@ from trajectory_extractor.fa_answerability_causal import (
     CAUSAL_VALIDATION_LAYERS,
     CAUSAL_VALIDATION_MULTIPLIERS,
     CausalExpectedProvenance,
+    build_label_shuffled_direction,
     ValidationCandidate,
     audit_causal_corpus,
     build_causal_corpus,
     fit_train_only_directions,
     load_v3_training_direction_inputs,
     select_causal_intervention,
+    verify_label_shuffled_direction,
     verify_causal_corpus,
     write_causal_corpus,
 )
@@ -232,6 +234,33 @@ def test_direction_fitting_uses_verified_v3_manifests_and_preserves_provenance()
     )
     refit = fit_train_only_directions(forged)
     assert refit.source.activation_index_sha256 == source.source.activation_index_sha256
+
+
+def test_label_shuffle_artifact_recomputes_from_bound_v3_training_bytes():
+    root = "release/familiarity_answerability/representation_replication_v3"
+    source = load_v3_training_direction_inputs(
+        v3_manifest_path=f"{root}/same_string_replication_v3_manifest.json",
+        activation_manifest_path=f"{root}/activations/activations-representation_train.manifest.json",
+        expected_model_id="google/gemma-2-2b-it",
+        expected_model_revision="299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+        expected_tokenizer_id="google/gemma-2-2b-it",
+        expected_tokenizer_revision="299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+        expected_chat_template_sha256="ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+    )
+    unit_ids = tuple(sorted({row.entity_unit_id for row in source.prompts}))
+    artifact = build_label_shuffled_direction(
+        source,
+        layer_id=6,
+        unit_permutation=unit_ids[1:] + unit_ids[:1],
+    )
+
+    assert artifact.layer_id == 6
+    assert artifact.unit_permutation == unit_ids[1:] + unit_ids[:1]
+    assert np.isclose(np.linalg.norm(artifact.vector), 1.0)
+    assert verify_label_shuffled_direction(artifact).artifact_sha256 == artifact.artifact_sha256
+
+    with pytest.raises(ValueError, match="shuffle artifact"):
+        verify_label_shuffled_direction(replace(artifact, vector=artifact.vector * -1.0))
 
 
 def test_validation_selection_is_fixed_to_causal_validation_and_deterministic(tmp_path):
