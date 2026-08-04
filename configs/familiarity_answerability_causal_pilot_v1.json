@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "profile": "confirmatory",
+  "study_id": "same-string-answerability-causal-pilot-v1",
+  "run_id": "same-string-answerability-causal-pilot-v1",
+  "model_id": "google/gemma-2-2b-it",
+  "model_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "tokenizer_revision": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
+  "chat_template_sha256": "ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
+  "split_seed": 20260804,
+  "split_counts": {
+    "causal_validation": 12,
+    "causal_entity_test": 18,
+    "causal_template_test": 18
+  },
+  "factorial_cells": {
+    "exposure": ["low_exposure", "high_exposure"],
+    "answerability": ["target_unbound", "target_bound"]
+  },
+  "direction": {
+    "source_split": "representation_train",
+    "anchor": "user_prompt_end",
+    "layers": [0, 6, 12, 18, 25],
+    "scale": "median_positive_paired_projection_gap"
+  },
+  "validation_selection": {
+    "split": "causal_validation",
+    "multipliers": [0.25, 0.5, 1.0],
+    "invalid_output_rate_max": 0.05,
+    "bound_accuracy_drop_max": 0.05,
+    "tie_break": ["smaller_multiplier", "earlier_layer"]
+  },
+  "statistics": {
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 20260804,
+    "sign_flip_draws": 9999,
+    "sign_flip_seed": 20260804
+  },
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 16,
+    "temperature": 0.0
+  }
+}
