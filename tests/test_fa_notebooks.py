@@ -12,6 +12,12 @@ NOTEBOOK = ROOT / "notebooks" / "fa_same_string_primary_colab.ipynb"
 V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
 CAUSAL_NOTEBOOK = ROOT / "notebooks" / "fa_answerability_causal_pilot_colab.ipynb"
 CAUSAL_RUNBOOK = ROOT / "docs" / "fa_answerability_causal_pilot_runbook.md"
+CAUSAL_REPLICATION_NOTEBOOK = (
+    ROOT / "notebooks" / "fa_answerability_causal_replication_v2_colab.ipynb"
+)
+CAUSAL_REPLICATION_RUNBOOK = (
+    ROOT / "docs" / "fa_answerability_causal_replication_v2_runbook.md"
+)
 CAUSAL_COLAB_REQUIREMENTS = ROOT / "requirements" / "fa-causal-colab.lock"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
@@ -49,6 +55,84 @@ def causal_notebook_text() -> str:
     return "\n".join(
         "".join(cell.get("source", ())) for cell in payload.get("cells", ())
     )
+
+
+def causal_replication_notebook_text() -> str:
+    payload = json.loads(CAUSAL_REPLICATION_NOTEBOOK.read_text(encoding="utf-8"))
+    return "\n".join(
+        "".join(cell.get("source", ())) for cell in payload.get("cells", ())
+    )
+
+
+def test_causal_replication_colab_uses_the_frozen_pin_and_keeps_secrets_out():
+    text = causal_replication_notebook_text()
+
+    assert (
+        'PINNED_REPO_COMMIT = "26188c9b9105d96446c0ea276fc84be5e444bd0e"'
+        in text
+    )
+    assert "__PINNED_COMMIT__" not in text
+    assert 'os.environ.get("HF_TOKEN")' in text
+    assert 'userdata.get("HF_TOKEN")' in text
+    assert not re.search(r"hf_[A-Za-z0-9]{20,}", text)
+    assert "requirements/fa-causal-colab.lock" in text
+    assert text.count("HFCausalRunner.from_pretrained") == 1
+
+
+def test_causal_replication_colab_binds_v2_root_config_and_locked_validation():
+    text = causal_replication_notebook_text()
+
+    assert "configs/familiarity_answerability_causal_replication_v2.json" in text
+    assert 'Path("/content/fa-causal-replication-v2")' in text
+    assert 'Path("/content/drive/MyDrive/fa-causal-replication-v2")' in text
+    assert "fa-causal-pilot-v1" not in text
+    assert 'config.validation_selection["mode"] == "locked_from_v1"' in text
+    assert 'config.validation_selection["locked_layer"] == 18' in text
+    assert 'config.validation_selection["locked_multiplier"] == 1.0' in text
+    assert 'selection["layer_id"] == 18' in text
+    assert 'selection["multiplier"] == 1.0' in text
+
+
+def test_causal_replication_colab_runs_complete_resumable_schedule_and_downloads_zip():
+    text = causal_replication_notebook_text()
+    positions = [
+        text.index(name)
+        for name in (
+            "prepare_causal",
+            "run_causal_validation",
+            "expected_causal_shards",
+            "run_causal_shard",
+            "evaluate_causal",
+            "make_archive",
+            "files.download",
+        )
+    ]
+
+    assert positions == sorted(positions)
+    assert "assert len(schedule) == 432" in text
+    assert "resume=True" in text
+    assert "Each receipt is atomic" in text
+    assert "One-use protected evaluation" in text
+    assert 'result["study_id"]' not in text
+    assert "same-string-answerability-causal-replication-v2" in text
+
+
+def test_causal_replication_runbook_states_pin_resume_and_claim_boundaries():
+    text = CAUSAL_REPLICATION_RUNBOOK.read_text(encoding="utf-8")
+
+    assert "26188c9b9105d96446c0ea276fc84be5e444bd0e" in text
+    assert re.search(r"`[0-9a-f]{40}`", text)
+    assert "familiarity_answerability_causal_replication_v2.json" in text
+    assert "fa-causal-replication-v2" in text
+    assert "locked" in text.casefold()
+    assert "layer 18" in text.casefold()
+    assert "multiplier 1.0" in text.casefold()
+    assert "432" in text
+    assert "resume" in text.casefold()
+    assert "not_evaluable" in text
+    assert "not_supported" in text
+    assert "causally_supported" in text
+    assert "does not establish general metacognition" in text
 
 
 def test_causal_colab_is_pinned_secret_safe_and_single_load():
