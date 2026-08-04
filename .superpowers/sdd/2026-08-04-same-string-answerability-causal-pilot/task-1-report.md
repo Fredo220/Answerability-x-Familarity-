@@ -122,3 +122,25 @@ The 14-test command covered the causal contracts plus the existing v3 corpus
 and representation suites. The source-provenance test loads the released v3
 training activation manifest and verifies its typed records; no model forward
 pass, causal validation result, or causal-test output was run or opened.
+
+## Fix Round 2
+
+Two further P1 review findings required public-boundary changes:
+
+1. `fit_train_only_directions` now discards the supplied loaded records for
+   fitting purposes and immediately calls `load_v3_training_direction_inputs`
+   again using the bound v3 prompt-manifest path, activation-manifest path,
+   and expected model/tokenizer pins. This re-verifies the v3 prompt manifest
+   and prompt-file bytes, activation manifest/index/NPZ bytes, prompt-token
+   identities, and model/tokenizer provenance immediately before extracting
+   the direction. Forged fields on a directly constructed
+   `VerifiedV3TrainingInputs` object cannot enter the resulting bundle.
+2. The public causal corpus construction, audit, and verification APIs now
+   require `v3_manifest_path`, not a sequence of v3 prompt objects. The
+   manifest loader verifies the safe `prompts_file` binding, `prompts_sha256`,
+   canonical manifest self-hash, study ID, row and unit counts, split counts,
+   and typed prompt records before deriving v3 exclusion identities.
+
+The new regressions initially failed because construction and audit did not
+accept a bound manifest path and fitting preserved a forged activation-index
+hash. After the fixes, the focused causal suite passed (`5 passed in 2.59s`).

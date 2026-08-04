@@ -21,6 +21,7 @@ from trajectory_extractor.fa_answerability_causal import (
     write_causal_corpus,
 )
 from trajectory_extractor.fa_same_string_replication_v3 import build_replication_corpus
+from trajectory_extractor.fa_same_string_replication_v3 import write_replication_corpus
 
 
 class _CharacterTokenizer:
@@ -93,11 +94,16 @@ def _full_grid(*, unit_ids, provenance):
     )
 
 
+def _v3_manifest_path(tmp_path, tokenizer):
+    corpus = build_replication_corpus(tokenizer)
+    return corpus, write_replication_corpus(corpus, tmp_path).manifest
+
+
 def test_causal_corpus_is_fresh_complete_and_deterministic(tmp_path):
     tokenizer = _CharacterTokenizer()
-    v3 = build_replication_corpus(tokenizer)
-    first = build_causal_corpus(tokenizer, v3_prompts=v3.prompts)
-    second = build_causal_corpus(tokenizer, v3_prompts=v3.prompts)
+    _v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    first = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
+    second = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
 
     assert first.manifest_sha256 == second.manifest_sha256
     assert len(first.prompts) == 192
@@ -106,13 +112,17 @@ def test_causal_corpus_is_fresh_complete_and_deterministic(tmp_path):
         assert len({row.entity_unit_id for row in first.prompts if row.split == split}) == count
 
     paths = write_causal_corpus(first, tmp_path)
-    assert verify_causal_corpus(paths.manifest, tokenizer, v3_prompts=v3.prompts).manifest_sha256 == first.manifest_sha256
+    assert verify_causal_corpus(
+        paths.manifest,
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    ).manifest_sha256 == first.manifest_sha256
 
 
 def test_causal_corpus_rejects_tampered_label_incomplete_unit_and_token_mismatch(tmp_path):
     tokenizer = _CharacterTokenizer()
-    v3 = build_replication_corpus(tokenizer)
-    corpus = build_causal_corpus(tokenizer, v3_prompts=v3.prompts)
+    _v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    corpus = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
     paths = write_causal_corpus(corpus, tmp_path)
     records = paths.prompts.read_text(encoding="utf-8").splitlines()
     tampered = json.loads(records[0])
@@ -120,49 +130,56 @@ def test_causal_corpus_rejects_tampered_label_incomplete_unit_and_token_mismatch
     records[0] = json.dumps(tampered, sort_keys=True, separators=(",", ":"))
     paths.prompts.write_text("\n".join(records) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="hash|canonical|reconstruct"):
-        verify_causal_corpus(paths.manifest, tokenizer, v3_prompts=v3.prompts)
+        verify_causal_corpus(
+            paths.manifest,
+            tokenizer,
+            v3_manifest_path=v3_manifest_path,
+        )
 
-    incomplete = audit_causal_corpus(corpus.prompts[:-1], tokenizer, v3_prompts=v3.prompts)
+    incomplete = audit_causal_corpus(
+        corpus.prompts[:-1],
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    )
     assert not incomplete.passed
     assert "complete_2x2_units" in incomplete.violations
 
     mismatch = replace(corpus.prompts[0], rendered_token_ids=(99,))
     token_audit = audit_causal_corpus(
-        (mismatch, *corpus.prompts[1:]), tokenizer, v3_prompts=v3.prompts
+        (mismatch, *corpus.prompts[1:]),
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
     )
     assert not token_audit.passed
     assert "tokenizer_replay" in token_audit.violations
 
 
-def test_causal_corpus_requires_v3_exclusions_and_isolates_all_causal_identities():
+def test_causal_corpus_requires_bound_v3_manifest_and_isolates_all_causal_identities(tmp_path):
     tokenizer = _CharacterTokenizer()
-    v3 = build_replication_corpus(tokenizer)
-    with pytest.raises(ValueError, match="v3 exclusions"):
+    v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    with pytest.raises(TypeError):
         build_causal_corpus(tokenizer)
 
-    corpus = build_causal_corpus(tokenizer, v3_prompts=v3.prompts)
-    with pytest.raises(ValueError, match="v3 exclusions"):
-        audit_causal_corpus(corpus.prompts, tokenizer)
-    with pytest.raises(ValueError, match="complete v3 exclusions"):
+    corpus = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
+    with pytest.raises(TypeError):
         audit_causal_corpus(
             corpus.prompts,
             tokenizer,
-            v3_prompts=tuple(
-                row
-                for row in v3.prompts
-                if row.example_id
-                != next(item.example_id for item in v3.prompts if item.split == "entity_test")
-            ),
+            v3_prompts=v3.prompts,
         )
 
     v3_test_prompt = next(row for row in v3.prompts if row.split == "entity_test")
     reused_v3 = corpus.prompts[0]
     object.__setattr__(reused_v3, "target_text", v3_test_prompt.target_text)
-    audit = audit_causal_corpus(corpus.prompts, tokenizer, v3_prompts=v3.prompts)
+    audit = audit_causal_corpus(
+        corpus.prompts,
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    )
     assert not audit.passed
     assert "v3_test_identity_isolation" in audit.violations
 
-    corpus = build_causal_corpus(tokenizer, v3_prompts=v3.prompts)
+    corpus = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
     validation_name = next(
         row.target_text for row in corpus.prompts if row.split == "causal_validation"
     )
@@ -170,7 +187,11 @@ def test_causal_corpus_requires_v3_exclusions_and_isolates_all_causal_identities
         row for row in corpus.prompts if row.split == "causal_entity_test"
     )
     object.__setattr__(entity_prompt, "target_text", validation_name)
-    audit = audit_causal_corpus(corpus.prompts, tokenizer, v3_prompts=v3.prompts)
+    audit = audit_causal_corpus(
+        corpus.prompts,
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    )
     assert not audit.passed
     assert "causal_identity_disjointness" in audit.violations
 
@@ -205,10 +226,18 @@ def test_direction_fitting_uses_verified_v3_manifests_and_preserves_provenance()
             expected_chat_template_sha256="ecd6ae513fe103f0eb62e8ab5bfa8d0fe45c1074fa398b089c93a7e70c15cfd6",
         )
 
+    forged = replace(
+        source,
+        source=replace(source.source, activation_index_sha256="a" * 64),
+    )
+    refit = fit_train_only_directions(forged)
+    assert refit.source.activation_index_sha256 == source.source.activation_index_sha256
 
-def test_validation_selection_is_fixed_to_causal_validation_and_deterministic():
+
+def test_validation_selection_is_fixed_to_causal_validation_and_deterministic(tmp_path):
     tokenizer = _CharacterTokenizer()
-    corpus = build_causal_corpus(tokenizer, v3_prompts=build_replication_corpus(tokenizer).prompts)
+    _v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    corpus = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
     units = tuple(
         sorted({row.entity_unit_id for row in corpus.prompts if row.split == "causal_validation"})
     )

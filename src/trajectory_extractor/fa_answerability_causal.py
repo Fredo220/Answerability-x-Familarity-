@@ -247,6 +247,13 @@ class V3DirectionProvenance:
 
 @dataclass(frozen=True)
 class VerifiedV3TrainingInputs:
+    v3_manifest_path: Path
+    activation_manifest_path: Path
+    expected_model_id: str
+    expected_model_revision: str
+    expected_tokenizer_id: str
+    expected_tokenizer_revision: str
+    expected_chat_template_sha256: str
     prompts: tuple[ReplicationPromptV3, ...]
     records: tuple[ActivationRecord, ...]
     source: V3DirectionProvenance
@@ -260,6 +267,21 @@ class VerifiedV3TrainingInputs:
             raise ValueError("verified inputs must contain representation_train rows only")
         if {row.example_id for row in prompts} != {row.example_id for row in records}:
             raise ValueError("verified v3 activation identities do not match prompts")
+        for value, name in (
+            (self.expected_model_id, "expected model ID"),
+            (self.expected_model_revision, "expected model revision"),
+            (self.expected_tokenizer_id, "expected tokenizer ID"),
+            (self.expected_tokenizer_revision, "expected tokenizer revision"),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be nonempty")
+        _require_sha256(self.expected_chat_template_sha256, "expected chat template hash")
+        object.__setattr__(self, "v3_manifest_path", Path(self.v3_manifest_path).absolute())
+        object.__setattr__(
+            self,
+            "activation_manifest_path",
+            Path(self.activation_manifest_path).absolute(),
+        )
         object.__setattr__(self, "prompts", prompts)
         object.__setattr__(self, "records", records)
 
@@ -442,10 +464,9 @@ def _unit_allocation() -> tuple[tuple[str, int, str], ...]:
 
 
 def build_causal_corpus(
-    tokenizer: Any, *, v3_prompts: Sequence[ReplicationPromptV3] | None = None
+    tokenizer: Any, *, v3_manifest_path: str | Path
 ) -> CausalCorpus:
-    if v3_prompts is None:
-        raise ValueError("causal corpus construction requires v3 exclusions")
+    _prompts, _manifest, _manifest_bytes = _load_v3_prompt_artifact(v3_manifest_path)
     prompts = []
     for split, unit_index, family in _unit_allocation():
         target = f"Causa{2 * unit_index:04d}"
@@ -492,7 +513,11 @@ def build_causal_corpus(
                 )
                 prompts.append(CausalPrompt(example_id=example_id, **fields))
     prepared = tuple(sorted(prompts, key=lambda row: row.example_id))
-    audit = audit_causal_corpus(prepared, tokenizer, v3_prompts=v3_prompts)
+    audit = audit_causal_corpus(
+        prepared,
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    )
     return CausalCorpus(
         prompts=prepared,
         audit=audit,
@@ -507,6 +532,53 @@ def _prompt_record(row: CausalPrompt) -> dict[str, Any]:
     value["target_query_span"] = list(row.target_query_span)
     value["rendered_token_ids"] = list(row.rendered_token_ids)
     return value
+
+
+def _v3_prompt_record(row: ReplicationPromptV3) -> dict[str, Any]:
+    value = asdict(row)
+    value["target_intro_span"] = list(row.target_intro_span)
+    value["target_query_span"] = list(row.target_query_span)
+    value["rendered_token_ids"] = list(row.rendered_token_ids)
+    return value
+
+
+def _load_v3_prompt_artifact(
+    v3_manifest_path: str | Path,
+) -> tuple[tuple[ReplicationPromptV3, ...], dict[str, Any], bytes]:
+    path = Path(v3_manifest_path).absolute()
+    try:
+        manifest_bytes = path.read_bytes()
+        manifest = json.loads(manifest_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("v3 prompt manifest is unreadable") from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or manifest.get("study_id") != REP_V3_STUDY_ID
+        or manifest.get("row_count") != 320
+        or manifest.get("unit_count") != 80
+        or manifest.get("split_counts") != dict(REP_V3_SPLIT_COUNTS)
+    ):
+        raise ValueError("v3 prompt manifest has an invalid study identity")
+    prompt_name = manifest.get("prompts_file")
+    if not isinstance(prompt_name, str) or Path(prompt_name).name != prompt_name:
+        raise ValueError("v3 prompt manifest has an invalid prompts path")
+    try:
+        prompt_bytes = (path.parent / prompt_name).read_bytes()
+        prompts = tuple(
+            ReplicationPromptV3(**json.loads(line))
+            for line in prompt_bytes.splitlines()
+            if line
+        )
+    except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("v3 prompts are unreadable or noncanonical") from error
+    if _sha256_bytes(prompt_bytes) != manifest.get("prompts_sha256"):
+        raise ValueError("v3 prompt file hash mismatch")
+    if len(prompts) != manifest["row_count"] or len({row.example_id for row in prompts}) != len(prompts):
+        raise ValueError("v3 prompt records have an invalid row count")
+    if _sha256([_v3_prompt_record(row) for row in prompts]) != manifest.get("manifest_sha256"):
+        raise ValueError("v3 prompt manifest self-hash mismatch")
+    return prompts, manifest, manifest_bytes
 
 
 def _identity_sets_from_v3(v3_prompts: Sequence[Any]) -> dict[str, frozenset[str]]:
@@ -542,10 +614,11 @@ def audit_causal_corpus(
     prompts: Sequence[CausalPrompt],
     tokenizer: Any,
     *,
-    v3_prompts: Sequence[ReplicationPromptV3] | None = None,
+    v3_manifest_path: str | Path,
 ) -> CausalAudit:
-    if v3_prompts is None:
-        raise ValueError("causal corpus audit requires v3 exclusions")
+    v3_prompts, _v3_manifest, _v3_manifest_bytes = _load_v3_prompt_artifact(
+        v3_manifest_path
+    )
     if not _has_complete_v3_test_exclusions(v3_prompts):
         raise ValueError("causal corpus audit requires complete v3 exclusions")
     rows = tuple(prompts)
@@ -690,10 +763,8 @@ def verify_causal_corpus(
     manifest_path: str | Path,
     tokenizer: Any,
     *,
-    v3_prompts: Sequence[ReplicationPromptV3] | None = None,
+    v3_manifest_path: str | Path,
 ) -> CausalCorpus:
-    if v3_prompts is None:
-        raise ValueError("causal corpus verification requires v3 exclusions")
     path = Path(manifest_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     prompts_path = path.parent / manifest["prompts_file"]
@@ -704,7 +775,10 @@ def verify_causal_corpus(
         rows = tuple(CausalPrompt(**json.loads(line)) for line in prompt_bytes.splitlines() if line)
     except (TypeError, ValueError, json.JSONDecodeError) as error:
         raise ValueError("causal prompt records are not canonical") from error
-    reconstructed = build_causal_corpus(tokenizer, v3_prompts=v3_prompts)
+    reconstructed = build_causal_corpus(
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+    )
     if tuple(_prompt_record(row) for row in rows) != tuple(
         _prompt_record(row) for row in reconstructed.prompts
     ):
@@ -739,28 +813,10 @@ def load_v3_training_direction_inputs(
     expected_chat_template_sha256: str,
 ) -> VerifiedV3TrainingInputs:
     """Load and bind v3 training prompts to their verified activation shard."""
-    v3_manifest_path = Path(v3_manifest_path)
-    try:
-        v3_manifest_bytes = v3_manifest_path.read_bytes()
-        v3_manifest = json.loads(v3_manifest_bytes)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("v3 prompt manifest is unreadable") from error
-    if not isinstance(v3_manifest, dict) or v3_manifest.get("study_id") != REP_V3_STUDY_ID:
-        raise ValueError("v3 prompt manifest has an invalid study identity")
-    prompt_name = v3_manifest.get("prompts_file")
-    if not isinstance(prompt_name, str) or Path(prompt_name).name != prompt_name:
-        raise ValueError("v3 prompt manifest has an invalid prompts path")
-    try:
-        prompt_bytes = (v3_manifest_path.parent / prompt_name).read_bytes()
-        prompts = tuple(
-            ReplicationPromptV3(**json.loads(line))
-            for line in prompt_bytes.splitlines()
-            if line
-        )
-    except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("v3 prompts are unreadable or noncanonical") from error
-    if _sha256_bytes(prompt_bytes) != v3_manifest.get("prompts_sha256"):
-        raise ValueError("v3 prompt file hash mismatch")
+    v3_manifest_path = Path(v3_manifest_path).absolute()
+    prompts, v3_manifest, v3_manifest_bytes = _load_v3_prompt_artifact(
+        v3_manifest_path
+    )
     if v3_manifest.get("tokenizer_id") != expected_tokenizer_id:
         raise ValueError("v3 tokenizer ID does not match the expected tokenizer ID")
     train = tuple(row for row in prompts if row.split == "representation_train")
@@ -780,6 +836,10 @@ def load_v3_training_direction_inputs(
         raise ValueError("v3 activation manifest has an invalid NPZ path")
     shard = resume_activation_shard(activation_manifest_path.parent / npz_name)
     records = load_activation_records(activation_manifest_path)
+    if _sha256_bytes(activation_manifest_path.read_bytes()) != _sha256_bytes(
+        activation_manifest_bytes
+    ):
+        raise ValueError("v3 activation manifest changed during verification")
     if (
         shard.manifest_path != activation_manifest_path.absolute()
         or shard.row_count != len(train)
@@ -837,13 +897,33 @@ def load_v3_training_direction_inputs(
         tokenizer_revision=expected_tokenizer_revision,
         chat_template_sha256=expected_chat_template_sha256,
     )
-    return VerifiedV3TrainingInputs(prompts=train, records=records, source=source)
+    return VerifiedV3TrainingInputs(
+        v3_manifest_path=v3_manifest_path,
+        activation_manifest_path=activation_manifest_path,
+        expected_model_id=expected_model_id,
+        expected_model_revision=expected_model_revision,
+        expected_tokenizer_id=expected_tokenizer_id,
+        expected_tokenizer_revision=expected_tokenizer_revision,
+        expected_chat_template_sha256=expected_chat_template_sha256,
+        prompts=train,
+        records=records,
+        source=source,
+    )
 
 
 def fit_train_only_directions(source: VerifiedV3TrainingInputs) -> DirectionBundle:
     """Fit directions only from verified v3 training inputs."""
     if not isinstance(source, VerifiedV3TrainingInputs):
         raise ValueError("direction fitting requires verified v3 training inputs")
+    source = load_v3_training_direction_inputs(
+        v3_manifest_path=source.v3_manifest_path,
+        activation_manifest_path=source.activation_manifest_path,
+        expected_model_id=source.expected_model_id,
+        expected_model_revision=source.expected_model_revision,
+        expected_tokenizer_id=source.expected_tokenizer_id,
+        expected_tokenizer_revision=source.expected_tokenizer_revision,
+        expected_chat_template_sha256=source.expected_chat_template_sha256,
+    )
     return _fit_train_only_directions_from_arrays(
         source.prompts,
         _activations_at_user_prompt_end(source.records),
