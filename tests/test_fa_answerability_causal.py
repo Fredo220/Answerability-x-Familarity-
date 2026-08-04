@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from trajectory_extractor.fa_answerability_causal import (
+    CAUSAL_REPLICATION_STUDY_ID,
     CAUSAL_SPLIT_COUNTS,
     CAUSAL_VALIDATION_LAYERS,
     CAUSAL_VALIDATION_MULTIPLIERS,
@@ -16,6 +17,7 @@ from trajectory_extractor.fa_answerability_causal import (
     audit_causal_corpus,
     build_causal_corpus,
     fit_train_only_directions,
+    lock_causal_intervention,
     load_v3_training_direction_inputs,
     select_causal_intervention,
     verify_label_shuffled_direction,
@@ -119,6 +121,51 @@ def test_causal_corpus_is_fresh_complete_and_deterministic(tmp_path):
         tokenizer,
         v3_manifest_path=v3_manifest_path,
     ).manifest_sha256 == first.manifest_sha256
+
+
+def test_causal_replication_uses_fresh_identities_and_template_holdouts(tmp_path):
+    tokenizer = _CharacterTokenizer()
+    _v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    original = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
+    original_paths = write_causal_corpus(original, tmp_path / "original")
+    replication = build_causal_corpus(
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+        study_id=CAUSAL_REPLICATION_STUDY_ID,
+        excluded_causal_manifest_path=original_paths.manifest,
+    )
+
+    assert original.manifest_sha256 != replication.manifest_sha256
+    assert replication.audit.passed
+    assert replication.audit.checks["fresh_template_structure_isolation"] is True
+    assert not {
+        row.entity_unit_id for row in original.prompts
+    }.intersection(row.entity_unit_id for row in replication.prompts)
+    assert not {
+        row.target_text for row in original.prompts
+    }.intersection(row.target_text for row in replication.prompts)
+    assert {
+        row.template_family
+        for row in replication.prompts
+        if row.split == "causal_template_test"
+    } == {"briefing_panels", "dispatch_panels"}
+    heldout_text = [
+        row.user_text
+        for row in replication.prompts
+        if row.split == "causal_template_test"
+    ]
+    assert all("Target =>" in text and "Lookup =>" in text for text in heldout_text)
+    assert all("Dossier" not in text and "Index" not in text for text in heldout_text)
+
+    paths = write_causal_corpus(replication, tmp_path / "replication")
+    verified = verify_causal_corpus(
+        paths.manifest,
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+        expected_study_id=CAUSAL_REPLICATION_STUDY_ID,
+        excluded_causal_manifest_path=original_paths.manifest,
+    )
+    assert verified.manifest_sha256 == replication.manifest_sha256
 
 
 def test_causal_corpus_rejects_tampered_label_incomplete_unit_and_token_mismatch(tmp_path):
@@ -315,4 +362,46 @@ def test_validation_selection_is_fixed_to_causal_validation_and_deterministic(tm
             ),
             corpus,
             provenance,
+        )
+
+
+def test_locked_replication_candidate_cannot_reselect_layer_or_multiplier(tmp_path):
+    tokenizer = _CharacterTokenizer()
+    _v3, v3_manifest_path = _v3_manifest_path(tmp_path / "v3", tokenizer)
+    original = build_causal_corpus(tokenizer, v3_manifest_path=v3_manifest_path)
+    original_paths = write_causal_corpus(original, tmp_path / "original")
+    corpus = build_causal_corpus(
+        tokenizer,
+        v3_manifest_path=v3_manifest_path,
+        study_id=CAUSAL_REPLICATION_STUDY_ID,
+        excluded_causal_manifest_path=original_paths.manifest,
+    )
+    units = tuple(
+        sorted({row.entity_unit_id for row in corpus.prompts if row.split == "causal_validation"})
+    )
+    provenance = _selection_provenance(corpus)
+    candidate = _candidate(
+        layer=18,
+        multiplier=1.0,
+        effect=0.4,
+        unit_ids=units,
+        provenance=provenance,
+    )
+
+    selected = lock_causal_intervention(
+        candidate,
+        corpus,
+        provenance,
+        layer_id=18,
+        multiplier=1.0,
+    )
+    assert (selected.layer_id, selected.multiplier) == (18, 1.0)
+
+    with pytest.raises(ValueError, match="locked candidate"):
+        lock_causal_intervention(
+            replace(candidate, layer_id=12),
+            corpus,
+            provenance,
+            layer_id=18,
+            multiplier=1.0,
         )

@@ -27,6 +27,7 @@ from trajectory_extractor.fa_same_string_replication_v3 import (
 
 
 CAUSAL_STUDY_ID = "same-string-answerability-causal-pilot-v1"
+CAUSAL_REPLICATION_STUDY_ID = "same-string-answerability-causal-replication-v2"
 CAUSAL_SPLIT_SEED = 20260804
 CAUSAL_SPLIT_COUNTS: Mapping[str, int] = {
     "causal_validation": 12,
@@ -45,6 +46,7 @@ _SEEN_TEMPLATES = (
     "record_bullets",
 )
 _FRESH_TEMPLATES = ("archive_cards", "filing_cards")
+_REPLICATION_FRESH_TEMPLATES = ("briefing_panels", "dispatch_panels")
 _TEMPLATE_WORDS = {
     "registry_bullets": ("Registry", "registry"),
     "ledger_bullets": ("Ledger", "ledger"),
@@ -52,6 +54,20 @@ _TEMPLATE_WORDS = {
     "record_bullets": ("Record", "record"),
     "archive_cards": ("Archive", "archive"),
     "filing_cards": ("Filing", "filing"),
+    "briefing_panels": ("Briefing", "briefing"),
+    "dispatch_panels": ("Dispatch", "dispatch"),
+}
+_CORPUS_DESIGNS = {
+    CAUSAL_STUDY_ID: {
+        "unit_offset": 0,
+        "unit_prefix": "causal-v1-unit",
+        "fresh_templates": _FRESH_TEMPLATES,
+    },
+    CAUSAL_REPLICATION_STUDY_ID: {
+        "unit_offset": 100,
+        "unit_prefix": "causal-v2-unit",
+        "fresh_templates": _REPLICATION_FRESH_TEMPLATES,
+    },
 }
 _PROPERTIES = (
     "amber",
@@ -156,6 +172,7 @@ class CausalCorpus:
     audit: CausalAudit
     manifest_sha256: str
     tokenizer_id: str
+    study_id: str = CAUSAL_STUDY_ID
 
 
 @dataclass(frozen=True)
@@ -472,12 +489,25 @@ def _render_user_text(
             f"- {distractor} has archive code {code}.\n"
             f"- {target} has marker {property_name}."
         )
-    user_text = (
-        f"{heading} context:\n{exposure_lines} Task: The target is {target}. "
-        f"Read these entries:\n{task_lines}\n"
-        f"Question: What is the archive code for {target}?\n{_OUTPUT_CONTRACT}"
-    )
-    task_start = user_text.index(" Task: ") + len(" Task: ")
+    if family in _REPLICATION_FRESH_TEMPLATES:
+        exposure_panels = exposure_lines.replace("- ", f"[{heading} A] ", 1).replace(
+            "\n- ", f"\n[{heading} B] ", 1
+        )
+        entry_panels = task_lines.replace("- ", "Entry one :: ", 1).replace(
+            "\n- ", "\nEntry two :: ", 1
+        )
+        user_text = (
+            f"{heading} panels\n{exposure_panels}\nTarget => {target}\n"
+            f"{entry_panels}\nLookup => archive code for {target}?\n{_OUTPUT_CONTRACT}"
+        )
+        task_start = user_text.index("Target => ") + len("Target => ")
+    else:
+        user_text = (
+            f"{heading} context:\n{exposure_lines} Task: The target is {target}. "
+            f"Read these entries:\n{task_lines}\n"
+            f"Question: What is the archive code for {target}?\n{_OUTPUT_CONTRACT}"
+        )
+        task_start = user_text.index(" Task: ") + len(" Task: ")
     intro_start = user_text.index(target, task_start)
     query_start = user_text.rindex(target)
     return (
@@ -500,11 +530,23 @@ def _tokenize_prompt(tokenizer: Any, user_text: str) -> tuple[str, tuple[int, ..
     return rendered, tuple(int(value) for value in raw_ids)
 
 
-def _unit_allocation() -> tuple[tuple[str, int, str], ...]:
+def _corpus_design(study_id: str) -> Mapping[str, Any]:
+    try:
+        return _CORPUS_DESIGNS[study_id]
+    except KeyError as error:
+        raise ValueError("causal corpus study ID is not registered") from error
+
+
+def _unit_allocation(study_id: str) -> tuple[tuple[str, int, str], ...]:
+    design = _corpus_design(study_id)
     rows = []
-    global_index = 0
+    global_index = int(design["unit_offset"])
     for split, count in CAUSAL_SPLIT_COUNTS.items():
-        families = _FRESH_TEMPLATES if split == "causal_template_test" else _SEEN_TEMPLATES
+        families = (
+            design["fresh_templates"]
+            if split == "causal_template_test"
+            else _SEEN_TEMPLATES
+        )
         for local_index in range(count):
             rows.append((split, global_index, families[local_index % len(families)]))
             global_index += 1
@@ -512,16 +554,21 @@ def _unit_allocation() -> tuple[tuple[str, int, str], ...]:
 
 
 def build_causal_corpus(
-    tokenizer: Any, *, v3_manifest_path: str | Path
+    tokenizer: Any,
+    *,
+    v3_manifest_path: str | Path,
+    study_id: str = CAUSAL_STUDY_ID,
+    excluded_causal_manifest_path: str | Path | None = None,
 ) -> CausalCorpus:
     _prompts, _manifest, _manifest_bytes = _load_v3_prompt_artifact(v3_manifest_path)
+    design = _corpus_design(study_id)
     prompts = []
-    for split, unit_index, family in _unit_allocation():
+    for split, unit_index, family in _unit_allocation(study_id):
         target = f"Causa{2 * unit_index:04d}"
         distractor = f"Causa{2 * unit_index + 1:04d}"
         code = f"Z{unit_index:04d}"
         property_name = _PROPERTIES[unit_index % len(_PROPERTIES)]
-        unit = f"causal-v1-unit-{unit_index:03d}"
+        unit = f"{design['unit_prefix']}-{unit_index:03d}"
         for exposure in CAUSAL_EXPOSURES:
             for answerability in CAUSAL_ANSWERABILITY:
                 user_text, intro_span, query_span = _render_user_text(
@@ -565,12 +612,15 @@ def build_causal_corpus(
         prepared,
         tokenizer,
         v3_manifest_path=v3_manifest_path,
+        study_id=study_id,
+        excluded_causal_manifest_path=excluded_causal_manifest_path,
     )
     return CausalCorpus(
         prompts=prepared,
         audit=audit,
         manifest_sha256=_sha256([_prompt_record(row) for row in prepared]),
         tokenizer_id=str(getattr(tokenizer, "name_or_path", tokenizer.__class__.__name__)),
+        study_id=study_id,
     )
 
 
@@ -629,22 +679,69 @@ def _load_v3_prompt_artifact(
     return prompts, manifest, manifest_bytes
 
 
+def _load_causal_exclusion_artifact(
+    manifest_path: str | Path,
+) -> tuple[tuple[CausalPrompt, ...], dict[str, Any], bytes]:
+    path = Path(manifest_path).absolute()
+    try:
+        manifest_bytes = path.read_bytes()
+        manifest = json.loads(manifest_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("excluded causal manifest is unreadable") from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or manifest.get("study_id") != CAUSAL_STUDY_ID
+        or manifest.get("row_count") != 192
+        or manifest.get("unit_count") != 48
+        or manifest.get("split_counts") != dict(CAUSAL_SPLIT_COUNTS)
+    ):
+        raise ValueError("excluded causal manifest has an invalid study identity")
+    prompt_name = manifest.get("prompts_file")
+    if not isinstance(prompt_name, str) or Path(prompt_name).name != prompt_name:
+        raise ValueError("excluded causal manifest has an invalid prompts path")
+    try:
+        prompt_bytes = (path.parent / prompt_name).read_bytes()
+        prompts = tuple(
+            CausalPrompt(**json.loads(line))
+            for line in prompt_bytes.splitlines()
+            if line
+        )
+    except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("excluded causal prompts are unreadable or noncanonical") from error
+    if _sha256_bytes(prompt_bytes) != manifest.get("prompts_sha256"):
+        raise ValueError("excluded causal prompt file hash mismatch")
+    if len(prompts) != 192 or len({row.example_id for row in prompts}) != 192:
+        raise ValueError("excluded causal prompts have an invalid row count")
+    if _sha256([_prompt_record(row) for row in prompts]) != manifest.get("manifest_sha256"):
+        raise ValueError("excluded causal manifest self-hash mismatch")
+    return prompts, manifest, manifest_bytes
+
+
 def _identity_sets_from_v3(v3_prompts: Sequence[Any]) -> dict[str, frozenset[str]]:
-    protected = [
-        row
-        for row in v3_prompts
-        if getattr(row, "split", None) in {"entity_test", "template_test"}
-    ]
     return {
-        "example_ids": frozenset(str(row.example_id) for row in protected),
-        "entity_unit_ids": frozenset(str(row.entity_unit_id) for row in protected),
+        "example_ids": frozenset(str(row.example_id) for row in v3_prompts),
+        "entity_unit_ids": frozenset(str(row.entity_unit_id) for row in v3_prompts),
         "names": frozenset(
             str(value)
-            for row in protected
+            for row in v3_prompts
             for value in (row.target_text, row.distractor_text)
         ),
-        "registry_codes": frozenset(str(row.registry_code) for row in protected),
+        "registry_codes": frozenset(str(row.registry_code) for row in v3_prompts),
     }
+
+
+def _template_skeleton(row: Any) -> str:
+    skeleton = str(row.user_text)
+    replacements = (
+        (str(row.target_text), "<TARGET>"),
+        (str(row.distractor_text), "<DISTRACTOR>"),
+        (str(row.registry_code), "<CODE>"),
+        (str(row.neutral_property), "<PROPERTY>"),
+    )
+    for value, replacement in replacements:
+        skeleton = skeleton.replace(value, replacement)
+    return skeleton
 
 
 def _has_complete_v3_test_exclusions(v3_prompts: Sequence[ReplicationPromptV3]) -> bool:
@@ -663,7 +760,10 @@ def audit_causal_corpus(
     tokenizer: Any,
     *,
     v3_manifest_path: str | Path,
+    study_id: str = CAUSAL_STUDY_ID,
+    excluded_causal_manifest_path: str | Path | None = None,
 ) -> CausalAudit:
+    design = _corpus_design(study_id)
     v3_prompts, _v3_manifest, _v3_manifest_bytes = _load_v3_prompt_artifact(
         v3_manifest_path
     )
@@ -716,6 +816,30 @@ def audit_causal_corpus(
         "names": {value for row in rows for value in (row.target_text, row.distractor_text)},
         "registry_codes": {row.registry_code for row in rows},
     }
+    v1_identities: dict[str, set[str]] = {}
+    v1_prompts: tuple[CausalPrompt, ...] = ()
+    if study_id == CAUSAL_REPLICATION_STUDY_ID:
+        if excluded_causal_manifest_path is None:
+            raise ValueError("causal replication requires the frozen v1 exclusion artifact")
+        v1_prompts, _v1_manifest, _v1_bytes = _load_causal_exclusion_artifact(
+            excluded_causal_manifest_path
+        )
+        v1_identities = {
+            "example_ids": {row.example_id for row in v1_prompts},
+            "entity_unit_ids": {row.entity_unit_id for row in v1_prompts},
+            "names": {
+                value
+                for row in v1_prompts
+                for value in (row.target_text, row.distractor_text)
+            },
+            "registry_codes": {row.registry_code for row in v1_prompts},
+            "rendered_prompt_sha256": {
+                row.rendered_prompt_sha256 for row in v1_prompts
+            },
+        }
+        current_identities["rendered_prompt_sha256"] = {
+            row.rendered_prompt_sha256 for row in rows
+        }
     identity_isolated = all(
         not current_identities.get(name, set()).intersection(values)
         for name, values in identity_sets.items()
@@ -748,6 +872,14 @@ def audit_causal_corpus(
     other_templates = {
         row.template_family for row in rows if row.split != "causal_template_test"
     }
+    fresh_template_skeletons = {
+        _template_skeleton(row)
+        for row in rows
+        if row.split == "causal_template_test"
+    }
+    prior_template_skeletons = {
+        _template_skeleton(row) for row in (*v3_prompts, *v1_prompts)
+    }
     checks = {
         "row_count": len(rows) == 192 and len({row.example_id for row in rows}) == 192,
         "split_counts": split_counts,
@@ -761,9 +893,11 @@ def audit_causal_corpus(
             len({row.split for row in unit_rows}) == 1 for unit_rows in by_unit.values()
         ),
         "causal_identity_disjointness": causal_identity_disjointness,
-        "fresh_template_holdout": fresh_templates == set(_FRESH_TEMPLATES)
+        "fresh_template_holdout": fresh_templates == set(design["fresh_templates"])
         and not fresh_templates.intersection(other_templates)
         and other_templates == set(_SEEN_TEMPLATES),
+        "fresh_template_structure_isolation": study_id == CAUSAL_STUDY_ID
+        or not fresh_template_skeletons.intersection(prior_template_skeletons),
         "answerability_token_multisets": paired_multisets("answerability"),
         "exposure_token_multisets": paired_multisets("exposure"),
         "tokenizer_replay": tokenizer_replay(),
@@ -777,6 +911,11 @@ def audit_causal_corpus(
         ),
         "output_contract": all(row.output_contract == _OUTPUT_CONTRACT for row in rows),
         "v3_test_identity_isolation": identity_isolated,
+        "v1_causal_identity_isolation": study_id == CAUSAL_STUDY_ID
+        or all(
+            not current_identities[name].intersection(values)
+            for name, values in v1_identities.items()
+        ),
     }
     violations = tuple(sorted(name for name, passed in checks.items() if not passed))
     return CausalAudit(checks=checks, violations=violations)
@@ -793,7 +932,7 @@ def write_causal_corpus(corpus: CausalCorpus, destination: str | Path) -> Causal
     prompts_path.write_bytes(prompt_bytes)
     manifest = {
         "schema_version": 1,
-        "study_id": CAUSAL_STUDY_ID,
+        "study_id": corpus.study_id,
         "row_count": len(corpus.prompts),
         "unit_count": len({row.entity_unit_id for row in corpus.prompts}),
         "split_counts": dict(CAUSAL_SPLIT_COUNTS),
@@ -812,9 +951,13 @@ def verify_causal_corpus(
     tokenizer: Any,
     *,
     v3_manifest_path: str | Path,
+    expected_study_id: str = CAUSAL_STUDY_ID,
+    excluded_causal_manifest_path: str | Path | None = None,
 ) -> CausalCorpus:
     path = Path(manifest_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest.get("study_id") != expected_study_id:
+        raise ValueError("causal manifest study ID mismatch")
     prompts_path = path.parent / manifest["prompts_file"]
     prompt_bytes = prompts_path.read_bytes()
     if _sha256_bytes(prompt_bytes) != manifest.get("prompts_sha256"):
@@ -826,6 +969,8 @@ def verify_causal_corpus(
     reconstructed = build_causal_corpus(
         tokenizer,
         v3_manifest_path=v3_manifest_path,
+        study_id=expected_study_id,
+        excluded_causal_manifest_path=excluded_causal_manifest_path,
     )
     if tuple(_prompt_record(row) for row in rows) != tuple(
         _prompt_record(row) for row in reconstructed.prompts
@@ -1323,6 +1468,59 @@ def select_causal_intervention(
         "direction_bundle_sha256": selected.direction_bundle_sha256,
         "model_sha256": selected.model_sha256,
         "tokenizer_sha256": selected.tokenizer_sha256,
+    }
+    return ValidationSelection(selection_sha256=_sha256(record), **record)
+
+
+def lock_causal_intervention(
+    candidate: ValidationCandidate,
+    corpus: CausalCorpus,
+    expected_provenance: CausalExpectedProvenance,
+    *,
+    layer_id: int,
+    multiplier: float,
+) -> ValidationSelection:
+    """Validate one pre-registered candidate without outcome-based reselection."""
+    if not corpus.audit.passed or not isinstance(
+        expected_provenance, CausalExpectedProvenance
+    ):
+        raise ValueError("locked selection requires audited typed inputs")
+    if (candidate.layer_id, candidate.multiplier) != (layer_id, multiplier):
+        raise ValueError("locked candidate does not match the registered site")
+    expected_units = {
+        row.entity_unit_id
+        for row in corpus.prompts
+        if row.split == "causal_validation"
+    }
+    if {unit for unit, _ in candidate.unit_effects} != expected_units:
+        raise ValueError("locked candidate must contain all validation units")
+    expected = (
+        expected_provenance.corpus_sha256,
+        expected_provenance.direction_bundle_sha256,
+        expected_provenance.model_sha256,
+        expected_provenance.tokenizer_sha256,
+        expected_provenance.direction_hashes[layer_id],
+    )
+    observed = (
+        candidate.corpus_sha256,
+        candidate.direction_bundle_sha256,
+        candidate.model_sha256,
+        candidate.tokenizer_sha256,
+        candidate.direction_sha256,
+    )
+    if observed != expected:
+        raise ValueError("locked candidate provenance does not match")
+    if candidate.invalid_output_rate > 0.05 or candidate.bound_accuracy_drop > 0.05:
+        raise ValueError("locked candidate does not pass registered safety gates")
+    record = {
+        "layer_id": candidate.layer_id,
+        "multiplier": candidate.multiplier,
+        "mean_bidirectional_effect": candidate.mean_bidirectional_effect,
+        "direction_sha256": candidate.direction_sha256,
+        "corpus_sha256": candidate.corpus_sha256,
+        "direction_bundle_sha256": candidate.direction_bundle_sha256,
+        "model_sha256": candidate.model_sha256,
+        "tokenizer_sha256": candidate.tokenizer_sha256,
     }
     return ValidationSelection(selection_sha256=_sha256(record), **record)
 

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import trajectory_extractor.fa_answerability_causal_cli as causal_cli
 from trajectory_extractor.fa_answerability_causal_runtime import (
     resolve_causal_anchor,
     vector_audit_hashes,
@@ -21,6 +22,7 @@ from trajectory_extractor.fa_answerability_causal_cli import (
     RuntimeReceipt,
     _load_evaluation_seal,
     _load_prepared,
+    _registered_repository_file,
     _verify_shard_runtime_evidence,
     evaluate_causal,
     expected_causal_shards,
@@ -33,6 +35,9 @@ from trajectory_extractor.fa_answerability_causal_cli import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs" / "familiarity_answerability_causal_pilot_v1.json"
+REPLICATION_CONFIG = (
+    ROOT / "configs" / "familiarity_answerability_causal_replication_v2.json"
+)
 V3_CORPUS = (
     ROOT
     / "release"
@@ -98,6 +103,42 @@ def test_load_causal_config_rejects_changed_registered_grid(tmp_path):
 
     with pytest.raises(ValueError, match="registered causal config"):
         load_causal_config(changed_path)
+
+
+def test_load_causal_replication_config_binds_fresh_corpus_design():
+    config = load_causal_config(REPLICATION_CONFIG)
+
+    assert config.study_id == "same-string-answerability-causal-replication-v2"
+    assert config.corpus["unit_offset"] == 100
+    assert config.corpus["fresh_templates"] == [
+        "briefing_panels",
+        "dispatch_panels",
+    ]
+    assert config.statistics["bootstrap_seed"] == 20260804
+    assert config.statistics["sign_flip_seed"] == 20260804
+    preregistration = ROOT / config.preregistration["path"]
+    assert preregistration.is_file()
+    assert len(config.preregistration["sha256"]) == 64
+    assert config.validation_selection["mode"] == "locked_from_v1"
+    assert config.validation_selection["locked_layer"] == 18
+    assert config.validation_selection["locked_multiplier"] == 1.0
+
+
+def test_registered_preregistration_file_fails_closed_after_byte_change(
+    tmp_path, monkeypatch
+):
+    protocol = tmp_path / "protocol.md"
+    protocol.write_text("frozen\n", encoding="utf-8")
+    monkeypatch.setattr(causal_cli, "_REPOSITORY_ROOT", tmp_path)
+    registered = {
+        "path": "protocol.md",
+        "sha256": causal_cli._sha256_file(protocol),
+    }
+
+    assert _registered_repository_file(registered, field="protocol") == protocol
+    protocol.write_text("changed\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="hash does not match"):
+        _registered_repository_file(registered, field="protocol")
 
 
 def test_prepare_binds_all_identities_without_constructing_a_model(tmp_path):
@@ -363,6 +404,81 @@ def test_validation_runs_the_complete_grid_and_seals_one_candidate(tmp_path):
     }
 
 
+def test_replication_validation_uses_only_the_locked_v1_candidate(tmp_path):
+    runner = FakeCausalRunner()
+    dependencies = CausalDependencies(
+        tokenizer_loader=tokenizer_binding,
+        runner_factory=lambda _config: runner,
+    )
+    prepared = prepare_causal(
+        argparse.Namespace(
+            config=str(REPLICATION_CONFIG),
+            root=str(tmp_path),
+            v3_corpus_manifest=str(V3_CORPUS),
+            v3_training_activation_manifest=str(V3_TRAIN_ACTIVATIONS),
+            output_dir="prepared",
+        ),
+        dependencies=dependencies,
+    )
+    result = run_causal_validation(
+        argparse.Namespace(
+            config=str(REPLICATION_CONFIG),
+            root=str(tmp_path),
+            prepare_manifest=prepared["prepare_manifest"],
+            output_dir="validation",
+            resume=True,
+        ),
+        dependencies=dependencies,
+    )
+
+    selection = json.loads(Path(result["selection_manifest"]).read_text())
+    prepare_manifest = json.loads(Path(prepared["prepare_manifest"]).read_text())
+    raw = tuple((tmp_path / "validation" / "raw").glob("candidate-*.json"))
+    assert len(raw) == 1
+    assert (selection["layer_id"], selection["multiplier"]) == (18, 1.0)
+    assert prepare_manifest["preregistration_sha256"] == load_causal_config(
+        REPLICATION_CONFIG
+    ).preregistration["sha256"]
+    assert len(prepare_manifest["excluded_causal_manifest_sha256"]) == 64
+
+    seal_record = json.loads(Path(result["seal_manifest"]).read_text())
+    unit_id = seal_record["expected_unit_ids_by_split"]["causal_entity_test"][0]
+    shard_args = argparse.Namespace(
+        config=str(REPLICATION_CONFIG),
+        root=str(tmp_path),
+        prepare_manifest=prepared["prepare_manifest"],
+        seal_manifest=result["seal_manifest"],
+        split="causal_entity_test",
+        control="primary",
+        unit_id=unit_id,
+        member=None,
+        output_dir="evidence",
+        resume=True,
+    )
+    first = run_causal_shard(shard_args, dependencies=dependencies)
+    resumed = run_causal_shard(shard_args, dependencies=dependencies)
+    assert (first["status"], resumed["status"]) == ("completed", "resumed")
+
+    load_args = argparse.Namespace(
+        config=str(REPLICATION_CONFIG),
+        root=str(tmp_path),
+        prepare_manifest=prepared["prepare_manifest"],
+    )
+    _config, prepare, corpus, bundle, binding = _load_prepared(load_args, dependencies)
+    seal, _record = _load_evaluation_seal(result["seal_manifest"], prepare=prepare)
+    payload = json.loads(Path(first["shard_receipt"]).read_text())
+    payload["rows"][0]["example_id"] = "tampered-example"
+    with pytest.raises(ValueError, match="sealed corpus"):
+        _verify_shard_runtime_evidence(
+            payload,
+            prepare=prepare,
+            seal=seal,
+            corpus=corpus,
+            bundle=bundle,
+            tokenizer=binding.tokenizer,
+        )
+
+
 def test_shard_runs_one_registered_unit_and_resumes_without_model_work(tmp_path):
     runner = FakeCausalRunner()
     dependencies = CausalDependencies(
@@ -561,3 +677,75 @@ def test_evaluate_requires_every_registered_shard_before_endpoint_state(tmp_path
 
     assert not (tmp_path / "results" / "endpoint_state.json").exists()
     assert not (tmp_path / "results" / "result.json").exists()
+
+
+def test_replication_v2_runs_the_complete_fake_schedule_end_to_end(
+    tmp_path, monkeypatch
+):
+    runner = FakeCausalRunner()
+    dependencies = CausalDependencies(
+        tokenizer_loader=tokenizer_binding,
+        runner_factory=lambda _config: runner,
+    )
+    prepared = prepare_causal(
+        argparse.Namespace(
+            config=str(REPLICATION_CONFIG),
+            root=str(tmp_path),
+            v3_corpus_manifest=str(V3_CORPUS),
+            v3_training_activation_manifest=str(V3_TRAIN_ACTIVATIONS),
+            output_dir="prepared",
+        ),
+        dependencies=dependencies,
+    )
+    validation = run_causal_validation(
+        argparse.Namespace(
+            config=str(REPLICATION_CONFIG),
+            root=str(tmp_path),
+            prepare_manifest=prepared["prepare_manifest"],
+            output_dir="validation",
+            resume=True,
+        ),
+        dependencies=dependencies,
+    )
+    load_args = argparse.Namespace(
+        config=str(REPLICATION_CONFIG),
+        root=str(tmp_path),
+        prepare_manifest=prepared["prepare_manifest"],
+    )
+    cached_prepared = _load_prepared(load_args, dependencies)
+    monkeypatch.setattr(causal_cli, "_load_prepared", lambda *_args, **_kwargs: cached_prepared)
+
+    seal = json.loads(Path(validation["seal_manifest"]).read_text(encoding="utf-8"))
+    schedule = expected_causal_shards(seal)
+    assert len(schedule) == 432
+    for item in schedule:
+        run_causal_shard(
+            argparse.Namespace(
+                config=str(REPLICATION_CONFIG),
+                root=str(tmp_path),
+                prepare_manifest=prepared["prepare_manifest"],
+                seal_manifest=validation["seal_manifest"],
+                split=item["split"],
+                control=item["control"],
+                unit_id=item["unit_id"],
+                member=item["member"],
+                output_dir="evidence",
+                resume=True,
+            ),
+            dependencies=dependencies,
+        )
+
+    evaluated = evaluate_causal(
+        argparse.Namespace(
+            config=str(REPLICATION_CONFIG),
+            root=str(tmp_path),
+            prepare_manifest=prepared["prepare_manifest"],
+            seal_manifest=validation["seal_manifest"],
+            evidence_dir="evidence",
+            output_dir="results",
+        ),
+        dependencies=dependencies,
+    )
+    result = json.loads(Path(evaluated["result"]).read_text(encoding="utf-8"))
+    assert result["study_id"] == "same-string-answerability-causal-replication-v2"
+    assert result["status"] in {"causally_supported", "not_supported"}

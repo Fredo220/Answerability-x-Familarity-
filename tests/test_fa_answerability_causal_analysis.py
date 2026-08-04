@@ -370,6 +370,32 @@ def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
             random_vectors=seal.random_vectors,
         )
 
+    near_primary = np.asarray(seal.primary_vector, dtype=np.float64).copy()
+    near_primary[0] += 1e-8
+    near_primary /= np.linalg.norm(near_primary)
+    near_record = _label_shuffle_record(
+        seal.label_shuffle_artifact,
+        include_hash=False,
+    )
+    near_record["vector"] = near_primary.tolist()
+    near_degenerate = replace(
+        seal.label_shuffle_artifact,
+        vector=near_primary,
+        artifact_sha256=_sha256(near_record),
+    )
+    with pytest.raises(ValueError, match="geometrically distinct"):
+        seal_causal_evaluation(
+            selection=_selection(),
+            expected_provenance=_provenance(_selection()),
+            runtime_sha256="1" * 64,
+            output_contract_sha256="2" * 64,
+            random_seeds=(11, 12, 13, 14, 15),
+            expected_unit_ids_by_split=EXPECTED_UNITS,
+            primary_vector=seal.primary_vector,
+            label_shuffle_artifact=near_degenerate,
+            random_vectors=seal.random_vectors,
+        )
+
     evidence = _evidence()
     changed = replace(
         evidence.control_scores[0].audit, control_vector_artifact_sha256="9" * 64

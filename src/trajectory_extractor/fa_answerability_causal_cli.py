@@ -21,6 +21,7 @@ from trajectory_extractor.fa_answerability_causal import (
     CAUSAL_ANSWERABILITY,
     CAUSAL_DIRECTION_ANCHOR,
     CAUSAL_EXPOSURES,
+    CAUSAL_REPLICATION_STUDY_ID,
     CAUSAL_SPLIT_COUNTS,
     CAUSAL_STUDY_ID,
     CAUSAL_VALIDATION_LAYERS,
@@ -34,6 +35,7 @@ from trajectory_extractor.fa_answerability_causal import (
     build_causal_corpus,
     fit_train_only_directions,
     load_v3_training_direction_inputs,
+    lock_causal_intervention,
     select_causal_intervention,
     verify_causal_corpus,
     verify_direction_bundle,
@@ -108,6 +110,39 @@ _EXPECTED_CONFIG = {
     },
     "generation": {"do_sample": False, "max_new_tokens": 16, "temperature": 0.0},
 }
+_EXPECTED_REPLICATION_CONFIG = {
+    **_EXPECTED_CONFIG,
+    "study_id": CAUSAL_REPLICATION_STUDY_ID,
+    "run_id": CAUSAL_REPLICATION_STUDY_ID,
+    "split_seed": 20260805,
+    "validation_selection": {
+        **_EXPECTED_CONFIG["validation_selection"],
+        "mode": "locked_from_v1",
+        "locked_layer": 18,
+        "locked_multiplier": 1.0,
+    },
+    "statistics": dict(_EXPECTED_CONFIG["statistics"]),
+    "corpus": {
+        "unit_offset": 100,
+        "unit_prefix": "causal-v2-unit",
+        "fresh_templates": ["briefing_panels", "dispatch_panels"],
+        "excluded_causal_manifest": (
+            "release/familiarity_answerability/answerability_causal_pilot_v1/"
+            "prepared/corpus/same_string_answerability_causal_manifest.json"
+        ),
+        "excluded_causal_manifest_sha256": (
+            "c91aa923d358c0b7ba2bbb3f0f11314efb1d45526cda4fa8ae63e19a6449d4ec"
+        ),
+    },
+    "preregistration": {
+        "path": "docs/familiarity_answerability_causal_replication_v2_preregistration.md",
+        "sha256": "6a159773bf6def8dbd028c07b6f3e730b6ca1a33e9d363d7e9653460c4b0c395",
+    },
+}
+_EXPECTED_CONFIGS = {
+    value["study_id"]: value
+    for value in (_EXPECTED_CONFIG, _EXPECTED_REPLICATION_CONFIG)
+}
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -126,6 +161,42 @@ def _sha256_json(value: Any) -> str:
 
 def _sha256_file(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _registered_repository_file(value: Mapping[str, Any], *, field: str) -> Path:
+    relative = value.get("path")
+    expected = _require_sha256(value.get("sha256"), f"{field} hash")
+    if not isinstance(relative, str):
+        raise ValueError(f"{field} path is invalid")
+    candidate = (_REPOSITORY_ROOT / relative).resolve()
+    if _REPOSITORY_ROOT.resolve() not in candidate.parents:
+        raise ValueError(f"{field} path escapes the repository")
+    if _sha256_file(candidate) != expected:
+        raise ValueError(f"{field} hash does not match the registered file")
+    return candidate
+
+
+def _registered_exclusion_manifest(config: CausalCLIConfig) -> Path | None:
+    if config.study_id != CAUSAL_REPLICATION_STUDY_ID:
+        return None
+    relative = config.corpus.get("excluded_causal_manifest")
+    if not isinstance(relative, str):
+        raise ValueError("causal replication exclusion path is invalid")
+    candidate = (_REPOSITORY_ROOT / relative).resolve()
+    if _REPOSITORY_ROOT.resolve() not in candidate.parents:
+        raise ValueError("causal replication exclusion path escapes the repository")
+    if not candidate.is_file():
+        raise ValueError("causal replication exclusion artifact is missing")
+    expected = _require_sha256(
+        config.corpus.get("excluded_causal_manifest_sha256"),
+        "causal replication exclusion artifact hash",
+    )
+    if _sha256_file(candidate) != expected:
+        raise ValueError("causal replication exclusion artifact hash mismatch")
+    return candidate
 
 
 def _require_sha256(value: Any, field: str) -> str:
@@ -171,7 +242,7 @@ def load_causal_config(path: str | Path) -> CausalCLIConfig:
         )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("causal config is unreadable") from error
-    if value != _EXPECTED_CONFIG:
+    if not isinstance(value, dict) or value != _EXPECTED_CONFIGS.get(value.get("study_id")):
         raise ValueError("config does not match the registered causal config")
     return CausalCLIConfig(value=value, config_sha256=_sha256_json(value))
 
@@ -802,11 +873,23 @@ def prepare_causal(
     binding = dependencies.tokenizer_loader(config)
     _validate_tokenizer_binding(binding, config)
 
+    preregistration_path = None
+    preregistration_sha256 = None
+    if config.study_id == CAUSAL_REPLICATION_STUDY_ID:
+        preregistration_path = _registered_repository_file(
+            config.preregistration,
+            field="causal replication preregistration",
+        )
+        preregistration_sha256 = _sha256_file(preregistration_path)
+    excluded_causal_manifest = _registered_exclusion_manifest(config)
+
     v3_manifest = Path(args.v3_corpus_manifest).absolute()
     activation_manifest = Path(args.v3_training_activation_manifest).absolute()
     corpus = build_causal_corpus(
         binding.tokenizer,
         v3_manifest_path=v3_manifest,
+        study_id=config.study_id,
+        excluded_causal_manifest_path=excluded_causal_manifest,
     )
     corpus_paths = write_causal_corpus(corpus, output_root / "corpus")
     verified_training = load_v3_training_direction_inputs(
@@ -851,6 +934,12 @@ def prepare_causal(
             "implementation_sha256": implementation_hash,
             "v3_manifest_sha256": _sha256_file(v3_manifest),
             "v3_activation_manifest_sha256": _sha256_file(activation_manifest),
+            "preregistration_sha256": preregistration_sha256,
+            "excluded_causal_manifest_sha256": (
+                _sha256_file(excluded_causal_manifest)
+                if excluded_causal_manifest is not None
+                else None
+            ),
         }
     )
     payload = {
@@ -870,6 +959,20 @@ def prepare_causal(
         "request_sha256": request_hash,
         "v3_corpus_manifest": str(v3_manifest),
         "v3_training_activation_manifest": str(activation_manifest),
+        "preregistration": (
+            str(preregistration_path) if preregistration_path is not None else None
+        ),
+        "preregistration_sha256": preregistration_sha256,
+        "excluded_causal_manifest": (
+            str(excluded_causal_manifest)
+            if excluded_causal_manifest is not None
+            else None
+        ),
+        "excluded_causal_manifest_sha256": (
+            _sha256_file(excluded_causal_manifest)
+            if excluded_causal_manifest is not None
+            else None
+        ),
         "causal_corpus_manifest": str(corpus_paths.manifest.absolute()),
         "direction_bundle": str(direction_path.absolute()),
         "audit": {
@@ -936,12 +1039,29 @@ def _load_prepared(
     }
     if any(prepare.get(field) != value for field, value in expected.items()):
         raise ValueError("prepare manifest does not match current causal identity")
+    excluded_causal_manifest = _registered_exclusion_manifest(config)
+    if config.study_id == CAUSAL_REPLICATION_STUDY_ID:
+        preregistration_path = _registered_repository_file(
+            config.preregistration,
+            field="causal replication preregistration",
+        )
+        if (
+            prepare.get("preregistration") != str(preregistration_path)
+            or prepare.get("preregistration_sha256") != _sha256_file(preregistration_path)
+            or prepare.get("excluded_causal_manifest")
+            != str(excluded_causal_manifest)
+            or prepare.get("excluded_causal_manifest_sha256")
+            != _sha256_file(excluded_causal_manifest)
+        ):
+            raise ValueError("prepare manifest does not match registered v2 exclusions")
     binding = dependencies.tokenizer_loader(config)
     _validate_tokenizer_binding(binding, config)
     corpus = verify_causal_corpus(
         prepare["causal_corpus_manifest"],
         binding.tokenizer,
         v3_manifest_path=prepare["v3_corpus_manifest"],
+        expected_study_id=config.study_id,
+        excluded_causal_manifest_path=excluded_causal_manifest,
     )
     bundle = verify_direction_bundle(prepare["direction_bundle"])
     if (
@@ -1349,8 +1469,21 @@ def run_causal_validation(
     provenance = _expected_provenance(config, prepare, bundle)
     candidates = []
     raw_store = AtomicJSONReceiptStore(output_root)
-    for direction in bundle.directions:
-        for multiplier in CAUSAL_VALIDATION_MULTIPLIERS:
+    locked_mode = config.validation_selection.get("mode") == "locked_from_v1"
+    if locked_mode:
+        validation_directions = tuple(
+            direction
+            for direction in bundle.directions
+            if direction.layer_id == config.validation_selection["locked_layer"]
+        )
+        validation_multipliers = (
+            float(config.validation_selection["locked_multiplier"]),
+        )
+    else:
+        validation_directions = bundle.directions
+        validation_multipliers = CAUSAL_VALIDATION_MULTIPLIERS
+    for direction in validation_directions:
+        for multiplier in validation_multipliers:
             candidate_request_hash = _sha256_json(
                 {
                     "command": "fa-causal-run-validation",
@@ -1400,7 +1533,16 @@ def run_causal_validation(
                     resume=args.resume,
                 )
             candidates.append(candidate)
-    selection = select_causal_intervention(candidates, corpus, provenance)
+    if locked_mode:
+        selection = lock_causal_intervention(
+            candidates[0],
+            corpus,
+            provenance,
+            layer_id=int(config.validation_selection["locked_layer"]),
+            multiplier=float(config.validation_selection["locked_multiplier"]),
+        )
+    else:
+        selection = select_causal_intervention(candidates, corpus, provenance)
     selection_request_hash = _sha256_json(
         {
             "identity_sha256": identity_hash,
@@ -2233,7 +2375,7 @@ def evaluate_causal(
     dependencies: CausalDependencies | None = None,
 ) -> dict[str, Any]:
     dependencies = dependencies or CausalDependencies()
-    _config, prepare, corpus, bundle, binding = _load_prepared(args, dependencies)
+    config, prepare, corpus, bundle, binding = _load_prepared(args, dependencies)
     seal, seal_record = _load_evaluation_seal(args.seal_manifest, prepare=prepare)
     evidence_root = Path(args.evidence_dir)
     if not evidence_root.is_absolute():
@@ -2309,7 +2451,7 @@ def evaluate_causal(
     result = {
         "schema_version": 1,
         "kind": "same_string_answerability_causal_result",
-        "study_id": CAUSAL_STUDY_ID,
+        "study_id": config.study_id,
         "status": study.status,
         "reasons": list(study.reasons),
         "seal_sha256": seal.seal_sha256,
@@ -2326,7 +2468,7 @@ def evaluate_causal(
     result_path = _write_hashed_manifest(output_root / "result.json", result)
     report_path = output_root / "result.md"
     lines = [
-        "# Same-String Answerability Causal Pilot",
+        "# Same-String Answerability Causal Study",
         "",
         f"**Decision:** `{study.status}`",
         "",

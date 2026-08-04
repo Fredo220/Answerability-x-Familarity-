@@ -468,8 +468,15 @@ def seal_causal_evaluation(
     if not isinstance(label_shuffle_artifact, LabelShuffledDirectionArtifact):
         raise ValueError("sealing requires a typed label shuffle artifact")
     shuffled = _vector(label_shuffle_artifact.vector, "shuffled vector")
+    cosine = float(shuffled @ primary) / float(
+        np.linalg.norm(shuffled) * np.linalg.norm(primary)
+    )
     if np.array_equal(shuffled, primary):
         raise ValueError("label-shuffled control must differ from the primary vector")
+    if abs(cosine) >= 0.95 or np.linalg.norm(shuffled - primary) <= 0.25:
+        raise ValueError(
+            "label-shuffled control must be geometrically distinct from the primary vector"
+        )
     random = tuple(_vector(vector, "random vector") for vector in random_vectors)
     controls = _control_vector_artifact_hashes(
         primary=primary,
