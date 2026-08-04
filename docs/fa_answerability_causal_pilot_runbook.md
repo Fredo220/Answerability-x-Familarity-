@@ -2,10 +2,17 @@
 
 ## Status
 
-This workflow is software-verified but has not yet produced a causal result.
-The completed behavioral and representation studies remain closed and
-unchanged. A result exists only after all registered shards from both fresh
-test splits and every control have passed the sealed one-use evaluation.
+The live workflow completed on a free-Colab T4 and produced all 432 registered
+receipts. The frozen evaluator returned `not_supported`. A subsequent audit
+found that the sealed label-shuffled direction was bit-for-bit identical to
+the primary direction, making that mandatory control degenerate. The final
+scientific interpretation is therefore
+`not_evaluable_as_confirmatory_causal_test`, not causal support.
+
+The frozen machine result and all receipts remain unchanged. The corrected
+balanced within-unit label-shuffle is future-only; confirmation would require
+fresh test units under a new preregistration. See the
+[post-run audit](../release/familiarity_answerability/answerability_causal_pilot_v1/POST_RUN_AUDIT.md).
 
 ## What the pilot tests
 

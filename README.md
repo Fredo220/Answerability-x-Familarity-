@@ -3,14 +3,14 @@
 Can a language model tell the difference between **knowing more about a target**
 and **having the evidence needed to answer a specific question**?
 
-This repository contains two completed experiments on the pinned
-`google/gemma-2-2b-it` checkpoint and one execution-ready causal follow-up:
+This repository contains three completed stages on the pinned
+`google/gemma-2-2b-it` checkpoint:
 
 1. a behavioral test of whether unrelated exposure makes the model answer
    without evidence; and
 2. a representation-level test of whether internal activations encode
    answerability on the same controlled task; and
-3. a registered intervention study whose live Gemma run is still pending.
+3. a registered intervention study followed by a post-run control audit.
 
 ## Results at a Glance
 
@@ -18,7 +18,7 @@ This repository contains two completed experiments on the pinned
 |---|---|---|
 | Behavioral pilot | Does unrelated exposure selectively increase unsupported answer attempts? | **Not supported** |
 | Representation replication | Do fixed internal activations predict answerability beyond the registered bag-of-ngrams baseline? | **Supported on this controlled task** |
-| Causal follow-up | Does the training-only answerability direction locally change the code-versus-`UNKNOWN` margin? | **Software verified; live run pending** |
+| Causal follow-up | Does the training-only answerability direction locally change the code-versus-`UNKNOWN` margin more than the registered controls? | **Live run completed; confirmatory causal test not evaluable after control audit** |
 
 These results are compatible. The model did **not** display the predicted
 failure behavior, while its internal activations still contained decodable
@@ -142,13 +142,12 @@ information absent from the input.
 or inspect its
 [machine-readable result](release/familiarity_answerability/representation_replication_v3/analysis/result.json).
 
-### 3. Causal follow-up: execution-ready, no result yet
+### 3. Causal follow-up: completed, but not confirmatory
 
-The next study tests whether the v3 training-only answerability direction has
-a local causal effect. It adds the direction on fresh unanswerable prompts and
-subtracts it on fresh answerable prompts, then measures the change in the
-model's sequence log-probability margin between the correct archive code and
-`UNKNOWN`.
+The intervention study added the v3 training-only answerability direction on
+fresh unanswerable prompts and subtracted it on fresh answerable prompts. It
+then measured the change in the model's sequence log-probability margin
+between the correct archive code and `UNKNOWN`.
 
 The workflow uses 12 validation units to select one fixed layer and strength,
 then evaluates 18 unseen-entity and 18 unseen-template units separately. Its
@@ -158,13 +157,31 @@ norm-matched random controls. A protected result is produced only when every
 registered receipt verifies against the frozen corpus, runtime, prompt,
 intervention site, and request hashes.
 
-The complete fake-runner software path passes, as does a real local
-tokenizer/direction preparation smoke. The quantized Gemma forward pass has
-not been run, so this section reports readiness rather than causal evidence.
+The free-Colab T4 run completed all 432 registered primary and control
+receipts. The primary mean bidirectional effect was `0.1812` on unseen
+entities and `0.1659` on unseen templates. The frozen evaluator returned
+`not_supported` because neither split beat its strongest control. The
+intervention shifted log-probability margins but changed none of the 144
+primary-versus-baseline greedy outputs.
+
+A required post-run audit then found a stricter problem: the sealed
+label-shuffled vector was bit-for-bit identical to the primary vector. The
+original shuffle permuted complete sets before averaging, an operation that
+algebraically preserved the same mean direction. This mandatory control was
+therefore not an independent null. The machine result remains unchanged, but
+the scientific status is **not evaluable as a confirmatory causal test**. The
+entity split also had a larger wrong-layer effect (`0.4388`) than the primary
+effect, so the run does not support a layer-specific answerability mechanism.
+
+The defect is fixed for future studies with balanced within-unit label swaps
+and a fail-closed equality check. The opened test units cannot be reused to
+claim confirmation; a new preregistered replication would require fresh
+units. This correction does not change or rescue the completed result.
 
 [Open the Colab notebook](notebooks/fa_answerability_causal_pilot_colab.ipynb),
-[read the runbook](docs/fa_answerability_causal_pilot_runbook.md), or inspect
-the [frozen design](docs/superpowers/specs/2026-08-04-same-string-answerability-causal-pilot-design.md).
+[read the post-run audit](release/familiarity_answerability/answerability_causal_pilot_v1/POST_RUN_AUDIT.md),
+or inspect the
+[frozen machine result](release/familiarity_answerability/answerability_causal_pilot_v1/results/result.md).
 
 ## What the Results Do and Do Not Mean
 
@@ -175,6 +192,10 @@ The completed evidence supports two scoped statements:
 2. In the larger representation study, fixed activations predicted
    answerability beyond the registered bag-of-ngrams baseline across unseen
    entities and unseen prompt templates.
+
+The causal follow-up does not add a third supported statement. Its frozen
+machine gate failed, and the post-run audit found that one mandatory control
+was invalid.
 
 The project does **not** establish:
 
@@ -234,8 +255,9 @@ The most useful follow-up would:
 3. publish a power analysis before opening model outcomes;
 4. compare activations with stronger symbolic and sequence-aware baselines;
 5. test whether the representation result survives multiple seeds; and
-6. use controlled activation replacement with shuffled, reversed, orthogonal,
-   and norm-matched controls to test local causal influence.
+6. rerun controlled activation replacement on fresh units with the corrected
+   balanced label-shuffle, reversed, wrong-layer, wrong-anchor, and
+   norm-matched controls.
 
 The current study was intentionally scoped for an 8 GB local machine and
 free-tier Colab compute. Local hardware handled tests, audits, analysis, and
@@ -292,6 +314,8 @@ problems from being misreported as evidence about the research hypothesis.
 | [Representation pilot](docs/results/same_string_representation_pilot_v2.md) | Exploratory four-unit activation study |
 | [Representation v3 result](release/familiarity_answerability/representation_replication_v3/analysis/result.md) | Larger held-out representation replication |
 | [Representation v3 JSON](release/familiarity_answerability/representation_replication_v3/analysis/result.json) | Machine-readable replication outcome |
+| [Causal machine result](release/familiarity_answerability/answerability_causal_pilot_v1/results/result.md) | Frozen one-use evaluator output |
+| [Causal post-run audit](release/familiarity_answerability/answerability_causal_pilot_v1/POST_RUN_AUDIT.md) | Control defect, final interpretation, and claim boundary |
 | [Claim boundaries](docs/familiarity_answerability_claims.md) | Registered limits on interpretation |
 
 <details>

@@ -101,11 +101,13 @@ def test_causal_colab_preserves_gate_order_and_complete_schedule():
     assert "One-use protected evaluation" in text
 
 
-def test_causal_runbook_states_evidence_boundary_and_resume_contract():
+def test_causal_runbook_states_completed_audit_and_resume_contract():
     text = CAUSAL_RUNBOOK.read_text(encoding="utf-8")
 
-    assert "software-verified" in text
-    assert "has not yet produced a causal result" in text
+    assert "free-Colab T4" in text
+    assert "not_evaluable_as_confirmatory_causal_test" in text
+    assert "label-shuffled direction was bit-for-bit identical" in text
+    assert "fresh test units" in text
     assert "432 atomic unit receipts" in text
     assert re.search(r"same request\s+hash", text)
     assert re.search(r"Do\s+not replace the loop", text)
@@ -261,7 +263,7 @@ def test_same_string_runbook_states_counts_gates_and_claim_boundary():
     assert "not empirical evidence" in text
 
 
-def test_readme_separates_completed_results_from_pending_causal_followup():
+def test_readme_separates_supported_representation_from_invalidated_causal_followup():
     text = README.read_text(encoding="utf-8")
 
     assert "Behavioral pilot" in text
@@ -270,12 +272,14 @@ def test_readme_separates_completed_results_from_pending_causal_followup():
     assert "same_string_feasibility_v2_behavior_result.json" in text
     assert "Representation replication" in text
     assert "Supported on this controlled task" in text
-    assert "Causal follow-up: execution-ready, no result yet" in text
-    assert "Software verified; live run pending" in text
-    assert re.search(r"quantized Gemma forward pass has\s+not been run", text)
+    assert "Causal follow-up: completed, but not confirmatory" in text
+    assert "confirmatory causal test not evaluable after control audit" in text
+    assert "bit-for-bit identical to the primary vector" in text
+    assert "The machine result remains unchanged" in text
+    assert "changed none of the 144" in text
     assert "432 atomic receipts" in text
     assert "fa_answerability_causal_pilot_colab.ipynb" in text
-    assert "fa_answerability_causal_pilot_runbook.md" in text
+    assert "POST_RUN_AUDIT.md" in text
 
 
 def test_representation_result_is_exploratory_and_matches_released_artifacts():

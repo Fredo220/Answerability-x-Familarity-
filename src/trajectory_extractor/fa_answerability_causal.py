@@ -1042,20 +1042,24 @@ def _build_label_shuffled_direction_from_verified(
     permutation = tuple(str(unit_id) for unit_id in unit_permutation)
     if len(permutation) != len(unit_ids) or set(permutation) != set(unit_ids):
         raise ValueError("label shuffle artifact permutation must cover each training unit exactly once")
+    if len(unit_ids) % 2:
+        raise ValueError("label shuffle artifact requires an even number of training units")
+    swapped_units = frozenset(permutation[: len(permutation) // 2])
     activations = _activations_at_user_prompt_end(source.records)
     layer_index = CAUSAL_VALIDATION_LAYERS.index(layer_id)
     deltas = []
-    for destination_unit, source_unit in zip(unit_ids, permutation):
-        destination_cells = {
-            (row.exposure, row.answerability): row for row in by_unit[destination_unit]
+    for unit_id in unit_ids:
+        cells = {
+            (row.exposure, row.answerability): row for row in by_unit[unit_id]
         }
-        source_cells = {
-            (row.exposure, row.answerability): row for row in by_unit[source_unit]
-        }
+        sign = -1.0 if unit_id in swapped_units else 1.0
         for exposure in CAUSAL_EXPOSURES:
             deltas.append(
-                activations[source_cells[(exposure, "target_bound")].example_id][layer_index]
-                - activations[destination_cells[(exposure, "target_unbound")].example_id][layer_index]
+                sign
+                * (
+                    activations[cells[(exposure, "target_bound")].example_id][layer_index]
+                    - activations[cells[(exposure, "target_unbound")].example_id][layer_index]
+                )
             )
     raw = np.mean(np.stack(deltas), axis=0, dtype=np.float64)
     norm = float(np.linalg.norm(raw))

@@ -11,6 +11,8 @@ from trajectory_extractor.fa_answerability_causal import (
     CAUSAL_VALIDATION_LAYERS,
     CausalExpectedProvenance,
     ValidationSelection,
+    _label_shuffle_record,
+    _sha256,
     build_label_shuffled_direction,
     fit_train_only_directions,
     load_v3_training_direction_inputs,
@@ -343,6 +345,29 @@ def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
             primary_vector=seal.primary_vector,
             label_shuffle_artifact=seal.label_shuffle_artifact,
             random_vectors=(tuple(2.0 * value for value in seal.primary_vector), *seal.random_vectors[1:]),
+        )
+
+    degenerate_record = _label_shuffle_record(
+        seal.label_shuffle_artifact,
+        include_hash=False,
+    )
+    degenerate_record["vector"] = list(seal.primary_vector)
+    degenerate = replace(
+        seal.label_shuffle_artifact,
+        vector=np.asarray(seal.primary_vector),
+        artifact_sha256=_sha256(degenerate_record),
+    )
+    with pytest.raises(ValueError, match="must differ from the primary"):
+        seal_causal_evaluation(
+            selection=_selection(),
+            expected_provenance=_provenance(_selection()),
+            runtime_sha256="1" * 64,
+            output_contract_sha256="2" * 64,
+            random_seeds=(11, 12, 13, 14, 15),
+            expected_unit_ids_by_split=EXPECTED_UNITS,
+            primary_vector=seal.primary_vector,
+            label_shuffle_artifact=degenerate,
+            random_vectors=seal.random_vectors,
         )
 
     evidence = _evidence()

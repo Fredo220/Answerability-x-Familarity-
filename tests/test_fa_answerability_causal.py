@@ -257,6 +257,12 @@ def test_label_shuffle_artifact_recomputes_from_bound_v3_training_bytes():
     assert artifact.layer_id == 6
     assert artifact.unit_permutation == unit_ids[1:] + unit_ids[:1]
     assert np.isclose(np.linalg.norm(artifact.vector), 1.0)
+    primary = next(
+        direction
+        for direction in fit_train_only_directions(source).directions
+        if direction.layer_id == artifact.layer_id
+    )
+    assert not np.array_equal(artifact.vector, primary.vector)
     assert verify_label_shuffled_direction(artifact).artifact_sha256 == artifact.artifact_sha256
 
     with pytest.raises(ValueError, match="shuffle artifact"):
