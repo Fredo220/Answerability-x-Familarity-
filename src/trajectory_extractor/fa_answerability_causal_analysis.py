@@ -35,8 +35,8 @@ from trajectory_extractor.fa_answerability_causal_runtime import vector_audit_ha
 
 BOOTSTRAP_DRAWS = 10_000
 PERMUTATION_DRAWS = 9_999
-BOOTSTRAP_SEED = 202608041
-PERMUTATION_SEED = 202608042
+BOOTSTRAP_SEED = 20260804
+PERMUTATION_SEED = 20260804
 CAUSAL_TEST_SPLITS = ("causal_entity_test", "causal_template_test")
 CAUSAL_CONTROLS = (
     "no_intervention",

@@ -128,6 +128,11 @@ from trajectory_extractor.fa_same_string_replication_v3_analysis import (
     simulate_replication_sensitivity,
     write_replication_analysis,
 )
+from trajectory_extractor.fa_answerability_causal_cli import (
+    CAUSAL_COMMANDS,
+    dispatch_causal,
+    register_causal_subcommands,
+)
 from trajectory_extractor.fa_naturalness import (
     compile_adjudication_response_from_issuance,
     compile_initial_responses_from_issuance,
@@ -142,7 +147,7 @@ from trajectory_extractor.fa_naturalness import (
 )
 
 
-FA_COMMANDS = (
+_LEGACY_FA_COMMANDS = (
     "fa-run-screening", "fa-screen-entities", "fa-assemble-screened-matches", "fa-prepare-same-string-matches", "fa-prepare-same-string-v2-matches", "fa-prepare-naturalness-ratings", "fa-compile-naturalness-ratings", "fa-finalize-naturalness-adjudication", "fa-build-pilot", "fa-build-confirmatory", "fa-build-same-string-confirmatory", "fa-audit-manifest",
     "fa-run-generation", "fa-score-behavior",
     "fa-extract-activations", "fa-analyze-pilot-activations", "fa-analyze-same-string-representations", "fa-materialize-probe-rows", "fa-fit-probes", "fa-seal-behavior-test", "fa-seal-selection", "fa-unlock-endpoint",
@@ -150,6 +155,7 @@ FA_COMMANDS = (
     "fa-prepare-same-string-replication-v3", "fa-extract-same-string-replication-v3", "fa-analyze-same-string-replication-v3",
     "fa-run-interventions", "fa-select-circuit-cases", "fa-audit-circuit-fidelity", "fa-build-report",
 )
+FA_COMMANDS = (*_LEGACY_FA_COMMANDS, *CAUSAL_COMMANDS)
 _IMPLEMENTED = frozenset(
     (
         "fa-run-screening",
@@ -346,7 +352,7 @@ class _RecordedOutputScorer:
 
 def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     parsers: dict[str, argparse.ArgumentParser] = {}
-    for command in FA_COMMANDS:
+    for command in _LEGACY_FA_COMMANDS:
         parser = subparsers.add_parser(command)
         parser.error = lambda message, command=command: _argument_error(command, message)
         parser.add_argument("--config", required=True)
@@ -495,12 +501,15 @@ def register_fa_subcommands(subparsers: argparse._SubParsersAction) -> None:
     score = parsers["fa-score-behavior"]
     score.add_argument("--manifest", required=True)
     score.add_argument("--generation-manifest", required=True)
+    register_causal_subcommands(subparsers)
 
 
 def dispatch_fa(args: argparse.Namespace) -> int | None:
     command = getattr(args, "command", None)
     if command not in FA_COMMANDS:
         return None
+    if command in CAUSAL_COMMANDS:
+        return dispatch_causal(args)
     if command not in _IMPLEMENTED:
         print(
             json.dumps(

@@ -5123,3 +5123,90 @@ def test_report_rejects_evidence_sidecar_from_another_run_before_loading(
                 output="report.md",
             ),
         )
+
+
+def test_causal_commands_register_explicit_resumable_surfaces(tmp_path):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    register_fa_subcommands(subparsers)
+
+    prepare = parser.parse_args(
+        [
+            "fa-causal-prepare",
+            "--config",
+            "causal.json",
+            "--root",
+            str(tmp_path),
+            "--v3-corpus-manifest",
+            "v3.json",
+            "--v3-training-activation-manifest",
+            "train.json",
+            "--output-dir",
+            "prepared",
+        ]
+    )
+    validation = parser.parse_args(
+        [
+            "fa-causal-run-validation",
+            "--config",
+            "causal.json",
+            "--root",
+            str(tmp_path),
+            "--prepare-manifest",
+            "prepared.json",
+            "--output-dir",
+            "validation",
+            "--resume",
+        ]
+    )
+    shard = parser.parse_args(
+        [
+            "fa-causal-run-shard",
+            "--config",
+            "causal.json",
+            "--root",
+            str(tmp_path),
+            "--prepare-manifest",
+            "prepared.json",
+            "--seal-manifest",
+            "seal.json",
+            "--split",
+            "causal_entity_test",
+            "--control",
+            "norm_matched_random",
+            "--unit-id",
+            "causal-v1-unit-012",
+            "--member",
+            "3",
+            "--output-dir",
+            "evidence",
+            "--resume",
+        ]
+    )
+    evaluate = parser.parse_args(
+        [
+            "fa-causal-evaluate",
+            "--config",
+            "causal.json",
+            "--root",
+            str(tmp_path),
+            "--prepare-manifest",
+            "prepared.json",
+            "--seal-manifest",
+            "seal.json",
+            "--evidence-dir",
+            "evidence",
+            "--output-dir",
+            "results",
+        ]
+    )
+
+    assert prepare.command == "fa-causal-prepare"
+    assert validation.resume is True
+    assert (shard.split, shard.control, shard.member, shard.resume) == (
+        "causal_entity_test",
+        "norm_matched_random",
+        3,
+        True,
+    )
+    assert evaluate.command == "fa-causal-evaluate"

@@ -10,6 +10,7 @@ data/external/
 .DS_Store
 *.tmp
 .superpowers/
+.skillopt-sleep/
 .worktrees/
 
 .playwright-cli/

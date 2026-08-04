@@ -1,0 +1,2 @@
+-r fa-core.in
+bitsandbytes==0.49.2

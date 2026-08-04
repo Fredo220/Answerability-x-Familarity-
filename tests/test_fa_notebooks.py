@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "fa_same_string_primary_colab.ipynb"
 V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
+CAUSAL_NOTEBOOK = ROOT / "notebooks" / "fa_answerability_causal_pilot_colab.ipynb"
+CAUSAL_RUNBOOK = ROOT / "docs" / "fa_answerability_causal_pilot_runbook.md"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
 V2_RESULT = ROOT / "docs" / "results" / "same_string_feasibility_v2_behavior_result.json"
@@ -39,6 +41,57 @@ def v2_notebook_text() -> str:
     return "\n".join(
         "".join(cell.get("source", ())) for cell in payload.get("cells", ())
     )
+
+
+def causal_notebook_text() -> str:
+    payload = json.loads(CAUSAL_NOTEBOOK.read_text(encoding="utf-8"))
+    return "\n".join(
+        "".join(cell.get("source", ())) for cell in payload.get("cells", ())
+    )
+
+
+def test_causal_colab_is_pinned_secret_safe_and_single_load():
+    text = causal_notebook_text()
+
+    assert re.search(r'PINNED_REPO_COMMIT\s*=\s*"[0-9a-f]{40}"', text)
+    assert 'PINNED_REPO_COMMIT = "' + "0" * 40 + '"' not in text
+    assert 'os.environ.get("HF_TOKEN")' in text
+    assert 'userdata.get("HF_TOKEN")' in text
+    assert not re.search(r"hf_[A-Za-z0-9]{20,}", text)
+    assert "bitsandbytes==0.49.2" in text
+    assert text.count("HFCausalRunner.from_pretrained") == 1
+    assert "/content/drive/MyDrive/fa-causal-pilot-v1" in text
+    assert "resume=True" in text
+
+
+def test_causal_colab_preserves_gate_order_and_complete_schedule():
+    text = causal_notebook_text()
+    positions = [
+        text.index(name)
+        for name in (
+            "prepare_causal",
+            "run_causal_validation",
+            "expected_causal_shards",
+            "run_causal_shard",
+            "evaluate_causal",
+        )
+    ]
+
+    assert positions == sorted(positions)
+    assert "assert torch.cuda.is_available()" in text
+    assert "Each receipt is atomic" in text
+    assert "One-use protected evaluation" in text
+
+
+def test_causal_runbook_states_evidence_boundary_and_resume_contract():
+    text = CAUSAL_RUNBOOK.read_text(encoding="utf-8")
+
+    assert "software-verified" in text
+    assert "has not yet produced a causal result" in text
+    assert "432 atomic unit receipts" in text
+    assert re.search(r"same request\s+hash", text)
+    assert "Do not replace the loop" in text
+    assert "general metacognition" in text
 
 
 def test_same_string_colab_is_thin_pinned_and_secret_safe():
