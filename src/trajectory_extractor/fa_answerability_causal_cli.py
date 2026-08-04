@@ -2046,10 +2046,14 @@ def _verify_shard_runtime_evidence(
         for row in unrelated["rows"]:
             index = int(row["prompt_id"].rsplit("-", 1)[1])
             expected = f"U{index:04d}"
-            if row.get("expected") != expected:
+            if (
+                row.get("expected") != expected
+                or not isinstance(row.get("baseline"), str)
+                or not isinstance(row.get("generated"), str)
+            ):
                 raise ValueError("causal unrelated-preservation target is invalid")
             recomputed_passed = recomputed_passed and (
-                row.get("baseline", row.get("generated")) == expected
+                row["baseline"] == expected
                 and row.get("generated") == expected
             )
         if unrelated.get("passed") is not recomputed_passed:

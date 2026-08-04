@@ -243,32 +243,21 @@ def test_same_string_runbook_states_counts_gates_and_claim_boundary():
     assert "not empirical evidence" in text
 
 
-def test_readme_reports_completed_v2_study_without_rewriting_r11():
+def test_readme_separates_completed_results_from_pending_causal_followup():
     text = README.read_text(encoding="utf-8")
 
-    assert "Same-String Balanced Pilot v2" in text
-    assert "evaluable, and `not_supported`" in text
+    assert "Behavioral pilot" in text
+    assert "**Not supported**" in text
     assert "same_string_feasibility_v2_behavior_result.md" in text
     assert "same_string_feasibility_v2_behavior_result.json" in text
-    assert "## How to Interpret the Result" in text
-    assert "## Compute-Constrained Scope" in text
-    assert "## What a Stronger Follow-Up Should Test" in text
-    assert "With greater research-compute access" in text
-    assert "We tested whether the model represents exposure" in text
-    assert "did not establish a distinct internal answerability signal" in text
-    assert "The registered mechanistic pilot required the behavioral gate" in text
-    assert "separately permitted the completed" in text
-    assert "exploratory representation-only analysis" in text
-    assert "representation-only result" in text
-    assert "### Representation-Only Pilot" in text
-    assert "Contextual exposure was detectable internally" in text
-    assert "Prompt surface features already predicted answerability perfectly" in text
-    assert "exploratory, non-causal" in text
-    assert "reliability concern" in text
-    assert "docs/fa_same_string_primary_runbook.md" in text
-    assert "docs/amendments/2026-08-01-fa-same-string-primary.md" in text
-    assert "docs/superpowers/specs/2026-08-01-same-string-primary-hybrid-design.md" in text
-    assert "R11" in text
+    assert "Representation replication" in text
+    assert "Supported on this controlled task" in text
+    assert "Causal follow-up: execution-ready, no result yet" in text
+    assert "Software verified; live run pending" in text
+    assert "quantized Gemma forward pass has not been run" in text
+    assert "432 atomic receipts" in text
+    assert "fa_answerability_causal_pilot_colab.ipynb" in text
+    assert "fa_answerability_causal_pilot_runbook.md" in text
 
 
 def test_representation_result_is_exploratory_and_matches_released_artifacts():

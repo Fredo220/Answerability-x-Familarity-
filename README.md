@@ -4,12 +4,13 @@ Can a language model tell the difference between **knowing more about a target**
 and **having the evidence needed to answer a specific question**?
 
 This repository contains two completed experiments on the pinned
-`google/gemma-2-2b-it` checkpoint:
+`google/gemma-2-2b-it` checkpoint and one execution-ready causal follow-up:
 
 1. a behavioral test of whether unrelated exposure makes the model answer
    without evidence; and
 2. a representation-level test of whether internal activations encode
-   answerability on the same controlled task.
+   answerability on the same controlled task; and
+3. a registered intervention study whose live Gemma run is still pending.
 
 ## Results at a Glance
 
@@ -17,6 +18,7 @@ This repository contains two completed experiments on the pinned
 |---|---|---|
 | Behavioral pilot | Does unrelated exposure selectively increase unsupported answer attempts? | **Not supported** |
 | Representation replication | Do fixed internal activations predict answerability beyond the registered bag-of-ngrams baseline? | **Supported on this controlled task** |
+| Causal follow-up | Does the training-only answerability direction locally change the code-versus-`UNKNOWN` margin? | **Software verified; live run pending** |
 
 These results are compatible. The model did **not** display the predicted
 failure behavior, while its internal activations still contained decodable
@@ -139,6 +141,30 @@ information absent from the input.
 [Read the v3 representation report](release/familiarity_answerability/representation_replication_v3/analysis/result.md)
 or inspect its
 [machine-readable result](release/familiarity_answerability/representation_replication_v3/analysis/result.json).
+
+### 3. Causal follow-up: execution-ready, no result yet
+
+The next study tests whether the v3 training-only answerability direction has
+a local causal effect. It adds the direction on fresh unanswerable prompts and
+subtracts it on fresh answerable prompts, then measures the change in the
+model's sequence log-probability margin between the correct archive code and
+`UNKNOWN`.
+
+The workflow uses 12 validation units to select one fixed layer and strength,
+then evaluates 18 unseen-entity and 18 unseen-template units separately. Its
+432 atomic receipts include the primary intervention, baseline, reversed,
+label-shuffled, wrong-layer, wrong-anchor, no-intervention, and five
+norm-matched random controls. A protected result is produced only when every
+registered receipt verifies against the frozen corpus, runtime, prompt,
+intervention site, and request hashes.
+
+The complete fake-runner software path passes, as does a real local
+tokenizer/direction preparation smoke. The quantized Gemma forward pass has
+not been run, so this section reports readiness rather than causal evidence.
+
+[Open the Colab notebook](notebooks/fa_answerability_causal_pilot_colab.ipynb),
+[read the runbook](docs/fa_answerability_causal_pilot_runbook.md), or inspect
+the [frozen design](docs/superpowers/specs/2026-08-04-same-string-answerability-causal-pilot-design.md).
 
 ## What the Results Do and Do Not Mean
 

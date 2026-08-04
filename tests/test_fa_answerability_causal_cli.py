@@ -313,6 +313,7 @@ class FakeCausalRunner:
                 {
                     "prompt_id": f"unrelated-code-lookup-{index}",
                     "expected": f"U{index:04d}",
+                    "baseline": f"U{index:04d}",
                     "generated": f"U{index:04d}",
                 }
                 for index in range(4)
@@ -432,6 +433,7 @@ def test_shard_runs_one_registered_unit_and_resumes_without_model_work(tmp_path)
         "prompt_id",
         "request_hash",
         "unrelated_passed",
+        "unrelated_baseline_missing",
     ],
 )
 def test_evaluator_rejects_tampered_runtime_or_prompt_evidence(tmp_path, tamper):
@@ -488,8 +490,10 @@ def test_evaluator_rejects_tampered_runtime_or_prompt_evidence(tmp_path, tamper)
         payload["rows"][0]["example_id"] = "wrong-example"
     elif tamper == "request_hash":
         payload["request_sha256"] = "9" * 64
-    else:
+    elif tamper == "unrelated_passed":
         payload["unrelated_preservation"]["passed"] = False
+    else:
+        del payload["unrelated_preservation"]["rows"][0]["baseline"]
 
     load_args = argparse.Namespace(
         config=str(CONFIG),
