@@ -80,3 +80,42 @@ test rows exist and provide the complete typed schedule to this module.
   input. That integration remains subject to the registered live smoke and
   protected-endpoint procedure.
 - No lint result is available because `.venv/bin/ruff` is absent.
+
+## Fix Round 1
+
+Four fail-closed review findings were repaired:
+
+1. The seal now binds the exact registered unit-ID set for both causal test
+   splits. Each contains exactly 18 unique units; analysis requires those exact
+   units and exactly 72 baseline and 72 primary prompt rows per split. Subsets,
+   substitutions, and incomplete schedules return `not_evaluable`.
+2. `BaselineScore` now carries `ExecutionAuditHashes`. Baseline rows must match
+   the sealed no-intervention identity, including the corpus, selection,
+   model/tokenizer, runtime, output contract, site, seeds, and vector-artifact
+   hash.
+3. The seal now stores the actual primary, shuffled, and five random vector
+   values; a frozen label-permutation hash; and recomputed hashes for primary,
+   no-op, sign-reversed, shuffled, random, wrong-anchor, and wrong-layer vector
+   artifacts. The validator verifies all artifact hashes. Random vectors must
+   be norm-matched and orthogonal to the primary vector within the registered
+   numerical tolerance. This no longer treats seed metadata as sufficient
+   evidence of a control vector.
+4. `CausalAnalysisStore.complete` now runs inside an atomically-created,
+   token-owned exclusive lease. The context-managed lease is removed only by
+   its owner and is closed on normal or exceptional exit; a competing caller is
+   refused before analysis begins.
+
+The added regressions were written first. Their first focused run failed
+because `seal_causal_evaluation` did not accept the new bound-unit and vector
+artifact inputs. Final verification passed:
+
+```text
+.venv/bin/python -m pytest \
+  tests/test_fa_answerability_causal.py \
+  tests/test_fa_answerability_causal_runtime.py \
+  tests/test_fa_answerability_causal_analysis.py -q
+39 passed in 4.44s
+```
+
+No model was loaded and no causal validation, causal-test, or closed-study
+outcome was opened or modified during this fix round.

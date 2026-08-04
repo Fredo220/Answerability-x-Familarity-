@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from trajectory_extractor.fa_answerability_causal import (
@@ -33,6 +34,16 @@ from trajectory_extractor.fa_answerability_causal_analysis import (
 
 HASH = "a" * 64
 SPLIT = "causal_entity_test"
+EXPECTED_UNITS = {
+    "causal_entity_test": tuple(f"causal-v1-unit-{index:03d}" for index in range(12, 30)),
+    "causal_template_test": tuple(f"causal-v1-unit-{index:03d}" for index in range(30, 48)),
+}
+PRIMARY_VECTOR = (1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+SHUFFLED_VECTOR = (0.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+RANDOM_VECTORS = tuple(
+    tuple(1.0 if index == member + 1 else 0.0 for index in range(6))
+    for member in range(5)
+)
 
 
 def _selection() -> ValidationSelection:
@@ -71,6 +82,11 @@ def _seal(*, runtime_sha256="1" * 64):
         runtime_sha256=runtime_sha256,
         output_contract_sha256="2" * 64,
         random_seeds=(11, 12, 13, 14, 15),
+        expected_unit_ids_by_split=EXPECTED_UNITS,
+        primary_vector=PRIMARY_VECTOR,
+        shuffled_vector=SHUFFLED_VECTOR,
+        frozen_label_permutation_sha256="3" * 64,
+        random_vectors=RANDOM_VECTORS,
     )
 
 
@@ -82,7 +98,7 @@ def _generation(*, copied: bool = False, valid: bool = True) -> GenerationResult
     )
 
 
-def _baseline(unit_id: str, exposure: str, answerability: str) -> BaselineScore:
+def _baseline(unit_id: str, exposure: str, answerability: str, seal) -> BaselineScore:
     margin = 0.4 if answerability == "target_bound" else -0.4
     return BaselineScore(
         unit_id=unit_id,
@@ -92,11 +108,12 @@ def _baseline(unit_id: str, exposure: str, answerability: str) -> BaselineScore:
         raw_margin=margin,
         length_normalized_margin=margin / 2,
         generation=_generation(),
+        audit=ExecutionAuditHashes.for_control(seal, "no_intervention"),
     )
 
 
 def _intervention_score(kind, unit_id, exposure, answerability, effect, seal, member=None):
-    baseline = _baseline(unit_id, exposure, answerability)
+    baseline = _baseline(unit_id, exposure, answerability, seal)
     sign = 0 if kind == "no_intervention" else (1 if answerability == "target_unbound" else -1)
     if kind == "sign_reversed":
         sign *= -1
@@ -118,17 +135,16 @@ def _intervention_score(kind, unit_id, exposure, answerability, effect, seal, me
     )
 
 
-def _evidence(*, units=8, primary_effect=0.4, control_effect=0.05) -> CausalEvidence:
+def _evidence(*, primary_effect=0.4, control_effect=0.05) -> CausalEvidence:
     seal = _seal()
     baselines = []
     primary = []
     controls = []
     manipulation = []
-    for index in range(units):
-        unit_id = f"unit-{index:02d}"
+    for unit_id in EXPECTED_UNITS[SPLIT]:
         for exposure in ("low_exposure", "high_exposure"):
             for answerability in ("target_unbound", "target_bound"):
-                baselines.append(_baseline(unit_id, exposure, answerability))
+                baselines.append(_baseline(unit_id, exposure, answerability, seal))
                 primary.append(
                     _intervention_score(
                         "primary", unit_id, exposure, answerability, primary_effect, seal
@@ -225,13 +241,84 @@ def test_incomplete_factorial_unit_or_control_schedule_is_not_evaluable():
     )
 
     assert result.status == "not_evaluable"
-    assert "incomplete_2x2_units" in result.reasons
+    assert "expected_prompt_count_mismatch" in result.reasons
 
     result = analyze_causal_evidence(
         replace(evidence, control_scores=evidence.control_scores[:-1])
     )
     assert result.status == "not_evaluable"
     assert "incomplete_control_schedule" in result.reasons
+
+
+def test_seal_requires_exact_registered_units_and_all_72_prompt_rows():
+    evidence = _evidence()
+    missing_unit = EXPECTED_UNITS[SPLIT][-1]
+    subset = tuple(row for row in evidence.baselines if row.unit_id != missing_unit)
+    result = analyze_causal_evidence(replace(evidence, baselines=subset))
+    assert result.status == "not_evaluable"
+    assert "expected_unit_ids_mismatch" in result.reasons
+
+    substituted = replace(evidence.baselines[0], unit_id="causal-v1-unit-999")
+    result = analyze_causal_evidence(
+        replace(evidence, baselines=(substituted, *evidence.baselines[1:]))
+    )
+    assert result.status == "not_evaluable"
+    assert "expected_unit_ids_mismatch" in result.reasons
+
+
+def test_baselines_bind_the_same_execution_identity_as_intervention_rows():
+    evidence = _evidence()
+    changed = replace(evidence.baselines[0].audit, runtime_sha256="9" * 64)
+    result = analyze_causal_evidence(
+        replace(evidence, baselines=(replace(evidence.baselines[0], audit=changed), *evidence.baselines[1:]))
+    )
+
+    assert result.status == "not_evaluable"
+    assert "execution_identity_mismatch" in result.reasons
+
+
+def test_control_vector_artifacts_are_hash_bound_and_geometrically_verified():
+    seal = _seal()
+    assert set(seal.control_vector_artifact_hashes) == {
+        "primary",
+        "no_intervention",
+        "sign_reversed",
+        "label_shuffled_direction",
+        "wrong_anchor",
+        "wrong_layer",
+        *(f"norm_matched_random:{index}" for index in range(5)),
+    }
+    assert seal.frozen_label_permutation_sha256 == "3" * 64
+    for vector in seal.random_vectors:
+        assert np.isclose(np.linalg.norm(vector), np.linalg.norm(seal.primary_vector))
+        assert np.isclose(np.dot(vector, seal.primary_vector), 0.0, atol=1e-12)
+
+    with pytest.raises(ValueError, match="norm-matched"):
+        seal_causal_evaluation(
+            selection=_selection(),
+            expected_provenance=_provenance(_selection()),
+            runtime_sha256="1" * 64,
+            output_contract_sha256="2" * 64,
+            random_seeds=(11, 12, 13, 14, 15),
+            expected_unit_ids_by_split=EXPECTED_UNITS,
+            primary_vector=PRIMARY_VECTOR,
+            shuffled_vector=SHUFFLED_VECTOR,
+            frozen_label_permutation_sha256="3" * 64,
+            random_vectors=((2.0, 0.0, 0.0, 0.0, 0.0, 0.0), *RANDOM_VECTORS[1:]),
+        )
+
+    evidence = _evidence()
+    changed = replace(
+        evidence.control_scores[0].audit, control_vector_artifact_sha256="9" * 64
+    )
+    result = analyze_causal_evidence(
+        replace(
+            evidence,
+            control_scores=(replace(evidence.control_scores[0], audit=changed), *evidence.control_scores[1:]),
+        )
+    )
+    assert result.status == "not_evaluable"
+    assert "execution_identity_mismatch" in result.reasons
 
 
 @pytest.mark.parametrize(
@@ -295,7 +382,13 @@ def test_tied_strongest_control_is_not_supported():
 
 def test_sign_flip_format_preservation_and_copying_fail_support():
     assert "sign_flip_p_above_0_05" in analyze_causal_evidence(
-        _evidence(units=4, primary_effect=0.001)
+        replace(
+            _evidence(primary_effect=0.0),
+            primary_scores=tuple(
+                replace(row, raw_margin=row.raw_margin + (0.001 if row.unit_id == EXPECTED_UNITS[SPLIT][0] else 0.0))
+                for row in _evidence(primary_effect=0.0).primary_scores
+            ),
+        )
     ).reasons
 
     evidence = _evidence()
@@ -347,6 +440,18 @@ def test_store_allows_same_hash_partial_resume_and_rejects_completed_or_mismatch
     different = _seal(runtime_sha256="9" * 64)
     with pytest.raises(ValueError, match="hash"):
         store.begin_or_resume(different, SPLIT)
+
+
+def test_store_uses_an_atomic_exclusive_lease_for_competing_callers(tmp_path):
+    evidence = _evidence()
+    store = CausalAnalysisStore(tmp_path)
+    with store.acquire(evidence.seal, SPLIT) as lease:
+        assert lease.closed is False
+        with pytest.raises(RuntimeError, match="lease"):
+            store.acquire(evidence.seal, SPLIT)
+    assert lease.closed is True
+    with store.acquire(evidence.seal, SPLIT):
+        pass
 
 
 def test_deterministic_farthest_registered_layer_has_a_stable_tie_break():
