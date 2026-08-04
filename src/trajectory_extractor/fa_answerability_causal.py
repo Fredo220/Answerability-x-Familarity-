@@ -8,11 +8,22 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 
-from trajectory_extractor.fa_activations import ANCHOR_NAMES, ActivationRecord
+from trajectory_extractor.fa_activations import (
+    ANCHOR_NAMES,
+    ActivationRecord,
+    load_activation_records,
+    resume_activation_shard,
+)
+from trajectory_extractor.fa_same_string_replication_v3 import (
+    REP_V3_SPLIT_COUNTS,
+    REP_V3_STUDY_ID,
+    ReplicationPromptV3,
+)
 
 
 CAUSAL_STUDY_ID = "same-string-answerability-causal-pilot-v1"
@@ -184,20 +195,96 @@ class AnswerabilityDirection:
 @dataclass(frozen=True)
 class DirectionBundle:
     directions: tuple[AnswerabilityDirection, ...]
-    prompts_sha256: str
-    activations_sha256: str
+    source: "V3DirectionProvenance"
     bundle_sha256: str
 
     def __post_init__(self) -> None:
         directions = tuple(self.directions)
         if tuple(direction.layer_id for direction in directions) != CAUSAL_VALIDATION_LAYERS:
             raise ValueError("direction bundle must contain every registered layer in order")
+        if not isinstance(self.source, V3DirectionProvenance):
+            raise ValueError("direction bundle requires verified v3 provenance")
         object.__setattr__(self, "directions", directions)
-        _require_sha256(self.prompts_sha256, "direction prompts hash")
-        _require_sha256(self.activations_sha256, "direction activations hash")
         expected = _sha256(_direction_bundle_record(self, include_hash=False))
         if self.bundle_sha256 != expected:
             raise ValueError("direction bundle hash does not match direction content")
+
+
+@dataclass(frozen=True)
+class V3DirectionProvenance:
+    v3_prompts_sha256: str
+    v3_manifest_sha256: str
+    activation_manifest_sha256: str
+    activation_npz_sha256: str
+    activation_index_sha256: str
+    activation_request_sha256: str
+    model_id: str
+    model_revision: str
+    tokenizer_id: str
+    tokenizer_revision: str
+    chat_template_sha256: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.v3_prompts_sha256, "v3 prompts hash"),
+            (self.v3_manifest_sha256, "v3 manifest hash"),
+            (self.activation_manifest_sha256, "activation manifest hash"),
+            (self.activation_npz_sha256, "activation NPZ hash"),
+            (self.activation_index_sha256, "activation index hash"),
+            (self.activation_request_sha256, "activation request hash"),
+            (self.chat_template_sha256, "chat template hash"),
+        ):
+            _require_sha256(value, name)
+        for value, name in (
+            (self.model_id, "v3 model ID"),
+            (self.model_revision, "v3 model revision"),
+            (self.tokenizer_id, "v3 tokenizer ID"),
+            (self.tokenizer_revision, "v3 tokenizer revision"),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be nonempty")
+
+
+@dataclass(frozen=True)
+class VerifiedV3TrainingInputs:
+    prompts: tuple[ReplicationPromptV3, ...]
+    records: tuple[ActivationRecord, ...]
+    source: V3DirectionProvenance
+
+    def __post_init__(self) -> None:
+        prompts = tuple(self.prompts)
+        records = tuple(self.records)
+        if not prompts or not isinstance(self.source, V3DirectionProvenance):
+            raise ValueError("verified v3 training inputs are incomplete")
+        if any(row.split != "representation_train" for row in prompts):
+            raise ValueError("verified inputs must contain representation_train rows only")
+        if {row.example_id for row in prompts} != {row.example_id for row in records}:
+            raise ValueError("verified v3 activation identities do not match prompts")
+        object.__setattr__(self, "prompts", prompts)
+        object.__setattr__(self, "records", records)
+
+
+@dataclass(frozen=True)
+class CausalExpectedProvenance:
+    corpus_sha256: str
+    direction_bundle_sha256: str
+    direction_hashes: Mapping[int, str]
+    model_sha256: str
+    tokenizer_sha256: str
+
+    def __post_init__(self) -> None:
+        hashes = {int(layer): value for layer, value in self.direction_hashes.items()}
+        if tuple(sorted(hashes)) != CAUSAL_VALIDATION_LAYERS:
+            raise ValueError("expected provenance must bind every registered direction layer")
+        for value, name in (
+            (self.corpus_sha256, "expected corpus hash"),
+            (self.direction_bundle_sha256, "expected direction bundle hash"),
+            (self.model_sha256, "expected model hash"),
+            (self.tokenizer_sha256, "expected tokenizer hash"),
+            *[(value, "expected direction hash") for value in hashes.values()],
+        ):
+            _require_sha256(value, name)
+        object.__setattr__(self, "direction_hashes", MappingProxyType(hashes))
 
 
 @dataclass(frozen=True)
@@ -207,8 +294,8 @@ class ValidationCandidate:
     unit_effects: tuple[tuple[str, float], ...]
     invalid_output_rate: float
     bound_accuracy_drop: float
-    prompts_sha256: str
-    prefixes_sha256: str
+    corpus_sha256: str
+    direction_bundle_sha256: str
     model_sha256: str
     tokenizer_sha256: str
     direction_sha256: str
@@ -226,8 +313,8 @@ class ValidationCandidate:
         if not np.isfinite(self.invalid_output_rate) or not np.isfinite(self.bound_accuracy_drop):
             raise ValueError("validation gate values must be finite")
         for value, name in (
-            (self.prompts_sha256, "validation prompts hash"),
-            (self.prefixes_sha256, "validation prefixes hash"),
+            (self.corpus_sha256, "validation corpus hash"),
+            (self.direction_bundle_sha256, "validation direction bundle hash"),
             (self.model_sha256, "validation model hash"),
             (self.tokenizer_sha256, "validation tokenizer hash"),
             (self.direction_sha256, "validation direction hash"),
@@ -249,8 +336,8 @@ class ValidationSelection:
     multiplier: float
     mean_bidirectional_effect: float
     direction_sha256: str
-    prompts_sha256: str
-    prefixes_sha256: str
+    corpus_sha256: str
+    direction_bundle_sha256: str
     model_sha256: str
     tokenizer_sha256: str
     corpus_sha256: str
@@ -265,11 +352,10 @@ class ValidationSelection:
             raise ValueError("selected effect must be finite")
         for value, name in (
             (self.direction_sha256, "selection direction hash"),
-            (self.prompts_sha256, "selection prompts hash"),
-            (self.prefixes_sha256, "selection prefixes hash"),
+            (self.corpus_sha256, "selection corpus hash"),
+            (self.direction_bundle_sha256, "selection direction bundle hash"),
             (self.model_sha256, "selection model hash"),
             (self.tokenizer_sha256, "selection tokenizer hash"),
-            (self.corpus_sha256, "selection corpus hash"),
         ):
             _require_sha256(value, name)
         expected = _sha256(_selection_record(self, include_hash=False))
@@ -356,8 +442,10 @@ def _unit_allocation() -> tuple[tuple[str, int, str], ...]:
 
 
 def build_causal_corpus(
-    tokenizer: Any, *, v3_prompts: Sequence[Any] = ()
+    tokenizer: Any, *, v3_prompts: Sequence[ReplicationPromptV3] | None = None
 ) -> CausalCorpus:
+    if v3_prompts is None:
+        raise ValueError("causal corpus construction requires v3 exclusions")
     prompts = []
     for split, unit_index, family in _unit_allocation():
         target = f"Causa{2 * unit_index:04d}"
@@ -439,13 +527,27 @@ def _identity_sets_from_v3(v3_prompts: Sequence[Any]) -> dict[str, frozenset[str
     }
 
 
+def _has_complete_v3_test_exclusions(v3_prompts: Sequence[ReplicationPromptV3]) -> bool:
+    for split in ("entity_test", "template_test"):
+        rows = [row for row in v3_prompts if row.split == split]
+        if (
+            len(rows) != 4 * REP_V3_SPLIT_COUNTS[split]
+            or len({row.entity_unit_id for row in rows}) != REP_V3_SPLIT_COUNTS[split]
+        ):
+            return False
+    return True
+
+
 def audit_causal_corpus(
     prompts: Sequence[CausalPrompt],
     tokenizer: Any,
     *,
-    v3_prompts: Sequence[Any] = (),
-    v3_test_identity_sets: Mapping[str, frozenset[str]] | None = None,
+    v3_prompts: Sequence[ReplicationPromptV3] | None = None,
 ) -> CausalAudit:
+    if v3_prompts is None:
+        raise ValueError("causal corpus audit requires v3 exclusions")
+    if not _has_complete_v3_test_exclusions(v3_prompts):
+        raise ValueError("causal corpus audit requires complete v3 exclusions")
     rows = tuple(prompts)
     by_unit: dict[str, list[CausalPrompt]] = {}
     for row in rows:
@@ -456,8 +558,8 @@ def audit_causal_corpus(
         for answerability in CAUSAL_ANSWERABILITY
     )
     identity_sets = _identity_sets_from_v3(v3_prompts)
-    if v3_test_identity_sets is not None:
-        identity_sets = {**identity_sets, **dict(v3_test_identity_sets)}
+    if not all(identity_sets.values()):
+        raise ValueError("causal corpus audit requires complete v3 exclusions")
 
     def paired_multisets(axis: str) -> bool:
         opposite = CAUSAL_EXPOSURES if axis == "answerability" else CAUSAL_ANSWERABILITY
@@ -501,6 +603,24 @@ def audit_causal_corpus(
         len({row.entity_unit_id for row in rows if row.split == split}) == count
         for split, count in CAUSAL_SPLIT_COUNTS.items()
     )
+    split_identities = {
+        split: {
+            "names": {
+                value
+                for row in rows
+                if row.split == split
+                for value in (row.target_text, row.distractor_text)
+            },
+            "registry_codes": {row.registry_code for row in rows if row.split == split},
+        }
+        for split in CAUSAL_SPLIT_COUNTS
+    }
+    causal_identity_disjointness = all(
+        not split_identities[left][kind].intersection(split_identities[right][kind])
+        for index, left in enumerate(CAUSAL_SPLIT_COUNTS)
+        for right in tuple(CAUSAL_SPLIT_COUNTS)[index + 1 :]
+        for kind in ("names", "registry_codes")
+    )
     fresh_templates = {
         row.template_family for row in rows if row.split == "causal_template_test"
     }
@@ -519,6 +639,7 @@ def audit_causal_corpus(
         "split_identity_disjointness": all(
             len({row.split for row in unit_rows}) == 1 for unit_rows in by_unit.values()
         ),
+        "causal_identity_disjointness": causal_identity_disjointness,
         "fresh_template_holdout": fresh_templates == set(_FRESH_TEMPLATES)
         and not fresh_templates.intersection(other_templates)
         and other_templates == set(_SEEN_TEMPLATES),
@@ -566,8 +687,13 @@ def write_causal_corpus(corpus: CausalCorpus, destination: str | Path) -> Causal
 
 
 def verify_causal_corpus(
-    manifest_path: str | Path, tokenizer: Any, *, v3_prompts: Sequence[Any] = ()
+    manifest_path: str | Path,
+    tokenizer: Any,
+    *,
+    v3_prompts: Sequence[ReplicationPromptV3] | None = None,
 ) -> CausalCorpus:
+    if v3_prompts is None:
+        raise ValueError("causal corpus verification requires v3 exclusions")
     path = Path(manifest_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     prompts_path = path.parent / manifest["prompts_file"]
@@ -588,10 +714,9 @@ def verify_causal_corpus(
     return reconstructed
 
 
-def activations_at_user_prompt_end(
+def _activations_at_user_prompt_end(
     records: Sequence[ActivationRecord],
 ) -> dict[str, np.ndarray]:
-    """Extract the registered v3 direction anchor from verified activation records."""
     values: dict[str, np.ndarray] = {}
     anchor_index = ANCHOR_NAMES.index(CAUSAL_DIRECTION_ANCHOR)
     for record in records:
@@ -603,26 +728,144 @@ def activations_at_user_prompt_end(
     return values
 
 
-def fit_train_only_directions(
-    v3_prompts: Sequence[Any],
-    activations: Mapping[str, np.ndarray],
+def load_v3_training_direction_inputs(
     *,
-    prompts_sha256: str,
-    activations_sha256: str,
+    v3_manifest_path: str | Path,
+    activation_manifest_path: str | Path,
+    expected_model_id: str,
+    expected_model_revision: str,
+    expected_tokenizer_id: str,
+    expected_tokenizer_revision: str,
+    expected_chat_template_sha256: str,
+) -> VerifiedV3TrainingInputs:
+    """Load and bind v3 training prompts to their verified activation shard."""
+    v3_manifest_path = Path(v3_manifest_path)
+    try:
+        v3_manifest_bytes = v3_manifest_path.read_bytes()
+        v3_manifest = json.loads(v3_manifest_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("v3 prompt manifest is unreadable") from error
+    if not isinstance(v3_manifest, dict) or v3_manifest.get("study_id") != REP_V3_STUDY_ID:
+        raise ValueError("v3 prompt manifest has an invalid study identity")
+    prompt_name = v3_manifest.get("prompts_file")
+    if not isinstance(prompt_name, str) or Path(prompt_name).name != prompt_name:
+        raise ValueError("v3 prompt manifest has an invalid prompts path")
+    try:
+        prompt_bytes = (v3_manifest_path.parent / prompt_name).read_bytes()
+        prompts = tuple(
+            ReplicationPromptV3(**json.loads(line))
+            for line in prompt_bytes.splitlines()
+            if line
+        )
+    except (OSError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("v3 prompts are unreadable or noncanonical") from error
+    if _sha256_bytes(prompt_bytes) != v3_manifest.get("prompts_sha256"):
+        raise ValueError("v3 prompt file hash mismatch")
+    if v3_manifest.get("tokenizer_id") != expected_tokenizer_id:
+        raise ValueError("v3 tokenizer ID does not match the expected tokenizer ID")
+    train = tuple(row for row in prompts if row.split == "representation_train")
+    if len(train) != 128 or len({row.example_id for row in train}) != len(train):
+        raise ValueError("v3 representation_train prompt identities are invalid")
+
+    activation_manifest_path = Path(activation_manifest_path)
+    try:
+        activation_manifest_bytes = activation_manifest_path.read_bytes()
+        activation_manifest = json.loads(activation_manifest_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("v3 activation manifest is unreadable") from error
+    if not isinstance(activation_manifest, dict):
+        raise ValueError("v3 activation manifest has an invalid schema")
+    npz_name = activation_manifest.get("npz_file")
+    if not isinstance(npz_name, str):
+        raise ValueError("v3 activation manifest has an invalid NPZ path")
+    shard = resume_activation_shard(activation_manifest_path.parent / npz_name)
+    records = load_activation_records(activation_manifest_path)
+    if (
+        shard.manifest_path != activation_manifest_path.absolute()
+        or shard.row_count != len(train)
+    ):
+        raise ValueError("v3 activation manifest does not match representation_train")
+    if {row.example_id for row in records} != {row.example_id for row in train}:
+        raise ValueError("v3 activation identities do not match representation_train")
+
+    expected_values = (
+        expected_model_id,
+        expected_model_revision,
+        expected_tokenizer_id,
+        expected_tokenizer_revision,
+        expected_chat_template_sha256,
+    )
+    labels = (
+        "model ID",
+        "model revision",
+        "tokenizer ID",
+        "tokenizer revision",
+        "chat template hash",
+    )
+    prompts_by_id = {row.example_id: row for row in train}
+    for record in records:
+        actual_values = (
+            record.model_id,
+            record.model_revision,
+            record.anchors.tokenizer_id,
+            record.anchors.tokenizer_revision,
+            record.anchors.chat_template_sha256,
+        )
+        if actual_values != expected_values:
+            mismatch = next(
+                label
+                for label, actual, expected in zip(labels, actual_values, expected_values)
+                if actual != expected
+            )
+            raise ValueError(f"v3 activation {mismatch} does not match expected provenance")
+        prompt = prompts_by_id[record.example_id]
+        if (
+            record.anchors.rendered_prompt_sha256 != prompt.rendered_prompt_sha256
+            or record.anchors.input_ids != prompt.rendered_token_ids
+        ):
+            raise ValueError("v3 activation prompt identity does not match the v3 prompt")
+    source = V3DirectionProvenance(
+        v3_prompts_sha256=v3_manifest["prompts_sha256"],
+        v3_manifest_sha256=_sha256_bytes(v3_manifest_bytes),
+        activation_manifest_sha256=_sha256_bytes(activation_manifest_bytes),
+        activation_npz_sha256=shard.npz_sha256,
+        activation_index_sha256=shard.index_sha256,
+        activation_request_sha256=shard.request_sha256,
+        model_id=expected_model_id,
+        model_revision=expected_model_revision,
+        tokenizer_id=expected_tokenizer_id,
+        tokenizer_revision=expected_tokenizer_revision,
+        chat_template_sha256=expected_chat_template_sha256,
+    )
+    return VerifiedV3TrainingInputs(prompts=train, records=records, source=source)
+
+
+def fit_train_only_directions(source: VerifiedV3TrainingInputs) -> DirectionBundle:
+    """Fit directions only from verified v3 training inputs."""
+    if not isinstance(source, VerifiedV3TrainingInputs):
+        raise ValueError("direction fitting requires verified v3 training inputs")
+    return _fit_train_only_directions_from_arrays(
+        source.prompts,
+        _activations_at_user_prompt_end(source.records),
+        source.source,
+    )
+
+
+def _fit_train_only_directions_from_arrays(
+    v3_prompts: Sequence[ReplicationPromptV3],
+    activations: Mapping[str, np.ndarray],
+    source: V3DirectionProvenance,
 ) -> DirectionBundle:
-    """Fit signed unit-normal directions from v3 ``representation_train`` only."""
-    _require_sha256(prompts_sha256, "v3 prompts hash")
-    _require_sha256(activations_sha256, "v3 activations hash")
-    train = tuple(row for row in v3_prompts if getattr(row, "split", None) == "representation_train")
+    train = tuple(row for row in v3_prompts if row.split == "representation_train")
     if not train:
         raise ValueError("directions require representation_train rows only")
-    if any(getattr(row, "split", None) != "representation_train" for row in train):
+    if any(row.split != "representation_train" for row in train):
         raise ValueError("directions require representation_train rows only")
     by_unit: dict[str, list[Any]] = {}
     for row in train:
-        if getattr(row, "answerability", None) not in CAUSAL_ANSWERABILITY:
+        if row.answerability not in CAUSAL_ANSWERABILITY:
             raise ValueError("direction labels must use v3 answerability labels")
-        if getattr(row, "exposure", None) not in CAUSAL_EXPOSURES:
+        if row.exposure not in CAUSAL_EXPOSURES:
             raise ValueError("direction labels must use v3 exposure labels")
         by_unit.setdefault(str(row.entity_unit_id), []).append(row)
     expected_cells = Counter(
@@ -686,13 +929,11 @@ def fit_train_only_directions(
         )
     provisional = {
         "directions": [_direction_record(direction) for direction in directions],
-        "prompts_sha256": prompts_sha256,
-        "activations_sha256": activations_sha256,
+        "source": _v3_source_record(source),
     }
     return DirectionBundle(
         directions=tuple(directions),
-        prompts_sha256=prompts_sha256,
-        activations_sha256=activations_sha256,
+        source=source,
         bundle_sha256=_sha256(provisional),
     )
 
@@ -715,12 +956,27 @@ def _direction_record(
 def _direction_bundle_record(bundle: DirectionBundle, *, include_hash: bool = True) -> dict[str, Any]:
     record = {
         "directions": [_direction_record(direction) for direction in bundle.directions],
-        "prompts_sha256": bundle.prompts_sha256,
-        "activations_sha256": bundle.activations_sha256,
+        "source": _v3_source_record(bundle.source),
     }
     if include_hash:
         record["bundle_sha256"] = bundle.bundle_sha256
     return record
+
+
+def _v3_source_record(source: V3DirectionProvenance) -> dict[str, str]:
+    return {
+        "v3_prompts_sha256": source.v3_prompts_sha256,
+        "v3_manifest_sha256": source.v3_manifest_sha256,
+        "activation_manifest_sha256": source.activation_manifest_sha256,
+        "activation_npz_sha256": source.activation_npz_sha256,
+        "activation_index_sha256": source.activation_index_sha256,
+        "activation_request_sha256": source.activation_request_sha256,
+        "model_id": source.model_id,
+        "model_revision": source.model_revision,
+        "tokenizer_id": source.tokenizer_id,
+        "tokenizer_revision": source.tokenizer_revision,
+        "chat_template_sha256": source.chat_template_sha256,
+    }
 
 
 def write_direction_bundle(bundle: DirectionBundle, destination: str | Path) -> Path:
@@ -736,43 +992,52 @@ def verify_direction_bundle(path: str | Path) -> DirectionBundle:
         directions = tuple(AnswerabilityDirection(**record) for record in payload["directions"])
         return DirectionBundle(
             directions=directions,
-            prompts_sha256=payload["prompts_sha256"],
-            activations_sha256=payload["activations_sha256"],
+            source=V3DirectionProvenance(**payload["source"]),
             bundle_sha256=payload["bundle_sha256"],
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("direction bundle is not canonical") from error
 
 
-def select_validation_candidate(
-    candidates: Sequence[ValidationCandidate], corpus: CausalCorpus
+def select_causal_intervention(
+    candidates: Sequence[ValidationCandidate],
+    corpus: CausalCorpus,
+    expected_provenance: CausalExpectedProvenance,
 ) -> ValidationSelection:
     if not corpus.audit.passed:
         raise ValueError("selection requires an audited causal corpus")
+    if not isinstance(expected_provenance, CausalExpectedProvenance):
+        raise ValueError("selection requires typed expected provenance")
+    if corpus.manifest_sha256 != expected_provenance.corpus_sha256:
+        raise ValueError("selection corpus hash does not match expected provenance")
     prepared = tuple(candidates)
     if not prepared:
         raise ValueError("selection requires validation candidates")
-    if len({(row.layer_id, row.multiplier) for row in prepared}) != len(prepared):
-        raise ValueError("selection candidates must have unique layer and multiplier pairs")
+    fixed_grid = {
+        (layer_id, multiplier)
+        for layer_id in CAUSAL_VALIDATION_LAYERS
+        for multiplier in CAUSAL_VALIDATION_MULTIPLIERS
+    }
+    if {(row.layer_id, row.multiplier) for row in prepared} != fixed_grid:
+        raise ValueError("selection candidates must contain the complete fixed grid")
+    if len(prepared) != len(fixed_grid):
+        raise ValueError("selection candidates must contain the complete fixed grid")
     expected_units = {
         row.entity_unit_id for row in corpus.prompts if row.split == "causal_validation"
     }
-    provenance = (
-        prepared[0].prompts_sha256,
-        prepared[0].prefixes_sha256,
-        prepared[0].model_sha256,
-        prepared[0].tokenizer_sha256,
-    )
     for candidate in prepared:
         if {unit for unit, _ in candidate.unit_effects} != expected_units:
             raise ValueError("selection candidates must contain all causal validation units")
-        if (
-            candidate.prompts_sha256,
-            candidate.prefixes_sha256,
-            candidate.model_sha256,
-            candidate.tokenizer_sha256,
-        ) != provenance:
-            raise ValueError("selection candidate provenance hashes must match")
+        if candidate.corpus_sha256 != expected_provenance.corpus_sha256:
+            raise ValueError("selection candidate corpus hash does not match expected provenance")
+        if candidate.direction_bundle_sha256 != expected_provenance.direction_bundle_sha256:
+            raise ValueError("selection candidate direction bundle hash does not match expected provenance")
+        if candidate.model_sha256 != expected_provenance.model_sha256:
+            raise ValueError("selection candidate model hash does not match expected provenance")
+        if candidate.tokenizer_sha256 != expected_provenance.tokenizer_sha256:
+            raise ValueError("selection candidate tokenizer hash does not match expected provenance")
+        if candidate.direction_sha256 != expected_provenance.direction_hashes[candidate.layer_id]:
+            raise ValueError("selection candidate direction hash does not match expected provenance")
     eligible = [
         candidate
         for candidate in prepared
@@ -789,11 +1054,10 @@ def select_validation_candidate(
         "multiplier": selected.multiplier,
         "mean_bidirectional_effect": selected.mean_bidirectional_effect,
         "direction_sha256": selected.direction_sha256,
-        "prompts_sha256": selected.prompts_sha256,
-        "prefixes_sha256": selected.prefixes_sha256,
+        "corpus_sha256": selected.corpus_sha256,
+        "direction_bundle_sha256": selected.direction_bundle_sha256,
         "model_sha256": selected.model_sha256,
         "tokenizer_sha256": selected.tokenizer_sha256,
-        "corpus_sha256": corpus.manifest_sha256,
     }
     return ValidationSelection(selection_sha256=_sha256(record), **record)
 
@@ -804,8 +1068,8 @@ def _selection_record(selection: ValidationSelection, *, include_hash: bool = Tr
         "multiplier": selection.multiplier,
         "mean_bidirectional_effect": selection.mean_bidirectional_effect,
         "direction_sha256": selection.direction_sha256,
-        "prompts_sha256": selection.prompts_sha256,
-        "prefixes_sha256": selection.prefixes_sha256,
+        "corpus_sha256": selection.corpus_sha256,
+        "direction_bundle_sha256": selection.direction_bundle_sha256,
         "model_sha256": selection.model_sha256,
         "tokenizer_sha256": selection.tokenizer_sha256,
         "corpus_sha256": selection.corpus_sha256,

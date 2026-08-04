@@ -77,3 +77,48 @@ Task 2 remains responsible for the live prefill hook, scoring, generation,
 and intervention audit. Task 3 remains responsible for controls, statistics,
 and any causal-support decision. This task establishes no empirical or causal
 result.
+
+## Fix Round 1
+
+An independent review identified four P1 failures in the initial Task 1
+contracts. The public contracts were tightened as follows:
+
+1. `select_causal_intervention` now requires the exact registered 15-candidate
+   grid: five layers times three multipliers. A duplicate, omitted, or added
+   layer/multiplier pair fails before selection.
+2. `CausalExpectedProvenance` binds the sealed causal-corpus hash, direction
+   bundle hash, per-layer direction hashes, model hash, and tokenizer hash.
+   Every candidate must match all of them; the candidate direction hash must
+   specifically match the expected hash for its layer.
+3. The public direction-fitting path now accepts only
+   `VerifiedV3TrainingInputs`, produced by
+   `load_v3_training_direction_inputs`. The loader verifies the v3 prompt
+   manifest and prompt-file hash, the activation sidecar/index/NPZ hashes,
+   complete `representation_train` identity matching, model and tokenizer
+   provenance, chat-template hash, and prompt-token/hash identity. The raw
+   array fitter is private and the resulting `DirectionBundle` serializes this
+   verified source provenance.
+4. Causal corpus construction, auditing, and verification require the v3
+   exclusions. The audit now rejects missing v3 test exclusions and checks
+   target/distractor names and archive codes are disjoint across every causal
+   split. It requires all 20 entity-test and 20 template-test v3 units, with
+   all four prompts per unit, before accepting the exclusion inventory.
+
+### Fix Verification
+
+Regression tests were added before implementation and initially failed during
+collection because `CausalExpectedProvenance` did not exist. After the fixes:
+
+```text
+5 passed in 1.23s
+14 passed in 10.30s
+```
+
+The exclusion-completeness regression subsequently failed on a deliberately
+removed v3 entity-test prompt and passed after the complete-inventory gate was
+added (`5 passed in 1.23s`).
+
+The 14-test command covered the causal contracts plus the existing v3 corpus
+and representation suites. The source-provenance test loads the released v3
+training activation manifest and verifies its typed records; no model forward
+pass, causal validation result, or causal-test output was run or opened.
