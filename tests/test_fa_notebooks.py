@@ -90,7 +90,7 @@ def test_causal_runbook_states_evidence_boundary_and_resume_contract():
     assert "has not yet produced a causal result" in text
     assert "432 atomic unit receipts" in text
     assert re.search(r"same request\s+hash", text)
-    assert "Do not replace the loop" in text
+    assert re.search(r"Do\s+not replace the loop", text)
     assert "general metacognition" in text
 
 

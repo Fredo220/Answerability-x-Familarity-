@@ -59,6 +59,7 @@ from trajectory_extractor.fa_answerability_causal_analysis import (
 )
 from trajectory_extractor.fa_answerability_causal_runtime import (
     generate_causal_completion,
+    resolve_causal_anchor,
     score_answerability_candidates,
     vector_audit_hashes,
 )
@@ -473,6 +474,10 @@ class HFCausalRunner:
                 runtime_audit.applied_vector_sha256,
                 runtime_audit.represented_dtype,
                 runtime_audit.represented_device,
+                runtime_audit.layer_id,
+                runtime_audit.position,
+                runtime_audit.prompt_token_ids_sha256,
+                runtime_audit.model_prefix_token_ids_sha256,
             )
             if any(
                 (
@@ -480,6 +485,10 @@ class HFCausalRunner:
                     item.applied_vector_sha256,
                     item.represented_dtype,
                     item.represented_device,
+                    item.layer_id,
+                    item.position,
+                    item.prompt_token_ids_sha256,
+                    item.model_prefix_token_ids_sha256,
                 )
                 != expected_runtime
                 for item in margin_audits
@@ -503,6 +512,14 @@ class HFCausalRunner:
             ),
             "applied_vector_sha256": (
                 runtime_audit.applied_vector_sha256 if runtime_audit is not None else "0" * 64
+            ),
+            "layer_id": runtime_audit.layer_id if runtime_audit is not None else request.layer_id,
+            "position": runtime_audit.position if runtime_audit is not None else None,
+            "prompt_token_ids_sha256": (
+                runtime_audit.prompt_token_ids_sha256 if runtime_audit is not None else None
+            ),
+            "model_prefix_token_ids_sha256": (
+                runtime_audit.model_prefix_token_ids_sha256 if runtime_audit is not None else None
             ),
             "margin_forward_audits": (
                 [asdict(item) for item in margin_audits] if active else []
@@ -992,6 +1009,7 @@ def _validate_observation(
         if (
             audit.get("source_vector_sha256") != hashes.source_vector_sha256
             or audit.get("applied_vector_sha256") != hashes.applied_vector_sha256
+            or audit.get("layer_id") != request.layer_id
         ):
             raise ValueError("causal runner vector audit does not match request")
         margin_audits = audit.get("margin_forward_audits")
@@ -1006,6 +1024,12 @@ def _validate_observation(
                 or margin_audit.get("rendered_prompt_sha256")
                 != prompt.rendered_prompt_sha256
                 or margin_audit.get("example_id") != prompt.example_id
+                or margin_audit.get("layer_id") != request.layer_id
+                or margin_audit.get("position") != audit.get("position")
+                or margin_audit.get("prompt_token_ids_sha256")
+                != audit.get("prompt_token_ids_sha256")
+                or margin_audit.get("model_prefix_token_ids_sha256")
+                != audit.get("model_prefix_token_ids_sha256")
                 or margin_audit.get("hook_call_count") != 1
                 or margin_audit.get("modified_site_count") != 1
                 or margin_audit.get("hook_cleanup_verified") is not True
@@ -1885,6 +1909,7 @@ def _verify_shard_runtime_evidence(
     seal: CausalEvaluationSeal,
     corpus: Any,
     bundle: Any,
+    tokenizer: Any,
 ) -> None:
     split = payload["split"]
     control = payload["control"]
@@ -1942,11 +1967,31 @@ def _verify_shard_runtime_evidence(
             vector=applied,
             identity_sha256=request_hash,
         )
+        observation = _observation_from_record(row["observation"])
         _validate_observation(
             prompt,
             request,
-            _observation_from_record(row["observation"]),
+            observation,
         )
+        rendered = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt.user_text}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        resolved = resolve_causal_anchor(
+            prompt,
+            rendered,
+            tokenizer,
+            anchor_name=request.anchor,
+        )
+        if request.sign and (
+            observation.audit.get("position") != resolved.position
+            or observation.audit.get("prompt_token_ids_sha256")
+            != resolved.prompt_token_ids_sha256
+            or observation.audit.get("model_prefix_token_ids_sha256")
+            != resolved.prompt_token_ids_sha256
+        ):
+            raise ValueError("causal runtime site does not match the sealed anchor")
         preservation = row.get("bound_preservation")
         needs_preservation = control == "primary" and prompt.answerability == "target_bound"
         if needs_preservation != (preservation is not None):
@@ -1971,6 +2016,24 @@ def _verify_shard_runtime_evidence(
                 preservation_request,
                 _observation_from_record(preservation),
             )
+            preservation_observation = _observation_from_record(preservation)
+            preservation_resolved = resolve_causal_anchor(
+                prompt,
+                rendered,
+                tokenizer,
+                anchor_name=preservation_request.anchor,
+            )
+            if (
+                preservation_observation.audit.get("position")
+                != preservation_resolved.position
+                or preservation_observation.audit.get("prompt_token_ids_sha256")
+                != preservation_resolved.prompt_token_ids_sha256
+                or preservation_observation.audit.get("model_prefix_token_ids_sha256")
+                != preservation_resolved.prompt_token_ids_sha256
+            ):
+                raise ValueError(
+                    "causal preservation site does not match the sealed anchor"
+                )
 
     unrelated = payload.get("unrelated_preservation")
     if control == "primary":
@@ -1979,6 +2042,18 @@ def _verify_shard_runtime_evidence(
         expected_ids = {f"unrelated-code-lookup-{index}" for index in range(4)}
         if {row.get("prompt_id") for row in unrelated["rows"]} != expected_ids:
             raise ValueError("causal unrelated-preservation schedule is incomplete")
+        recomputed_passed = True
+        for row in unrelated["rows"]:
+            index = int(row["prompt_id"].rsplit("-", 1)[1])
+            expected = f"U{index:04d}"
+            if row.get("expected") != expected:
+                raise ValueError("causal unrelated-preservation target is invalid")
+            recomputed_passed = recomputed_passed and (
+                row.get("baseline", row.get("generated")) == expected
+                and row.get("generated") == expected
+            )
+        if unrelated.get("passed") is not recomputed_passed:
+            raise ValueError("causal unrelated-preservation gate does not match rows")
     elif unrelated is not None:
         raise ValueError("unregistered control carried unrelated-preservation evidence")
 
@@ -2154,7 +2229,7 @@ def evaluate_causal(
     dependencies: CausalDependencies | None = None,
 ) -> dict[str, Any]:
     dependencies = dependencies or CausalDependencies()
-    _config, prepare, corpus, bundle, _binding = _load_prepared(args, dependencies)
+    _config, prepare, corpus, bundle, binding = _load_prepared(args, dependencies)
     seal, seal_record = _load_evaluation_seal(args.seal_manifest, prepare=prepare)
     evidence_root = Path(args.evidence_dir)
     if not evidence_root.is_absolute():
@@ -2203,6 +2278,7 @@ def evaluate_causal(
             seal=seal,
             corpus=corpus,
             bundle=bundle,
+            tokenizer=binding.tokenizer,
         )
         receipts[(item["split"], item["control"], item["unit_id"], item["member"])] = payload
 

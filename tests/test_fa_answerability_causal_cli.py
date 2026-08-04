@@ -3,7 +3,10 @@ import json
 from pathlib import Path
 
 import pytest
-from trajectory_extractor.fa_answerability_causal_runtime import vector_audit_hashes
+from trajectory_extractor.fa_answerability_causal_runtime import (
+    resolve_causal_anchor,
+    vector_audit_hashes,
+)
 from trajectory_extractor.fa_answerability_causal_analysis import (
     BOOTSTRAP_SEED,
     PERMUTATION_SEED,
@@ -51,13 +54,23 @@ class FakeCausalTokenizer:
     name_or_path = "google/gemma-2-2b-it"
 
     def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
-        assert tokenize is False
-        assert add_generation_prompt is True
-        return f"<bos>{messages[0]['content']}<assistant>"
+        rendered = f"<bos>{messages[0]['content']}"
+        if add_generation_prompt:
+            rendered += "<assistant>"
+        return list(rendered.encode("utf-8")) if tokenize else rendered
 
-    def __call__(self, text, *, add_special_tokens=False):
+    def __call__(
+        self,
+        text,
+        *,
+        add_special_tokens=False,
+        return_offsets_mapping=False,
+    ):
         assert add_special_tokens is False
-        return {"input_ids": list(text.encode("utf-8"))}
+        result = {"input_ids": list(text.encode("utf-8"))}
+        if return_offsets_mapping:
+            result["offset_mapping"] = [(index, index + 1) for index in range(len(text))]
+        return result
 
 
 def tokenizer_binding(config):
@@ -220,6 +233,17 @@ class FakeCausalRunner:
         if request.sign:
             effect = request.sign * request.multiplier * (1.0 + request.layer_id / 100.0)
         generated = prompt.registry_code if prompt.answerability == "target_bound" else "UNKNOWN"
+        rendered = FakeCausalTokenizer().apply_chat_template(
+            [{"role": "user", "content": prompt.user_text}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        resolved = resolve_causal_anchor(
+            prompt,
+            rendered,
+            FakeCausalTokenizer(),
+            anchor_name=request.anchor,
+        )
         hashes = (
             vector_audit_hashes(
                 request.vector,
@@ -237,6 +261,10 @@ class FakeCausalRunner:
                 "hook_call_count": 1,
                 "modified_site_count": 1,
                 "hook_cleanup_verified": True,
+                "layer_id": request.layer_id,
+                "position": resolved.position,
+                "prompt_token_ids_sha256": resolved.prompt_token_ids_sha256,
+                "model_prefix_token_ids_sha256": resolved.prompt_token_ids_sha256,
             }
             if hashes is not None
             else None
@@ -255,6 +283,14 @@ class FakeCausalRunner:
                 "hook_cleanup_verified": True,
                 "represented_device": "cpu",
                 "represented_dtype": "torch.float32",
+                "layer_id": request.layer_id,
+                "position": resolved.position if request.sign else None,
+                "prompt_token_ids_sha256": (
+                    resolved.prompt_token_ids_sha256 if request.sign else None
+                ),
+                "model_prefix_token_ids_sha256": (
+                    resolved.prompt_token_ids_sha256 if request.sign else None
+                ),
                 "source_vector_sha256": (
                     hashes.source_vector_sha256 if hashes is not None else "0" * 64
                 ),
@@ -388,7 +424,16 @@ def test_shard_runs_one_registered_unit_and_resumes_without_model_work(tmp_path)
         )
 
 
-@pytest.mark.parametrize("tamper", ["margin_audit", "prompt_id", "request_hash"])
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "margin_audit",
+        "intervention_position",
+        "prompt_id",
+        "request_hash",
+        "unrelated_passed",
+    ],
+)
 def test_evaluator_rejects_tampered_runtime_or_prompt_evidence(tmp_path, tamper):
     runner = FakeCausalRunner()
     dependencies = CausalDependencies(
@@ -437,10 +482,14 @@ def test_evaluator_rejects_tampered_runtime_or_prompt_evidence(tmp_path, tamper)
         payload["rows"][0]["observation"]["audit"]["margin_forward_audits"][0][
             "applied_vector_sha256"
         ] = "9" * 64
+    elif tamper == "intervention_position":
+        payload["rows"][0]["observation"]["audit"]["position"] += 1
     elif tamper == "prompt_id":
         payload["rows"][0]["example_id"] = "wrong-example"
-    else:
+    elif tamper == "request_hash":
         payload["request_sha256"] = "9" * 64
+    else:
+        payload["unrelated_preservation"]["passed"] = False
 
     load_args = argparse.Namespace(
         config=str(CONFIG),
@@ -460,6 +509,7 @@ def test_evaluator_rejects_tampered_runtime_or_prompt_evidence(tmp_path, tamper)
             seal=seal,
             corpus=corpus,
             bundle=bundle,
+            tokenizer=_binding.tokenizer,
         )
 
 
