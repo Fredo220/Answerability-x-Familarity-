@@ -12,6 +12,7 @@ NOTEBOOK = ROOT / "notebooks" / "fa_same_string_primary_colab.ipynb"
 V2_NOTEBOOK = ROOT / "notebooks" / "fa_same_string_feasibility_v2_colab.ipynb"
 CAUSAL_NOTEBOOK = ROOT / "notebooks" / "fa_answerability_causal_pilot_colab.ipynb"
 CAUSAL_RUNBOOK = ROOT / "docs" / "fa_answerability_causal_pilot_runbook.md"
+CAUSAL_COLAB_REQUIREMENTS = ROOT / "requirements" / "fa-causal-colab.lock"
 RUNBOOK = ROOT / "docs" / "fa_same_string_primary_runbook.md"
 README = ROOT / "README.md"
 V2_RESULT = ROOT / "docs" / "results" / "same_string_feasibility_v2_behavior_result.json"
@@ -58,10 +59,27 @@ def test_causal_colab_is_pinned_secret_safe_and_single_load():
     assert 'os.environ.get("HF_TOKEN")' in text
     assert 'userdata.get("HF_TOKEN")' in text
     assert not re.search(r"hf_[A-Za-z0-9]{20,}", text)
-    assert "bitsandbytes==0.49.2" in text
+    assert "requirements/fa-causal-colab.lock" in text
+    assert "requirements/fa-core.lock" not in text
     assert text.count("HFCausalRunner.from_pretrained") == 1
     assert "/content/drive/MyDrive/fa-causal-pilot-v1" in text
     assert "resume=True" in text
+
+
+def test_causal_colab_keeps_colab_numerical_stack_and_falls_back_from_drive():
+    notebook = causal_notebook_text()
+    requirements = CAUSAL_COLAB_REQUIREMENTS.read_text(encoding="utf-8")
+    installed = "\n".join(
+        line for line in requirements.splitlines() if line and not line.startswith("#")
+    )
+
+    assert "numpy" not in installed.casefold()
+    assert "pandas" not in installed.casefold()
+    assert "scikit-learn" not in installed.casefold()
+    assert "torch==" not in installed.casefold()
+    assert "bitsandbytes==0.49.2" in installed
+    assert 'drive.mount("/content/drive", timeout_ms=60_000)' in notebook
+    assert "Drive unavailable; using local checkpoints" in notebook
 
 
 def test_causal_colab_preserves_gate_order_and_complete_schedule():

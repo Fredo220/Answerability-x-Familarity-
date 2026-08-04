@@ -33,8 +33,10 @@ hallucination prevention, familiarity effects, or transfer to larger models.
 1. Open `notebooks/fa_answerability_causal_pilot_colab.ipynb` in a fresh GPU
    runtime.
 2. Add `HF_TOKEN` through Colab Secrets. Never paste it into a cell.
-3. Optionally enable Google Drive. The artifact directory itself is the
-   checkpoint; every unit receipt is written atomically.
+3. Optionally enable Google Drive. If mounting fails, the notebook falls back
+   to runtime-local checkpoints and reports that resumability will be lost on
+   runtime replacement. The artifact directory itself is the checkpoint;
+   every unit receipt is written atomically.
 4. Run the setup and preparation cells.
 5. Run validation once. It seals the selected layer, strength, runtime,
    directions, controls, and fresh test identities.

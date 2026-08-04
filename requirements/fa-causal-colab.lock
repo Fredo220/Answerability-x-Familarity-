@@ -1,0 +1,9 @@
+# Minimal packages installed into the managed Colab GPU runtime.
+# Colab supplies torch and numpy; do not replace its compiled numerical stack.
+accelerate==1.12.0
+bitsandbytes==0.49.2
+huggingface-hub==0.36.2
+safetensors==0.8.0
+sentencepiece==0.2.1
+tokenizers==0.22.2
+transformers==4.57.1
