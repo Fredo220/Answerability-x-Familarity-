@@ -3,14 +3,15 @@
 Can a language model tell the difference between **knowing more about a target**
 and **having the evidence needed to answer a specific question**?
 
-This repository contains three completed stages on the pinned
+This repository contains four completed stages on the pinned
 `google/gemma-2-2b-it` checkpoint:
 
 1. a behavioral test of whether unrelated exposure makes the model answer
    without evidence; and
 2. a representation-level test of whether internal activations encode
    answerability on the same controlled task; and
-3. a registered intervention study followed by a post-run control audit.
+3. a registered intervention study followed by a post-run control audit; and
+4. a fresh causal replication with corrected controls and new test units.
 
 ## Results at a Glance
 
@@ -19,10 +20,16 @@ This repository contains three completed stages on the pinned
 | Behavioral pilot | Does unrelated exposure selectively increase unsupported answer attempts? | **Not supported** |
 | Representation replication | Do fixed internal activations predict answerability beyond the registered bag-of-ngrams baseline? | **Supported on this controlled task** |
 | Causal follow-up | Does the training-only answerability direction locally change the code-versus-`UNKNOWN` margin more than the registered controls? | **Live run completed; confirmatory causal test not evaluable after control audit** |
+| Causal replication v2 | Does the corrected intervention beat every control on fresh entities and templates? | **Mixed split evidence; overall not supported** |
 
 These results are compatible. The model did **not** display the predicted
 failure behavior, while its internal activations still contained decodable
 information about whether the prompt supplied the answer.
+
+The evidence chain is therefore: **behavioral null -> robust held-out
+decodability -> mixed causal evidence**. The intervention reliably shifted an
+internal response margin, but its layer specificity did not generalize across
+both registered test splits.
 
 ![Summary of the behavioral pilot and representation replication](docs/assets/familiarity_answerability_summary.png)
 
@@ -183,6 +190,43 @@ units. This correction does not change or rescue the completed result.
 or inspect the
 [frozen machine result](release/familiarity_answerability/answerability_causal_pilot_v1/results/result.md).
 
+### 4. Causal replication v2: the direction steered margins, but not robustly at one layer
+
+The fresh v2 replication corrected the invalid shuffled-label control before
+opening any outcome. It used new names, archive codes, and test templates while
+keeping the intervention fixed at layer 18. All 432 registered primary and
+control receipts completed and passed the independent hash and provenance
+audit.
+
+On unseen entities, the primary intervention had a clear positive margin
+effect (`0.1997`, 95% CI `[0.1927, 0.2067]`). However, the same direction at
+the registered wrong layer had an even larger effect (`0.3448`). This split
+therefore failed the required layer-specific control contrast.
+
+On unseen templates, the primary effect was also positive (`0.1705`, 95% CI
+`[0.1608, 0.1804]`) and exceeded every registered control. That split was
+`causally_supported`. Because the preregistration required both unpooled
+splits to pass, the overall result is **`not_supported`**.
+
+![Primary and control effects in the causal v2 replication](docs/assets/familiarity_answerability_causal_v2.png)
+
+*Figure 2. Descriptive mean bidirectional margin effects. Positive primary
+values indicate steering in the predicted direction. The frozen decision used
+unit-level bootstrap intervals and required the primary effect to beat every
+control on both splits. The wrong-layer result on unseen entities prevented
+the overall layer-specific claim.*
+
+The intervention changed only one of 144 primary-versus-baseline greedy
+outputs. The result therefore shows local control of a probability margin, not
+a reliable behavioral correction method. It also does not show that layer 18
+is a unique answerability mechanism.
+
+[Read the v2 post-run audit](release/familiarity_answerability/answerability_causal_replication_v2/POST_RUN_AUDIT.md),
+inspect the
+[machine-readable result](release/familiarity_answerability/answerability_causal_replication_v2/results/result.json),
+or open the
+[pinned Colab notebook](notebooks/fa_answerability_causal_replication_v2_colab.ipynb).
+
 ## What the Results Do and Do Not Mean
 
 The completed evidence supports two scoped statements:
@@ -193,15 +237,20 @@ The completed evidence supports two scoped statements:
    answerability beyond the registered bag-of-ngrams baseline across unseen
    entities and unseen prompt templates.
 
-The causal follow-up does not add a third supported statement. Its frozen
+The v1 causal follow-up does not add a third supported statement. Its frozen
 machine gate failed, and the post-run audit found that one mandatory control
 was invalid.
+
+The fresh v2 replication adds a narrower observation: the training-derived
+direction causally shifted the registered output margin on both test splits,
+but the effect was not robustly layer-specific. One split passed every control
+and one did not, so the preregistered overall claim remains unsupported.
 
 The project does **not** establish:
 
 - a general mechanism of familiarity or hallucination;
 - metacognition, human-like knowledge, or intuition;
-- causal influence of the decoded activation patterns;
+- a robust, layer-specific causal mechanism for the decoded activation patterns;
 - information not already present in the prompt;
 - generalization to larger models or natural factual questions; or
 - a hallucination detector or prevention method.
@@ -221,8 +270,8 @@ monitoring, but this study does not yet provide such a detector.
 The representation result asks a different question: whether answerability is
 tracked internally even when the tested failure behavior is absent. That is a
 useful first step toward studying how models represent evidence availability,
-but causal interventions and broader replications are required before making
-stronger claims.
+but the mixed v2 intervention result and the single-model scope still require
+broader replications before making stronger claims.
 
 ## Research Standards
 
@@ -235,6 +284,10 @@ auditable:
 - protected endpoints open once and fail closed on incomplete evidence;
 - failed instruments and negative results remain in the public record; and
 - the representation result cannot retroactively rescue the behavioral result.
+
+The corrected v2 causal replication was registered as a separate study. It
+used fresh test identities and could not reopen or rescue either the behavioral
+decision or the invalidated v1 causal pilot.
 
 The originally registered mechanistic pilot was gated on a positive behavioral
 result and was therefore not run. The later representation pilot and v3
@@ -255,9 +308,16 @@ The most useful follow-up would:
 3. publish a power analysis before opening model outcomes;
 4. compare activations with stronger symbolic and sequence-aware baselines;
 5. test whether the representation result survives multiple seeds; and
-6. rerun controlled activation replacement on fresh units with the corrected
-   balanced label-shuffle, reversed, wrong-layer, wrong-anchor, and
-   norm-matched controls.
+6. map when and why the same direction transfers differently across layers and
+   prompt families.
+
+For a Fellowship-scale continuation, the highest-value extensions would be:
+
+- compare the activation probe with an explicit binding parser, treated as a
+  transparent task-solving baseline rather than an internal-state model;
+- replicate on a second, larger model family; and
+- replace archive-code prompts with natural factual and evidence-grounded
+  questions while retaining matched answerability controls.
 
 The current study was intentionally scoped for an 8 GB local machine and
 free-tier Colab compute. Local hardware handled tests, audits, analysis, and
@@ -291,6 +351,7 @@ Regenerate the README figure from the published result JSON files with:
 
 ```bash
 python tools/plot_readme_summary.py
+python tools/plot_causal_replication_v2.py
 ```
 
 ## Acknowledgments
@@ -316,6 +377,9 @@ problems from being misreported as evidence about the research hypothesis.
 | [Representation v3 JSON](release/familiarity_answerability/representation_replication_v3/analysis/result.json) | Machine-readable replication outcome |
 | [Causal machine result](release/familiarity_answerability/answerability_causal_pilot_v1/results/result.md) | Frozen one-use evaluator output |
 | [Causal post-run audit](release/familiarity_answerability/answerability_causal_pilot_v1/POST_RUN_AUDIT.md) | Control defect, final interpretation, and claim boundary |
+| [Causal v2 preregistration](docs/familiarity_answerability_causal_replication_v2_preregistration.md) | Frozen corrected replication design and decision rule |
+| [Causal v2 result](release/familiarity_answerability/answerability_causal_replication_v2/results/result.md) | Fresh-unit one-use evaluator output |
+| [Causal v2 post-run audit](release/familiarity_answerability/answerability_causal_replication_v2/POST_RUN_AUDIT.md) | Independent receipt, control, preservation, and result audit |
 | [Claim boundaries](docs/familiarity_answerability_claims.md) | Registered limits on interpretation |
 
 <details>
