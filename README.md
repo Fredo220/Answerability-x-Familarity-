@@ -225,6 +225,12 @@ The current project was intentionally scoped for an 8 GB local machine and
 free-tier Colab compute. Local hardware handled tests, audits, analysis, and
 reporting; Colab handled pinned Gemma generation and activation extraction.
 
+Why not SAEs or TransformerLens?
+
+This project was deliberately designed as a low compute study, using 8 GB of local RAM and free tier Colab. TransformerLens, and especially training or applying SAEs, would have added significant computational and methodological complexity without being necessary for the initial question. I first wanted to establish whether answerability information was present in internal representations and whether a decoded direction could causally affect the response margin.
+
+We also kept the dependency chain minimal. Model, tokenizer, prompts, seeds, layers, thresholds, and outputs were hash bound for reproducibility and auditing. Avoiding an additional interpretability framework gave us direct control over activation extraction and the full evaluation pipeline. SAEs remain a natural next step once this basic signal and causal relationship are established.
+
 ## 8. Reproduce
 
 Use Python 3.12:
