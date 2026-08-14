@@ -220,7 +220,8 @@ The highest-value continuation would:
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
 
-**Why not SAEs or TransformerLens?
+## Why not SAEs or TransformerLens?
+
 The causal question this project asked, whether a decoded direction in the residual stream shifts the model's response margin, was tested directly through activation steering. That is a direct causal intervention on the representation itself, not a preliminary step before "real" mechanistic work. It let the project establish, with minimal dependencies and full hash-bound auditability, that the effect exists but is not robustly layer-specific.
 SAE-based feature decomposition would add a further layer of granularity, checking whether the effect localizes to a single interpretable feature or reflects a distributed combination, but it was not treated as a prerequisite for the causal test itself.
 Initially, training or applying an SAE was assumed to be out of reach given the local compute budget, which factored into deferring that decomposition. Further research showed this assumption was overly conservative: pretrained SAEs already exist for Gemma-2-2B (e.g. Gemma Scope), so a future pass could run this decomposition using inference only. That is scoped as a follow-up rather than this submission.
