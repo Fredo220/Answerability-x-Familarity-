@@ -206,7 +206,7 @@ method.
 - The behavioral snapshot lacks its pre-outcome power/MDE artifact, so its null
   result remains an imprecise pilot rather than a definitive negative finding.
 
-**7. Limitations and Fellowship-Scale Next Steps**
+## 7. Limitations and Fellowship-Scale Next Steps**
 
 The highest-value continuation would:
 
