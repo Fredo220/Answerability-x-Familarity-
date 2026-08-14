@@ -220,11 +220,10 @@ The highest-value continuation would:
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
 
-**Why not SAEs or TransformerLens?**
-
-This project was deliberately scoped as a low-compute study on 8 GB of local RAM and free-tier Colab, and prioritized answering one question first: whether answerability information is present in internal representations at all, and whether a decoded direction can causally affect the response margin. Establishing that basic signal and causal relationship was treated as a prerequisite for any downstream feature-level analysis, not as a substitute for it.
-
-Initially, training or applying an SAE was assumed to be out of reach given the local compute budget, so TransformerLens and SAE work were deferred to keep the dependency chain minimal and retain direct control over activation extraction and the evaluation pipeline for auditing purposes. Further research showed this assumption was overly conservative: pretrained SAEs already exist for Gemma-2-2B (e.g. Gemma Scope), which would let a future pass check the decoded direction against existing interpretable features using inference only, without training a new SAE. That comparison is the natural next step once the current signal and causal result are established, and is scoped for a follow-up pass rather than this submission.
+**Why not SAEs or TransformerLens?
+The causal question this project asked, whether a decoded direction in the residual stream shifts the model's response margin, was tested directly through activation steering. That is a direct causal intervention on the representation itself, not a preliminary step before "real" mechanistic work. It let the project establish, with minimal dependencies and full hash-bound auditability, that the effect exists but is not robustly layer-specific.
+SAE-based feature decomposition would add a further layer of granularity, checking whether the effect localizes to a single interpretable feature or reflects a distributed combination, but it was not treated as a prerequisite for the causal test itself.
+Initially, training or applying an SAE was assumed to be out of reach given the local compute budget, which factored into deferring that decomposition. Further research showed this assumption was overly conservative: pretrained SAEs already exist for Gemma-2-2B (e.g. Gemma Scope), so a future pass could run this decomposition using inference only. That is scoped as a follow-up rather than this submission.
 
 ## 8. Reproduce
 
