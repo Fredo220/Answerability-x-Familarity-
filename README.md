@@ -206,30 +206,29 @@ method.
 - The behavioral snapshot lacks its pre-outcome power/MDE artifact, so its null
   result remains an imprecise pilot rather than a definitive negative finding.
 
-## 7. Limitations and Fellowship-Scale Next Steps
+## Verstanden. Hier die korrigierte Version, bei der ehrlich dargestellt wird, dass die Compute-Annahme durch Recherche relativiert wurde, statt zu behaupten, es sei von Anfang an eine bewusste Nicht-Compute-Entscheidung gewesen:
+
+---
+
+**7. Limitations and Fellowship-Scale Next Steps**
 
 The highest-value continuation would:
 
-1. compare the activation probe with an explicit binding parser as a
-   transparent task-solving baseline;
+1. compare the activation probe with an explicit binding parser as a transparent task-solving baseline;
 2. replicate on a second, larger model family;
-3. replace archive-code prompts with natural factual and evidence-grounded
-   questions while retaining matched answerability controls;
-4. increase the number of unseen entities and templates and publish power
-   analysis before opening outcomes;
-5. test multiple seeds; and
-6. map where the direction transfers across layers before making a
-   layer-specific mechanistic claim.
+3. replace archive-code prompts with natural factual and evidence-grounded questions while retaining matched answerability controls;
+4. increase the number of unseen entities and templates and publish power analysis before opening outcomes;
+5. test multiple seeds;
+6. map where the direction transfers across layers before making a layer-specific mechanistic claim; and
+7. cross-check the decoded direction against pretrained Gemma Scope SAE features on the same activations, to see whether it aligns with an existing interpretable feature rather than training a new SAE from scratch.
 
-The current project was intentionally scoped for an 8 GB local machine and
-free-tier Colab compute. Local hardware handled tests, audits, analysis, and
-reporting; Colab handled pinned Gemma generation and activation extraction.
+The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
 
-Why not SAEs or TransformerLens?
+**Why not SAEs or TransformerLens?**
 
-This project was deliberately designed as a low compute study, using 8 GB of local RAM and free tier Colab. TransformerLens, and especially training or applying SAEs, would have added significant computational and methodological complexity without being necessary for the initial question. I first wanted to establish whether answerability information was present in internal representations and whether a decoded direction could causally affect the response margin.
+This project was deliberately scoped as a low-compute study on 8 GB of local RAM and free-tier Colab, and prioritized answering one question first: whether answerability information is present in internal representations at all, and whether a decoded direction can causally affect the response margin. Establishing that basic signal and causal relationship was treated as a prerequisite for any downstream feature-level analysis, not as a substitute for it.
 
-We also kept the dependency chain minimal. Model, tokenizer, prompts, seeds, layers, thresholds, and outputs were hash bound for reproducibility and auditing. Avoiding an additional interpretability framework gave us direct control over activation extraction and the full evaluation pipeline. SAEs remain a natural next step once this basic signal and causal relationship are established.
+Initially, training or applying an SAE was assumed to be out of reach given the local compute budget, so TransformerLens and SAE work were deferred to keep the dependency chain minimal and retain direct control over activation extraction and the evaluation pipeline for auditing purposes. Further research showed this assumption was overly conservative: pretrained SAEs already exist for Gemma-2-2B (e.g. Gemma Scope), which would let a future pass check the decoded direction against existing interpretable features using inference only, without training a new SAE. That comparison is the natural next step once the current signal and causal result are established, and is scoped for a follow-up pass rather than this submission.
 
 ## 8. Reproduce
 
