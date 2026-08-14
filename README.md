@@ -206,10 +206,6 @@ method.
 - The behavioral snapshot lacks its pre-outcome power/MDE artifact, so its null
   result remains an imprecise pilot rather than a definitive negative finding.
 
-## Verstanden. Hier die korrigierte Version, bei der ehrlich dargestellt wird, dass die Compute-Annahme durch Recherche relativiert wurde, statt zu behaupten, es sei von Anfang an eine bewusste Nicht-Compute-Entscheidung gewesen:
-
----
-
 **7. Limitations and Fellowship-Scale Next Steps**
 
 The highest-value continuation would:
