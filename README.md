@@ -244,10 +244,6 @@ The highest-value continuation would:
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
 
-## Research Agenda
-
-A fellowship-scale continuation of this work is sketched in [the research agenda](docs/research_agenda.md): coupling step-wise Lean 4 verification to internally decoded evidence-sufficiency signals, both as an inference-time premise monitor and as a candidate process-reward signal during RL fine-tuning. The agenda positions itself against established verifier-in-the-loop proving and process-reward models, states its schedule risks (including corpus-construction time), defines three preregistered milestones with a fallback, and carries the completed study's claim boundaries forward unchanged.
-
 ## Why not SAEs or TransformerLens?
 
 The causal question this project asked, whether a decoded direction in the residual stream shifts the model's response margin, was tested directly through activation steering. That is a direct causal intervention on the representation itself, not a preliminary step before "real" mechanistic work. It let the project establish, with minimal dependencies and full hash-bound auditability, that the effect exists but is not robustly layer-specific.
