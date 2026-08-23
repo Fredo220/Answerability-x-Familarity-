@@ -185,14 +185,38 @@ or inspect the
 - generalization beyond this task or model; or
 - a working hallucination detector or correction method.
 
-## 5. Why This Matters for AI Safety
+## 5. Why This Matters
 
-A model that treats "this feels familiar" as "I have the evidence" would be
-unreliable where abstention matters most. This study did not find that failure
-mode behaviorally. It did find that the model's internal state tracks the
-relevant distinction, which is a useful prerequisite for future work on
-evidence-aware abstention and uncertainty monitoring. It is not itself such a
-method.
+Two downstream concerns make the distinction between familiarity and evidence
+sufficiency consequential.
+
+**Reliability and abstention.** A model that treats "this feels familiar" as
+"I have the evidence" would be unreliable where abstention matters most. This
+study did not find that failure mode behaviorally. It did find that the model's
+internal state tracks the relevant distinction, which is a useful prerequisite
+for future work on evidence-aware abstention and uncertainty monitoring. It is
+not itself such a method.
+
+**A necessary upstream condition for formal verification.** Before LLM
+reasoning can be reliably subjected to formal verification, there is an
+important upstream question: does the model distinguish between information it
+merely recognizes as familiar and evidence that actually supports a conclusion?
+If a model cannot reliably make this distinction, a formalized reasoning chain
+may encode unsupported assumptions as premises and still yield a formally valid
+but unsound proof, because proof assistants check the validity of inference,
+not the truth of premises. This project therefore investigates whether evidence
+sufficiency is represented internally and can be measured independently of
+simple lexical familiarity. The results provide methodological groundwork for a
+subsequent question: how reliably can an LLM translate natural-language
+evidence and reasoning into an explicit formal representation whose individual
+steps can then be verified by systems such as Lean 4. This study does not test
+that translation itself; it isolates one upstream condition that such a
+verification pipeline would depend on. On this controlled task, that condition
+held behaviorally — the model did not confuse exposure with evidence — while
+representation-level measurement succeeded and reliable causal control remains
+open. The distance between archive-code prompts and genuine premise-evidence
+relations in multi-step arguments remains substantial; closing it with natural
+factual questions is registered as a next step in Section 7.
 
 ## 6. Research Standards
 
@@ -206,7 +230,7 @@ method.
 - The behavioral snapshot lacks its pre-outcome power/MDE artifact, so its null
   result remains an imprecise pilot rather than a definitive negative finding.
 
-## 7. Limitations and Fellowship-Scale Next Steps**
+## 7. Limitations and Fellowship-Scale Next Steps
 
 The highest-value continuation would:
 
