@@ -202,8 +202,9 @@ reasoning can be reliably subjected to formal verification, there is an
 important upstream question: does the model distinguish between information it
 merely recognizes as familiar and evidence that actually supports a conclusion?
 If a model cannot reliably make this distinction, a formalized reasoning chain
-may encode unsupported assumptions as premises and still yield a formally valid
-but unsound proof, because proof assistants check the validity of inference,
+may encode unsupported assumptions as premises and still yield a proof that is
+formally valid yet fails to faithfully represent the original evidence, because
+proof assistants check the validity of inference,
 not the truth of premises. This project therefore investigates whether evidence
 sufficiency is represented internally and can be measured independently of
 simple lexical familiarity. The results provide methodological groundwork for a
@@ -243,6 +244,35 @@ The highest-value continuation would:
 7. cross-check the decoded direction against pretrained Gemma Scope SAE features on the same activations, to see whether it aligns with an existing interpretable feature rather than training a new SAE from scratch.
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
+
+## Research Agenda: Verification-Coupled Reasoning
+
+Forward-looking program extending this study; nothing below is claimed as demonstrated. Each milestone opens only under its own preregistration with fail-closed endpoints.
+
+**Question.** Can probabilistic LLM reasoning become a step-wise process in which the model proposes reasoning steps while a formal verifier guarantees the validity of every accepted step relative to the formalized premises — and can internal evidence signals also serve as training signals, not only inference-time filters?
+
+**Pipeline.**
+
+> natural language → LLM reasoning representation → autoformalization → Lean 4 per-step verification → optional reward signal into policy training
+
+A step that does not follow from the current formal premises is rejected and regenerated.
+
+**What would be new.** Outcome-level RLVR typically uses verification of the final artifact; recent work extends this with step-wise verifier feedback and learned or rule-based process rewards. The proposed difference is that the mid-chain signal would be derived from the model's own internal activations rather than from a separately trained step classifier.
+
+- **Interpretability.** Decoded evidence-sufficiency signals (Section 3.2) could act as a premise-quality monitor before a step is accepted; circuit analysis and pretrained Gemma Scope SAEs could test which internal states, if any, correspond to formal reasoning operations.
+- **RL.** Outcome-only rewards make long proof chains sparse-reward problems. A mid-chain evidence signal is a candidate denser process reward — and its decoder makes reward hacking measurable: does measured grounding improve in step with reward, or dissociate from it? A known risk type comes with it: a policy could learn to satisfy the decoder itself instead of genuinely grounding its steps — Goodhart on the probe — which is precisely what M3(b) is designed to detect.
+
+One cautionary precedent: Weco AI's AIDE² report (first-party, not peer-reviewed, July 2026) found that an evolved agent's hand-built anti-hacking filter silently broke under iteration. Monitors therefore require ongoing validation rather than one-time trust.
+
+**Why this study is upstream.** Standard verification assumes the formalization is faithful; RLVR inherits that assumption. During autoformalization, an LLM may introduce unsupported premises, so a Lean-checked proof can be formally valid while failing to faithfully represent the evidence in the original natural-language problem. This study measured one ingredient of that bottleneck and found decodable answerability without a robust causal mechanism. Whether the signal is reliable enough for monitoring or rewards — and whether it stays reliable under optimization — remains open.
+
+**Milestones.**
+
+1. **M1 — Natural-question replication.** Second model family, matched controls, preregistered power analysis. Controlled-corpus construction, not model compute, has proven to be the dominant schedule cost in our own follow-up work; fallback: smaller preregistered pilot.
+2. **M2 — Premise-faithfulness metric.** Agreement between formalized premises and actually-present evidence, on a small audited corpus with held-out scoring; human audit time budgeted explicitly.
+3. **M3 — Minimal Lean loop.** Measure when internal signals disagree with premise soundness. Stretch goal: light RL fine-tuning testing the grounding-vs-reward dissociation; fallback: evaluate existing checkpoints.
+
+**Claim discipline.** Not established: that internal states correspond to formal operations, that the evidence signal suffices as a monitor or reward proxy, or that any of this holds beyond the studied task. Negative outcomes stay public.
 
 ## Why not SAEs or TransformerLens?
 
