@@ -270,7 +270,8 @@ One cautionary precedent: Weco AI's AIDE² report (first-party, not peer-reviewe
 
 1. **M1: Natural-question replication.** Second model family, matched controls, preregistered power analysis. Controlled-corpus construction, not model compute, has proven to be the dominant schedule cost in our own follow-up work; fallback: smaller preregistered pilot.
 2. **M2: Premise-faithfulness metric.** Agreement between formalized premises and actually-present evidence, on a small audited corpus with held-out scoring; human audit time budgeted explicitly.
-3. **M3: Minimal Lean loop.** Measure when internal signals disagree with premise soundness. Stretch goal: light RL fine-tuning testing the grounding-vs-reward dissociation; fallback: evaluate existing checkpoints.
+3. **M3(a): Minimal Lean loop.** A minimal step-wise Lean verification loop measuring when internal signals disagree with premise soundness. Stretch goal: test whether the internal signal predicts which proposed steps fail formal verification; fallback: report disagreement rates without the predictive test.
+4. **M3(b): Grounding-vs-reward dissociation.** Stretch goal: light RL fine-tuning testing whether optimizing the internal signal improves premise faithfulness or merely the probe score; fallback: evaluate existing checkpoints without fine-tuning.
 
 **Claim discipline.** Not established: that internal states correspond to formal operations, that the evidence signal suffices as a monitor or reward proxy, or that any of this holds beyond the studied task. Negative outcomes stay public.
 
