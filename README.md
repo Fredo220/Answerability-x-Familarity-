@@ -213,7 +213,7 @@ evidence and reasoning into an explicit formal representation whose individual
 steps can then be verified by systems such as Lean 4. This study does not test
 that translation itself; it isolates one upstream condition that such a
 verification pipeline would depend on. On this controlled task, that condition
-held behaviorally — the model did not confuse exposure with evidence — while
+held behaviorally: the model did not confuse exposure with evidence, while
 representation-level measurement succeeded and reliable causal control remains
 open. The distance between archive-code prompts and genuine premise-evidence
 relations in multi-step arguments remains substantial; closing it with natural
@@ -249,7 +249,7 @@ The current project was intentionally scoped for an 8 GB local machine and free-
 
 Forward-looking program extending this study; nothing below is claimed as demonstrated. Each milestone opens only under its own preregistration with fail-closed endpoints.
 
-**Question.** Can probabilistic LLM reasoning become a step-wise process in which the model proposes reasoning steps while a formal verifier guarantees the validity of every accepted step relative to the formalized premises — and can internal evidence signals also serve as training signals, not only inference-time filters?
+**Question.** Can probabilistic LLM reasoning become a step-wise process in which the model proposes reasoning steps while a formal verifier guarantees the validity of every accepted step relative to the formalized premises, and can internal evidence signals also serve as training signals, not only inference-time filters?
 
 **Pipeline.**
 
@@ -260,17 +260,17 @@ A step that does not follow from the current formal premises is rejected and reg
 **What would be new.** Outcome-level RLVR typically uses verification of the final artifact; recent work extends this with step-wise verifier feedback and learned or rule-based process rewards. The proposed difference is that the mid-chain signal would be derived from the model's own internal activations rather than from a separately trained step classifier.
 
 - **Interpretability.** Decoded evidence-sufficiency signals (Section 3.2) could act as a premise-quality monitor before a step is accepted; circuit analysis and pretrained Gemma Scope SAEs could test which internal states, if any, correspond to formal reasoning operations.
-- **RL.** Outcome-only rewards make long proof chains sparse-reward problems. A mid-chain evidence signal is a candidate denser process reward — and its decoder makes reward hacking measurable: does measured grounding improve in step with reward, or dissociate from it? A known risk type comes with it: a policy could learn to satisfy the decoder itself instead of genuinely grounding its steps — Goodhart on the probe — which is precisely what M3(b) is designed to detect.
+- **RL.** Outcome-only rewards make long proof chains sparse-reward problems. A mid-chain evidence signal is a candidate denser process reward, and its decoder makes reward hacking measurable: does measured grounding improve in step with reward, or dissociate from it? A known risk type comes with it: a policy could learn to satisfy the decoder itself instead of genuinely grounding its steps (Goodhart on the probe), which is precisely what M3(b) is designed to detect.
 
 One cautionary precedent: Weco AI's AIDE² report (first-party, not peer-reviewed, July 2026) found that an evolved agent's hand-built anti-hacking filter silently broke under iteration. Monitors therefore require ongoing validation rather than one-time trust.
 
-**Why this study is upstream.** Standard verification assumes the formalization is faithful; RLVR inherits that assumption. During autoformalization, an LLM may introduce unsupported premises, so a Lean-checked proof can be formally valid while failing to faithfully represent the evidence in the original natural-language problem. This study measured one ingredient of that bottleneck and found decodable answerability without a robust causal mechanism. Whether the signal is reliable enough for monitoring or rewards — and whether it stays reliable under optimization — remains open.
+**Why this study is upstream.** Standard verification assumes the formalization is faithful; RLVR inherits that assumption. During autoformalization, an LLM may introduce unsupported premises, so a Lean-checked proof can be formally valid while failing to faithfully represent the evidence in the original natural-language problem. This study measured one ingredient of that bottleneck and found decodable answerability without a robust causal mechanism. Whether the signal is reliable enough for monitoring or rewards, and stays reliable under optimization, remains open.
 
 **Milestones.**
 
-1. **M1 — Natural-question replication.** Second model family, matched controls, preregistered power analysis. Controlled-corpus construction, not model compute, has proven to be the dominant schedule cost in our own follow-up work; fallback: smaller preregistered pilot.
-2. **M2 — Premise-faithfulness metric.** Agreement between formalized premises and actually-present evidence, on a small audited corpus with held-out scoring; human audit time budgeted explicitly.
-3. **M3 — Minimal Lean loop.** Measure when internal signals disagree with premise soundness. Stretch goal: light RL fine-tuning testing the grounding-vs-reward dissociation; fallback: evaluate existing checkpoints.
+1. **M1: Natural-question replication.** Second model family, matched controls, preregistered power analysis. Controlled-corpus construction, not model compute, has proven to be the dominant schedule cost in our own follow-up work; fallback: smaller preregistered pilot.
+2. **M2: Premise-faithfulness metric.** Agreement between formalized premises and actually-present evidence, on a small audited corpus with held-out scoring; human audit time budgeted explicitly.
+3. **M3: Minimal Lean loop.** Measure when internal signals disagree with premise soundness. Stretch goal: light RL fine-tuning testing the grounding-vs-reward dissociation; fallback: evaluate existing checkpoints.
 
 **Claim discipline.** Not established: that internal states correspond to formal operations, that the evidence signal suffices as a monitor or reward proxy, or that any of this holds beyond the studied task. Negative outcomes stay public.
 
