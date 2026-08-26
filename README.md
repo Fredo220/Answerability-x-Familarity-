@@ -245,28 +245,28 @@ The highest-value continuation would:
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
 
-## ## Research Agenda: Verification-Coupled Reasoning
+## Research Agenda: Verification-Coupled Reasoning
 
 Forward-looking program extending this study; nothing below is claimed as demonstrated. Each milestone opens only under its own preregistration with fail-closed endpoints.
 
 **Question.** Can probabilistic LLM reasoning become a step-wise process in which the model proposes reasoning steps while a formal verifier guarantees the validity of every accepted step relative to the formalized premises, and can internal signals help monitor or eventually train such a process rather than serving only as inference-time filters?
 
-** Pipeline.**
+** Pipeline.
 
 > natural language → LLM reasoning representation → autoformalization → Lean 4 per-step verification → optional internal monitoring signal → optional reward signal into policy training
 
 A step that does not follow from the current formal premises is rejected and regenerated.
 
-**What would be new.** Outcome-level RLVR typically uses verification of the final artifact; recent work extends this with step-wise verifier feedback and learned or rule-based process rewards. The proposed research asks whether this external step-level verification can be complemented by signals derived from the model's own internal activations: can internal representations predict when a generated reasoning step is unsupported, inconsistent with the available evidence, or likely to fail formal verification? This would test whether interpretability can provide a candidate real-time process monitor rather than only a post-hoc analysis tool.
+** What would be new.** Outcome-level RLVR typically uses verification of the final artifact; recent work extends this with step-wise verifier feedback and learned or rule-based process rewards. The proposed research asks whether this external step-level verification can be complemented by signals derived from the model's own internal activations: can internal representations predict when a generated reasoning step is unsupported, inconsistent with the available evidence, or likely to fail formal verification? This would test whether interpretability can provide a candidate real-time process monitor rather than only a post-hoc analysis tool.
 
-* **Interpretability.** Decoded answerability signals (Section 3.2) could be evaluated as candidate premise-quality or step-failure predictors before the formal verification result is revealed; circuit analysis and pretrained Gemma Scope SAEs could test which internal states, if any, correspond to evidence-grounded reasoning or formal operations.
-* **RL.** Outcome-only rewards make long proof chains sparse-reward problems. If an internal signal reliably predicts externally verified step quality, it could provide a denser process signal for training. A key risk is Goodharting on the probe: a policy could learn to increase the decoded signal without genuinely improving premise faithfulness. M3(b) is designed to test this grounding-vs-reward dissociation.
+** Interpretability.** Decoded answerability signals (Section 3.2) could be evaluated as candidate premise-quality or step-failure predictors before the formal verification result is revealed; circuit analysis and pretrained Gemma Scope SAEs could test which internal states, if any, correspond to evidence-grounded reasoning or formal operations.
+** RL.** Outcome-only rewards make long proof chains sparse-reward problems. If an internal signal reliably predicts externally verified step quality, it could provide a denser process signal for training. A key risk is Goodharting on the probe: a policy could learn to increase the decoded signal without genuinely improving premise faithfulness. M3(b) is designed to test this grounding-vs-reward dissociation.
 
 One cautionary precedent: Weco AI's AIDE² report (first-party, not peer-reviewed, July 2026) found that an evolved agent's hand-built anti-hacking filter silently broke under iteration. Monitors therefore require ongoing validation rather than one-time trust.
 
-**Why this study is upstream.** Standard verification assumes the formalization is faithful; RLVR inherits that assumption. During autoformalization, an LLM may introduce unsupported premises, so a Lean-checked proof can be formally valid while failing to faithfully represent the evidence in the original natural-language problem. This study measured one ingredient of that bottleneck and found decodable answerability without a robust causal mechanism. Whether the signal can predict externally verifiable step quality, and whether it remains reliable under optimization, remains open.
+** Why this study is upstream. Standard verification assumes the formalization is faithful; RLVR inherits that assumption. During autoformalization, an LLM may introduce unsupported premises, so a Lean-checked proof can be formally valid while failing to faithfully represent the evidence in the original natural-language problem. This study measured one ingredient of that bottleneck and found decodable answerability without a robust causal mechanism. Whether the signal can predict externally verifiable step quality, and whether it remains reliable under optimization, remains open.
 
-** Milestones.**
+** Milestones.
 
 1. **M1: Natural-question replication.** Second model family, matched controls, preregistered power analysis. Controlled-corpus construction, not model compute, has proven to be the dominant schedule cost in our own follow-up work; fallback: smaller preregistered pilot.
 2. **M2: Premise-faithfulness metric.** Agreement between formalized premises and actually-present evidence, on a small audited corpus with held-out scoring; human audit time budgeted explicitly.
