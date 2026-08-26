@@ -233,17 +233,18 @@ factual questions is registered as a next step in Section 7.
 
 ## 7. Limitations and Fellowship-Scale Next Steps
 
-The highest-value continuation would:
+The highest-value continuation of the current study would:
 
-1. compare the activation probe with an explicit binding parser as a transparent task-solving baseline;
-2. replicate on a second, larger model family;
-3. replace archive-code prompts with natural factual and evidence-grounded questions while retaining matched answerability controls;
-4. increase the number of unseen entities and templates and publish power analysis before opening outcomes;
-5. test multiple seeds;
-6. map where the direction transfers across layers before making a layer-specific mechanistic claim; and
-7. cross-check the decoded direction against pretrained Gemma Scope SAE features on the same activations, to see whether it aligns with an existing interpretable feature rather than training a new SAE from scratch.
+1. replicate the representation result on a second, larger model family;
+2. replace the archive-code task with natural factual and evidence-grounded questions while retaining matched answerability controls;
+3. increase the number of unseen entities and templates and publish power analysis before opening outcomes;
+4. test multiple seeds; and
+5. map where the decoded direction transfers across layers before making a layer-specific mechanistic claim.
 
 The current project was intentionally scoped for an 8 GB local machine and free-tier Colab compute. Local hardware handled tests, audits, analysis, and reporting; Colab handled pinned Gemma generation and activation extraction.
+
+These are immediate extensions of the present study. The broader question of coupling internal signals to step-wise formal verification is developed separately in the research agenda below.
+
 
 ## Research Agenda: Verification-Coupled Reasoning
 
